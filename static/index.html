@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AniStory AI — Autonomous Animation Studio Agent</title>
+  <meta name="description" content="Generate high-quality 2D animated videos, storybooks, and short films directly from ideas using autonomous AI agents.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Ambient background glow elements -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Main App Shell -->
+  <div class="app-container">
+    <!-- Navbar Header -->
+    <header class="studio-header">
+      <div id="brandHomeLink" class="brand-group clickable-brand" role="button" tabindex="0" title="Return to Homepage (AniStory AI)">
+        <div class="brand-logo-icon">
+          <span class="icon-glyph">🎬</span>
+        </div>
+        <div class="brand-titles">
+          <h1 class="brand-name">AniStory <span class="gradient-text">AI</span></h1>
+          <p class="brand-tagline">Autonomous Storyboard & Animation Director Agent</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button id="btnNavHome" class="glass-btn secondary-btn nav-home-btn" title="Back to Homepage / Concept & Style">
+          <span class="btn-icon">🏠</span> Home
+        </button>
+        <button id="btnOpenProjects" class="glass-btn secondary-btn" title="View previously created animated stories">
+          <span class="btn-icon">📁</span> My Films
+        </button>
+        <button id="btnOpenSettings" class="glass-btn secondary-btn" title="Configure AI keys and preferences">
+          <span class="btn-icon">⚙️</span> Settings
+        </button>
+        <div class="status-indicator-pill">
+          <span class="status-pulse-dot"></span>
+          <span id="agentSystemStatus">Agent Engine Online</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Workflow Progress Step Bar -->
+    <nav class="workflow-stepper" aria-label="Creation Steps">
+      <div id="stepTab1" class="step-item active">
+        <span class="step-num">1</span>
+        <div class="step-meta">
+          <span class="step-label">Concept & Style</span>
+          <span class="step-desc">Idea & Art Direction</span>
+        </div>
+      </div>
+      <div class="step-connector"></div>
+      <div id="stepTab2" class="step-item">
+        <span class="step-num">2</span>
+        <div class="step-meta">
+          <span class="step-label">Director's Board</span>
+          <span class="step-desc">Storyboard & Script</span>
+        </div>
+      </div>
+      <div class="step-connector"></div>
+      <div id="stepTab3" class="step-item">
+        <span class="step-num">3</span>
+        <div class="step-meta">
+          <span class="step-label">Studio Render</span>
+          <span class="step-desc">Camera & Voiceover</span>
+        </div>
+      </div>
+      <div class="step-connector"></div>
+      <div id="stepTab4" class="step-item">
+        <span class="step-num">4</span>
+        <div class="step-meta">
+          <span class="step-label">Cinema Premiere</span>
+          <span class="step-desc">Watch & Download</span>
+        </div>
+      </div>
+    </nav>
+
+    <!-- MAIN VIEW PANELS -->
+    <main class="view-stage">
+
+      <!-- STAGE 1: IDEA & ART STYLE -->
+      <section id="stage1Idea" class="stage-panel active">
+        <div class="stage-intro">
+          <h2 class="stage-title">What story would you like to bring to life?</h2>
+          <p class="stage-subtitle">Provide any creative concept, fairy tale, or lesson. Our multi-agent team will write the screenplay, paint the frames, narrate, and animate camera motions.</p>
+        </div>
+
+        <div class="input-card glass-panel">
+          <!-- Creation Mode Switcher -->
+          <div class="creation-mode-tabs">
+            <button id="tabModePrompt" class="mode-tab-btn active" type="button">
+              💡 Option A: Write Story Idea
+            </button>
+            <button id="tabModePaste" class="mode-tab-btn" type="button">
+              📋 Option B: Paste AI Storyboard from Gemini
+            </button>
+          </div>
+
+          <!-- Panel A: Story Idea -->
+          <div id="panelPromptMode">
+            <div class="form-row">
+              <label for="inputIdeaPrompt" class="input-label">
+                <span>🌟 Your Story Idea or Topic</span>
+                <span class="hint-text">Be as descriptive or as brief as you like</span>
+              </label>
+              <textarea id="inputIdeaPrompt" rows="3" class="styled-textarea" placeholder="e.g. A lonely clockmaker in a steampunk tower invents a mechanical humming-bird that brings memories back to the townspeople..."></textarea>
+            </div>
+
+            <!-- Quick idea inspiration tags -->
+            <div class="inspiration-box">
+              <span class="inspire-title">⚡ Quick Sparks:</span>
+              <div class="inspire-chips">
+                <button class="inspire-chip" data-prompt="A curious little kitten who sneaks aboard a starship to explore the glittering rings of Saturn.">🚀 Cosmic Kitten</button>
+                <button class="inspire-chip" data-prompt="A friendly ancient forest spirit teaching a lost traveler how to listen to the whisper of the trees.">🍃 Forest Spirit</button>
+                <button class="inspire-chip" data-prompt="A cyberpunk detective and a witty hologram raven uncovering the lost memory of an neon metropolis.">🏙️ Neon Raven</button>
+                <button class="inspire-chip" data-prompt="A magical bakery that bakes fluffy cloud-bread that makes anyone who tastes it float with joy.">🧁 Floating Bakery</button>
+                <button class="inspire-chip" data-prompt="Hai chú rùa và thỏ học cách chia sẻ những trái táo chín mọng trong ngày hội mùa thu tươi đẹp.">🍎 Đôi Bạn Rừng Xanh (VN)</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel B: Direct Paste from Gemini Pro -->
+          <div id="panelPasteMode" style="display: none; margin-bottom: 24px;">
+            <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 14px; padding: 16px; margin-bottom: 16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div>
+                  <span style="font-size:14px; color:var(--text-main); font-weight:700;">✨ Using Gemini Pro (gemini.google.com)?</span>
+                  <p style="font-size:12px; color:var(--text-muted); margin-top:3px;">Click below to copy an optimized animation screenplay prompt, paste it into Gemini Pro, then paste its response below!</p>
+                </div>
+                <button id="btnCopyGeminiPromptDirect" class="glass-btn secondary-btn" type="button" style="padding:8px 16px; font-size:13px; font-weight:600;">
+                  📑 1-Click Copy Prompt for Gemini
+                </button>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <label for="inputDirectPasteText" class="input-label">
+                <span>📋 Paste Gemini Pro's Output Here (JSON or Text):</span>
+                <span class="hint-text">Auto-detects scenes, visual descriptions, and dialogue</span>
+              </label>
+              <textarea id="inputDirectPasteText" rows="7" class="styled-textarea" placeholder="Paste Gemini Pro's generated story here...
+Supports either JSON format or formatted text like:
+Title: My Film
+Scene 1:
+Visual: A high-tech neon rooftop in rain...
+Narration: The detective scanned the horizon for clues..."></textarea>
+            </div>
+          </div>
+
+          <div class="config-grid">
+            <!-- Art Style Selection -->
+            <div class="config-column style-column">
+              <label class="input-label">🎨 Visual Animation Style</label>
+              <div id="styleOptionsGrid" class="style-cards-grid">
+                <!-- Injected via JavaScript -->
+              </div>
+            </div>
+
+            <!-- Voice and Settings -->
+            <div class="config-column controls-column">
+              <div class="form-group">
+                <label for="selectVoice" class="input-label">🎙️ Narrator Voice</label>
+                <div class="select-with-btn">
+                  <select id="selectVoice" class="styled-select">
+                    <!-- Injected via JavaScript -->
+                  </select>
+                  <button id="btnAuditionSampleVoice" class="glass-btn icon-only-btn" title="Preview voice sample">
+                    <span>🔊</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-group" id="groupSceneCount">
+                <label for="selectSceneCount" class="input-label">🎞️ Number of Scenes</label>
+                <select id="selectSceneCount" class="styled-select">
+                  <option value="2">2 Scenes (Flash Bite / 2 Shots)</option>
+                  <option value="3">3 Scenes (Short Teaser)</option>
+                  <option value="4" selected>4 Scenes (Standard Classic Film)</option>
+                  <option value="5">5 Scenes (Full Dramatic Arc)</option>
+                  <option value="6">6 Scenes (Extended Story)</option>
+                  <option value="8">8 Scenes (Epic Adventure)</option>
+                  <option value="10">10 Scenes (Mini Episode)</option>
+                  <option value="12">12 Scenes (Full Short Film)</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="groupTargetDuration">
+                <label for="selectTargetDuration" class="input-label">⏱️ Total Video Duration</label>
+                <select id="selectTargetDuration" class="styled-select">
+                  <option value="30">30s — Social Short / Quick Reel</option>
+                  <option value="60" selected>60s — 1 Minute Standard Film</option>
+                  <option value="90">90s — 1.5 Minutes Spotlight</option>
+                  <option value="120">120s — 2 Minutes Mini Film</option>
+                  <option value="180">180s — 3 Minutes Storybook</option>
+                  <option value="300">300s — 5 Minutes Cinematic Feature</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="groupAspectRatio">
+                <label for="selectAspectRatio" class="input-label">📐 Video Dimensions & Aspect Ratio</label>
+                <select id="selectAspectRatio" class="styled-select">
+                  <option value="16:9" selected>🖥️ 16:9 Widescreen (1280x720) — YouTube & Landscape</option>
+                  <option value="9:16">📱 9:16 Vertical (720x1280) — TikTok, Reels & Shorts</option>
+                  <option value="1:1">🔲 1:1 Square (720x720) — Instagram & Feed</option>
+                  <option value="4:3">📺 4:3 Classic TV (960x720) — Retro & Presentation</option>
+                  <option value="3:4">📸 3:4 Tall Portrait (720x960) — Social Story / Pin</option>
+                  <option value="21:9">🎬 21:9 Ultrawide Cinema (1680x720) — Anamorphic Movie</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="selectLanguage" class="input-label">🌐 Narration Language</label>
+                <select id="selectLanguage" class="styled-select">
+                  <option value="en" selected>English (Natural Storytelling)</option>
+                  <option value="vi">Tiếng Việt (Việt Nam)</option>
+                  <option value="ja">日本語 (Japanese)</option>
+                  <option value="fr">Français (French)</option>
+                  <option value="es">Español (Spanish)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="selectAudience" class="input-label">🎯 Tone & Audience</label>
+                <select id="selectAudience" class="styled-select">
+                  <option value="General" selected>Heartwarming & Universal</option>
+                  <option value="Kids & Children">Children & Bedtime Tale</option>
+                  <option value="Cinematic Drama">Cinematic & Atmospheric</option>
+                  <option value="Educational">Educational & Informative</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Multi-Provider AI Engine & Image Mode Selector -->
+          <div class="ai-provider-panel glass-panel" style="margin-top: 22px; padding: 18px 22px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:18px;">🧠</span>
+                <strong style="font-size:14px; font-family:'Outfit',sans-serif;">AI Screenplay & Storyboard Model</strong>
+              </div>
+              <span id="labelProviderStatus" style="font-size:12px; color:var(--accent-emerald);">● Ready</span>
+            </div>
+
+            <div class="provider-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:16px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label for="selectAiProvider" class="input-label" style="font-size:12px;">Provider</label>
+                <select id="selectAiProvider" class="styled-select">
+                  <option value="gemini" selected>✨ Google Gemini (API Key)</option>
+                  <option value="gemini_cookie">🍪 Google Gemini Web (Cookies / Pro)</option>
+                  <option value="openai">🟢 OpenAI</option>
+                  <option value="claude">🟣 Anthropic Claude</option>
+                  <option value="deepseek">🐋 DeepSeek</option>
+                  <option value="nvidia">⚡ NVIDIA NIM</option>
+                  <option value="builtin">🏛️ Built-in Story Architect (Offline)</option>
+                </select>
+              </div>
+
+              <div class="form-group" style="margin-bottom:0;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <label for="selectAiModel" class="input-label" style="font-size:12px; margin-bottom:0;">Model</label>
+                  <button id="btnDetectModels" type="button" class="glass-btn secondary-btn" style="padding: 2px 8px; font-size: 11px; height: 22px; display:inline-flex; align-items:center; gap:4px;" title="Scan and choose available models from API & Cookies">
+                    <span>🔄 Detect & Select</span>
+                  </button>
+                </div>
+                <select id="selectAiModel" class="styled-select">
+                  <!-- Injected via JavaScript with optgroups -->
+                </select>
+              </div>
+
+              <div class="form-group" id="groupProviderKey" style="margin-bottom:0;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <label for="inputProviderKey" id="labelProviderKey" class="input-label" style="font-size:12px; margin-bottom:0;">API Key / Cookie</label>
+                  <span id="badgeProviderHint" style="font-size:10px; color:var(--text-muted);"></span>
+                </div>
+                <input type="password" id="inputProviderKey" class="styled-input" placeholder="Enter API Key or Cookie...">
+              </div>
+            </div>
+
+            <!-- Image Generation Mode Toggle Banner -->
+            <div class="image-mode-banner flex-between" style="padding-top:14px; border-top:1px solid var(--border-subtle); flex-wrap:wrap; gap:12px;">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:16px;">🎨</span>
+                  <span style="font-weight:600; font-size:13px;">Image Painting Mode:</span>
+                  <span id="badgeImageMode" class="tag-badge" style="background:rgba(139,92,246,0.2); color:#c4b5fd;">🌐 Server API & Open Art</span>
+                </div>
+                <p id="descImageMode" style="font-size:12px; color:var(--text-dim); margin-top:3px;">
+                  Auto server generation with OpenAI DALL-E 3, Google Gemini, Openverse & Wikimedia
+                </p>
+              </div>
+              <div>
+                <button id="btnToggleImageMode" type="button" class="glass-btn secondary-btn" style="padding:7px 16px; font-size:13px; font-weight:600;">
+                  <span id="iconToggleImageMode">🖌️</span> Switch to In-Browser Puter.js
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-footer">
+            <button id="btnGenerateStoryboard" class="hero-action-btn">
+              <span class="btn-glow-layer"></span>
+              <span class="btn-text">Generate Storyboard with AI</span>
+              <span class="btn-arrow">✨</span>
+            </button>
+            <button id="btnDirectLoadStoryboard" class="hero-action-btn" style="display: none;">
+              <span class="btn-glow-layer"></span>
+              <span class="btn-text">Load Into Director's Board</span>
+              <span class="btn-arrow">🚀</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- STAGE 2: DIRECTOR'S STORYBOARD -->
+      <section id="stage2Storyboard" class="stage-panel">
+        <div class="stage-nav-strip">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button id="btnBackToHomeFromStage2" class="glass-btn secondary-btn nav-back-btn" title="Back to Homepage / Concept & Style">
+              <span class="btn-icon">←</span> Back to Home
+            </button>
+            <button id="btnNewStoryFromStage2" class="glass-btn secondary-btn" title="Start a fresh story from scratch">
+              <span class="btn-icon">➕</span> New Story
+            </button>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <span id="badgeStoryboardAspectRatio" class="tag-badge" style="background:rgba(59,130,246,0.15); color:#93c5fd; font-size:12px; padding:6px 12px;">📐 16:9 Widescreen</span>
+            <button id="btnToggleSubtitlesStage2" class="glass-btn secondary-btn" title="Toggle burnt-in subtitles ON or OFF">
+              <span id="iconSubtitlesStage2">💬</span> <span id="textSubtitlesStage2">Captions: ON</span>
+            </button>
+            <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn" title="Toggle between Server API and In-Browser Puter.js paint">
+              <span id="iconImageModeStage2">🌐</span> <span id="textImageModeStage2">Paint Mode: Server API</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="stage-intro flex-between">
+          <div>
+            <h2 id="storyboardFilmTitle" class="stage-title">Film Title</h2>
+            <p id="storyboardLogline" class="stage-subtitle">Logline summary</p>
+          </div>
+          <div class="top-stage-actions">
+            <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn">💾 Save Script Changes</button>
+            <button id="btnProceedToRender" class="hero-action-btn compact-btn">
+              <span class="btn-text">Render Full Film</span>
+              <span class="btn-arrow">🚀</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="storyboardScenesGrid" class="scenes-masonry-grid">
+          <!-- Populated dynamically with scene cards -->
+        </div>
+      </section>
+
+      <!-- STAGE 3: STUDIO RENDERING -->
+      <section id="stage3Rendering" class="stage-panel">
+        <div class="render-progress-card glass-panel">
+          <div class="render-orb-visual">
+            <div class="pulse-ring"></div>
+            <div class="pulse-ring delay-1"></div>
+            <div class="inner-icon">🎬</div>
+          </div>
+
+          <h2 class="render-heading">Animation Engine at Work</h2>
+          <p id="renderStepDetail" class="render-detail-text">Composing scene frames and voiceover...</p>
+
+          <div class="progress-bar-wrapper">
+            <div class="progress-bar-track">
+              <div id="renderProgressBar" class="progress-bar-fill" style="width: 15%;"></div>
+            </div>
+            <div class="progress-meta">
+              <span id="renderProgressPercent">15%</span>
+              <span class="render-speed-label">30 FPS Cinematic Ken Burns Engine</span>
+            </div>
+          </div>
+
+          <!-- Real-time Agent Log -->
+          <div class="agent-activity-box">
+            <h4 class="activity-title">Live Agent Activity Log</h4>
+            <div id="activityLogList" class="activity-log-items">
+              <div class="log-row done"><span class="log-check">✓</span> Scriptwriter Agent created story structure</div>
+              <div class="log-row active"><span class="log-spinner">⏳</span> Generating high-definition keyframe illustrations...</div>
+            </div>
+          </div>
+
+          <!-- Navigation controls while rendering -->
+          <div class="render-nav-actions" style="margin-top: 24px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+            <button id="btnBackToBoardFromStage3" class="glass-btn secondary-btn" title="Return to Director's Storyboard">
+              <span class="btn-icon">📋</span> Back to Director's Board
+            </button>
+            <button id="btnBackToHomeFromStage3" class="glass-btn secondary-btn" title="Return to Homepage">
+              <span class="btn-icon">🏠</span> Back to Home
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- STAGE 4: CINEMA PREMIERE & DOWNLOAD -->
+      <section id="stage4Cinema" class="stage-panel">
+        <div class="cinema-theater-box glass-panel">
+          <div class="theater-header">
+            <div>
+              <span class="tag-badge">🏆 Master Film Complete</span>
+              <h2 id="cinemaMovieTitle" class="cinema-title">Untitled Film</h2>
+              <p id="cinemaMovieLogline" class="cinema-logline">A story rendered by AniStory AI</p>
+            </div>
+            <div class="cinema-action-buttons">
+              <button id="btnCinemaBackToBoard" class="glass-btn secondary-btn" title="Return to Storyboard to edit">
+                <span class="btn-icon">📋</span> Storyboard
+              </button>
+              <a id="btnDownloadMovie" class="hero-action-btn compact-btn" href="#" download>
+                <span class="btn-text">Download MP4 Film</span>
+                <span class="btn-arrow">📥</span>
+              </a>
+              <button id="btnStartNewStory" class="glass-btn secondary-btn" title="Start a fresh story from scratch">
+                <span class="btn-icon">🏠</span> Back to Home / New Story
+              </button>
+            </div>
+          </div>
+
+          <!-- Video Player -->
+          <div class="video-player-container">
+            <video id="cinemaVideoPlayer" controls playsinline preload="metadata">
+              Your browser does not support the video tag.
+            </video>
+          </div>
+
+          <!-- Film Metadata Specs -->
+          <div class="movie-specs-grid">
+            <div class="spec-card">
+              <span class="spec-label">Resolution & Ratio</span>
+              <span id="specResolution" class="spec-val">1280 x 720 HD (16:9)</span>
+            </div>
+            <div class="spec-card">
+              <span class="spec-label">Visual Art Style</span>
+              <span id="specArtStyle" class="spec-val">Studio Ghibli 2D</span>
+            </div>
+            <div class="spec-card">
+              <span class="spec-label">Camera Motion</span>
+              <span class="spec-val">Ken Burns Pan & Zoom</span>
+            </div>
+            <div class="spec-card">
+              <span class="spec-label">Audio & Subtitles</span>
+              <span class="spec-val">Edge-TTS & Burnt Captions</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: Settings -->
+  <div id="modalSettings" class="modal-backdrop">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <h3 class="modal-title">⚙️ Studio Settings</h3>
+        <button id="btnCloseSettings" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+        <div class="form-group">
+          <label for="selectSettingsImageMode" class="input-label">🎨 Default Image Painting Engine</label>
+          <select id="selectSettingsImageMode" class="styled-select">
+            <option value="server">🌐 Free Neural AI (Flux / SDXL) & Server Engine (Recommended — Unlimited)</option>
+            <option value="neural_love">💖 Neural.love AI Art Engine (High-Fidelity Artwork)</option>
+            <option value="gemini">✨ Google Gemini / Imagen 3 AI Paint (API Key or Cookie)</option>
+            <option value="puter">🖌️ In-Browser AI Paint (Puter.js — subject to Puter balance)</option>
+          </select>
+          <p class="field-hint">You can also quickly toggle this directly on the Director's Storyboard bar.</p>
+        </div>
+
+        <div style="margin-top: 14px; margin-bottom: 8px;">
+          <h4 style="font-size: 14px; font-weight: 700; color: var(--text-main);">🔑 AI Screenplay & Painting API Keys</h4>
+          <p class="field-hint">Keys are securely saved in your local browser storage and never shared.</p>
+        </div>
+
+        <div class="form-group" style="background: rgba(236, 72, 153, 0.08); border: 1px solid rgba(236, 72, 153, 0.25); border-radius: 8px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <label for="inputNeuralLoveApiKey" class="input-label" style="font-weight: 700; color: #f472b6; margin-bottom: 0;">
+              💖 Neural.love API Key (AI Art)
+            </label>
+            <span style="font-size: 11px; background: rgba(236, 72, 153, 0.2); color: #fbcfe8; padding: 2px 8px; border-radius: 10px; font-weight: 600;">Neural Art</span>
+          </div>
+          <p class="field-hint" style="margin-bottom: 8px; font-size: 12px; line-height: 1.4;">
+            High-fidelity artistic anime & fantasy illustration engine powered by <strong>neural.love</strong>.
+          </p>
+          <input type="password" id="inputNeuralLoveApiKey" class="styled-input" placeholder="v1.4b5d...">
+        </div>
+
+        <div class="form-group">
+          <label for="inputGeminiApiKey" class="input-label">Google Gemini API Key (Official)</label>
+          <input type="password" id="inputGeminiApiKey" class="styled-input" placeholder="AIzaSy...">
+        </div>
+
+        <div class="form-group" style="background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 8px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <label for="inputGeminiCookie" class="input-label" style="font-weight: 700; color: #c4b5fd; margin-bottom: 0;">
+              🍪 Gemini Web Session Cookie (No API Rate Limits)
+            </label>
+            <span style="font-size: 11px; background: rgba(139, 92, 246, 0.2); color: #e9d5ff; padding: 2px 8px; border-radius: 10px; font-weight: 600;">Gemini Pro Account</span>
+          </div>
+          <p class="field-hint" style="margin-bottom: 8px; font-size: 12px; line-height: 1.4;">
+            Use your paid <strong>gemini.google.com</strong> web session directly to bypass free API Studio quotas.
+          </p>
+          <input type="password" id="inputGeminiCookie" class="styled-input" placeholder="Paste __Secure-1PSID or full Cookie string...">
+          <div style="margin-top: 8px;">
+            <label for="inputGeminiCookieTs" class="input-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">
+              Optional: <code>__Secure-1PSIDTS</code> (if not in string above):
+            </label>
+            <input type="password" id="inputGeminiCookieTs" class="styled-input" placeholder="sidts-01-...">
+          </div>
+          <p class="field-hint" style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">
+            💡 <em>How to get:</em> Visit <strong>gemini.google.com</strong> &rarr; Press <kbd>F12</kbd> &rarr; <strong>Application</strong> tab &rarr; <strong>Cookies</strong> &rarr; copy <code>__Secure-1PSID</code> and <code>__Secure-1PSIDTS</code>.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label for="inputOpenAiApiKey" class="input-label">OpenAI API Key (GPT-4o & DALL-E 3)</label>
+          <input type="password" id="inputOpenAiApiKey" class="styled-input" placeholder="sk-proj-...">
+        </div>
+
+        <div class="form-group">
+          <label for="inputClaudeApiKey" class="input-label">Anthropic Claude API Key (Claude 3.5 Sonnet / Haiku)</label>
+          <input type="password" id="inputClaudeApiKey" class="styled-input" placeholder="sk-ant-...">
+        </div>
+
+        <div class="form-group">
+          <label for="inputDeepSeekApiKey" class="input-label">DeepSeek API Key (DeepSeek-V3 / R1)</label>
+          <input type="password" id="inputDeepSeekApiKey" class="styled-input" placeholder="sk-...">
+        </div>
+
+        <div class="form-group">
+          <label for="inputNvidiaApiKey" class="input-label">NVIDIA NIM API Key (Llama 3.1 / Nemotron)</label>
+          <input type="password" id="inputNvidiaApiKey" class="styled-input" placeholder="nvapi-...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnSaveSettings" class="hero-action-btn compact-btn">Save Preferences</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Saved Projects Drawer -->
+  <div id="modalProjects" class="modal-backdrop">
+    <div class="modal-card glass-panel wide-modal">
+      <div class="modal-header flex-between">
+        <h3 class="modal-title">📁 Past Animated Projects</h3>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button id="btnNewFilmFromModal" class="hero-action-btn compact-btn" title="Create a new animated story">
+            <span class="btn-text">New Film</span> <span class="btn-arrow">➕</span>
+          </button>
+          <button id="btnCloseProjects" class="modal-close-btn">&times;</button>
+        </div>
+      </div>
+      <div id="savedProjectsList" class="modal-body projects-grid">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Import Storyboard from Gemini Pro -->
+  <div id="modalImport" class="modal-backdrop">
+    <div class="modal-card glass-panel wide-modal">
+      <div class="modal-header">
+        <h3 class="modal-title">✨ Paste AI Storyboard from Gemini Pro</h3>
+        <button id="btnCloseImport" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="field-hint" style="color:var(--text-main); font-size:14px; margin-bottom:12px;">
+          Using <strong>gemini.google.com</strong> with your Gemini Pro account? Ask Gemini to write your scenes, then paste the response below!
+        </p>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:13px; color:var(--text-muted); font-weight:600;">📋 Quick Prompt to send to Gemini:</span>
+          <button id="btnCopyGeminiPrompt" class="glass-btn secondary-btn" style="padding:5px 12px; font-size:12px;">
+            Copy Prompt for Gemini 📑
+          </button>
+        </div>
+
+        <div class="form-group">
+          <label for="inputImportText" class="input-label">Paste Gemini's Output (JSON or Text):</label>
+          <textarea id="inputImportText" rows="10" class="styled-textarea" placeholder="Paste Gemini Pro's generated story here...
+Supports either JSON format or formatted text like:
+Title: My Film
+Scene 1:
+Visual: A high-tech neon rooftop in rain...
+Narration: The detective scanned the horizon for clues..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:12px;">
+        <button id="btnSubmitImport" class="hero-action-btn compact-btn">
+          <span>Load Into Director's Board</span>
+          <span>🚀</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Gemini Available Models Explorer -->
+  <div id="modalModelExplorer" class="modal-backdrop">
+    <div class="modal-card glass-panel wide-modal" style="max-width: 820px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:24px;">🤖</span>
+          <div>
+            <h3 class="modal-title" style="margin-bottom:2px;">Select Available Gemini Model</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin:0;">Select any detected model from Google API Key or Gemini Web Cookies</p>
+          </div>
+        </div>
+        <button id="btnCloseModelExplorer" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+        <!-- Filter Tabs -->
+        <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+          <button id="tabFilterAll" type="button" class="glass-btn primary-btn" style="padding:5px 12px; font-size:12px;">
+            🌟 All Models (<span id="countAllModels">0</span>)
+          </button>
+          <button id="tabFilterApi" type="button" class="glass-btn secondary-btn" style="padding:5px 12px; font-size:12px;">
+            ✨ Official API Key (<span id="countApiModels">0</span>)
+          </button>
+          <button id="tabFilterCookie" type="button" class="glass-btn secondary-btn" style="padding:5px 12px; font-size:12px;">
+            🍪 Web Cookies (Pro) (<span id="countCookieModels">0</span>)
+          </button>
+          <button id="btnRescanModelsModal" type="button" class="glass-btn secondary-btn" style="margin-left:auto; padding:5px 12px; font-size:12px;">
+            🔄 Re-scan Live Models
+          </button>
+        </div>
+
+        <!-- Connection status banner -->
+        <div id="modelExplorerStatusBar" style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span id="modelExplorerStatusIcon">🔍</span>
+            <span id="modelExplorerStatusText" style="font-size:13px; color:#e9d5ff;">Checking live models for your account...</span>
+          </div>
+          <span id="modelExplorerStatusBadge" style="font-size:11px; padding:3px 8px; border-radius:10px; background:rgba(16,185,129,0.2); color:#34d399; font-weight:700;">Ready</span>
+        </div>
+
+        <!-- Grid of Model Cards -->
+        <div id="modelsCardsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap:10px;">
+          <!-- Dynamically generated cards -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:12px; color:var(--text-muted);">💡 Click any card to apply it instantly to your project</span>
+        <button id="btnDoneModelExplorer" class="hero-action-btn compact-btn">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio player for voice audition -->
+  <audio id="audioAuditionPlayer" style="display:none;"></audio>
+
+  <!-- Notification Toast Container -->
+  <div id="toastNotification" class="toast-popup"></div>
+
+  <script src="https://js.puter.com/v2/"></script>
+  <script src="/js/app.js?v=2.2"></script>
+</body>
+</html>
