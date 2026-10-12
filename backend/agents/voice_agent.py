@@ -49,33 +49,74 @@ class VoiceAgent:
             return "es"
         return "en"
 
+    @staticmethod
+    def _get_fallback_voice_for_gemini(voice_id: str, is_vietnamese: bool = False) -> str:
+        """
+        Maps a Gemini voice to a personality- and gender-matched Edge-TTS voice
+        when Gemini quota is exceeded or unavailable.
+        """
+        voice_lower = (voice_id or "").lower()
+        if is_vietnamese:
+            if "aoede" in voice_lower:
+                return "vi-VN-HoaiMyNeural"
+            elif "kore" in voice_lower:
+                return "vi-VN-HoaiMyNeural-story"
+            elif "puck" in voice_lower:
+                return "vi-VN-NamMinhNeural"
+            elif "charon" in voice_lower:
+                return "vi-VN-NamMinhNeural-story"
+            elif "fenrir" in voice_lower:
+                return "vi-VN-NamMinhNeural-heroic"
+            return "vi-VN-HoaiMyNeural"
+        else:
+            if "aoede" in voice_lower:
+                return "en-US-JennyNeural"
+            elif "kore" in voice_lower:
+                return "en-US-AriaNeural"
+            elif "puck" in voice_lower:
+                return "en-US-GuyNeural"
+            elif "charon" in voice_lower:
+                return "en-US-ChristopherNeural"
+            elif "fenrir" in voice_lower:
+                return "en-GB-RyanNeural"
+            return "en-US-JennyNeural"
+
     async def _try_edge_tts(self, text: str, output_audio_path: str, voice: str, rate: str, pitch: str):
-        """Attempts Edge-TTS synthesis and returns sentence boundaries."""
-        comm = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
-        boundaries = []
-        has_audio = False
+        """Attempts Edge-TTS synthesis and returns sentence boundaries with retry."""
+        last_err = None
+        for attempt in range(2):
+            try:
+                comm = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+                boundaries = []
+                has_audio = False
 
-        with open(output_audio_path, "wb") as audio_file:
-            async for chunk in comm.stream():
-                if chunk["type"] == "audio":
-                    has_audio = True
-                    audio_file.write(chunk["data"])
-                elif chunk["type"] == "SentenceBoundary":
-                    start_sec = chunk["offset"] / 10_000_000.0
-                    dur_sec = chunk["duration"] / 10_000_000.0
-                    end_sec = start_sec + dur_sec
-                    sentence_text = chunk.get("text", "").strip()
-                    if sentence_text:
-                        boundaries.append({
-                            "start": start_sec,
-                            "end": end_sec,
-                            "text": sentence_text
-                        })
+                with open(output_audio_path, "wb") as audio_file:
+                    async for chunk in comm.stream():
+                        if chunk["type"] == "audio":
+                            has_audio = True
+                            audio_file.write(chunk["data"])
+                        elif chunk["type"] == "SentenceBoundary":
+                            start_sec = chunk["offset"] / 10_000_000.0
+                            dur_sec = chunk["duration"] / 10_000_000.0
+                            end_sec = start_sec + dur_sec
+                            sentence_text = chunk.get("text", "").strip()
+                            if sentence_text:
+                                boundaries.append({
+                                    "start": start_sec,
+                                    "end": end_sec,
+                                    "text": sentence_text
+                                })
 
-        if not has_audio or os.path.getsize(output_audio_path) == 0:
-            raise RuntimeError("Edge-TTS generated zero audio bytes.")
+                if not has_audio or os.path.getsize(output_audio_path) == 0:
+                    raise RuntimeError("Edge-TTS generated zero audio bytes.")
 
-        return boundaries
+                return boundaries
+            except Exception as e:
+                last_err = e
+                if attempt == 0:
+                    await asyncio.sleep(0.3)
+                    continue
+                raise last_err
 
     def _synthesize_with_gtts(self, text: str, output_audio_path: str, lang: str):
         """Ultra-reliable fallback using gTTS."""
@@ -83,12 +124,104 @@ class VoiceAgent:
         tts = gTTS(text=text, lang=lang)
         tts.save(output_audio_path)
 
-    async def synthesize(self, text: str, output_audio_path: str, output_srt_path: str = None, voice: str = None, rate: str = "+0%", pitch: str = "+0Hz") -> dict:
+    async def _synthesize_with_gemini(self, text: str, output_audio_path: str, voice: str, api_key: str = None) -> bool:
+        """Synthesize speech using Google Gemini Native Audio generation."""
+        import base64
+        import wave
+        from google import genai
+        from google.genai import types
+        from backend.config import get_server_credentials
+
+        key = api_key or os.environ.get("GEMINI_API_KEY")
+        if not key:
+            s_creds = get_server_credentials()
+            key = s_creds.get("gemini_api_key")
+
+        if not key:
+            raise ValueError("Gemini API key is required for Gemini voice synthesis.")
+
+        client = genai.Client(api_key=key)
+        voice_clean = voice.replace("gemini-", "").strip()
+
+        # Models supporting native audio / TTS output
+        models_to_try = [
+            "gemini-2.5-flash-preview-tts",
+            "gemini-3.8-flash-tts"
+        ]
+
+        raw_bytes = None
+        last_err = None
+
+        for m_id in models_to_try:
+            try:
+                resp = client.models.generate_content(
+                    model=m_id,
+                    contents=f"Read this animation scene narration clearly, engagingly, and expressively without extra commentary:\n\n{text}",
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name=voice_clean
+                                )
+                            )
+                        )
+                    )
+                )
+                if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
+                    for part in resp.candidates[0].content.parts:
+                        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                            data = part.inline_data.data
+                            raw_bytes = base64.b64decode(data) if isinstance(data, str) else data
+                            if raw_bytes and len(raw_bytes) > 200:
+                                break
+                    if raw_bytes:
+                        break
+            except Exception as e:
+                last_err = e
+                continue
+
+        if not raw_bytes:
+            raise RuntimeError(f"Gemini voice synthesis failed on model {models_to_try}: {last_err}")
+
+        # Write raw PCM to temp WAV file with 24000Hz 16-bit Mono header
+        temp_wav = output_audio_path + ".temp.wav"
+        with wave.open(temp_wav, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(24000)
+            wf.writeframes(raw_bytes)
+
+        # Convert to final MP3 via FFmpeg
+        cmd = [FFMPEG_PATH, "-y", "-i", temp_wav, "-b:a", "192k", output_audio_path]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            if os.path.exists(temp_wav):
+                os.remove(temp_wav)
+        except Exception:
+            pass
+
+        if proc.returncode != 0:
+            raise RuntimeError(f"FFmpeg audio conversion failed: {proc.stderr}")
+
+        return True
+
+    async def synthesize(
+        self,
+        text: str,
+        output_audio_path: str,
+        output_srt_path: str = None,
+        voice: str = None,
+        rate: str = "+0%",
+        pitch: str = "+0Hz",
+        api_key: str = None
+    ) -> dict:
         """
         Synthesize speech with multi-layered fallback:
-        1. Requested Edge-TTS voice
-        2. Alternative Edge-TTS voice
-        3. gTTS (Google TTS) fallback
+        1. Google Gemini Native Voice (if selected)
+        2. Requested Edge-TTS voice
+        3. Alternative Edge-TTS voice
+        4. gTTS (Google TTS) fallback
         Guarantees audio is ALWAYS successfully produced without crashing.
         """
         clean_text = text.strip() if text and text.strip() else "..."
@@ -100,12 +233,54 @@ class VoiceAgent:
         boundaries = []
         success = False
 
-        # Attempt 1: Requested Voice
-        try:
-            boundaries = await self._try_edge_tts(clean_text, output_audio_path, selected_voice, rate, pitch)
-            success = True
-        except Exception as e:
-            print(f"Edge-TTS primary voice '{selected_voice}' failed: {e}. Trying alternate voice...")
+        # Attempt 0: Google Gemini Native Audio if selected
+        is_fallback = False
+        fallback_from = None
+        if selected_voice and selected_voice.startswith("gemini-"):
+            try:
+                await self._synthesize_with_gemini(clean_text, output_audio_path, selected_voice, api_key=api_key)
+                success = True
+                print(f"Synthesized scene speech using Google Gemini voice '{selected_voice}'!")
+            except Exception as e_gemini:
+                fallback_from = selected_voice
+                is_fallback = True
+                is_vn = any(ord(c) > 127 for c in clean_text) or "vi" in lang_code
+                matched_voice = self._get_fallback_voice_for_gemini(selected_voice, is_vietnamese=is_vn)
+                print(f"Gemini voice synthesis error ({selected_voice}): {e_gemini}. Intelligent fallback to matched voice '{matched_voice}'...")
+                selected_voice = matched_voice
+
+        # Extract tuning variants if any
+        actual_voice = selected_voice
+        actual_rate = rate
+        actual_pitch = pitch
+
+        if selected_voice == "gtts-vi":
+            try:
+                self._synthesize_with_gtts(clean_text, output_audio_path, "vi")
+                success = True
+                boundaries = []
+            except Exception as e_gtts:
+                print(f"gTTS error: {e_gtts}")
+        elif "-story" in selected_voice:
+            actual_voice = selected_voice.replace("-story", "")
+            actual_rate = "-10%"
+            actual_pitch = "-1Hz"
+        elif "-energetic" in selected_voice:
+            actual_voice = selected_voice.replace("-energetic", "")
+            actual_rate = "+12%"
+            actual_pitch = "+3Hz"
+        elif "-heroic" in selected_voice:
+            actual_voice = selected_voice.replace("-heroic", "")
+            actual_rate = "-5%"
+            actual_pitch = "-3Hz"
+
+        # Attempt 1: Requested Voice via Edge-TTS
+        if not success:
+            try:
+                boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch)
+                success = True
+            except Exception as e:
+                print(f"Edge-TTS primary voice '{actual_voice}' failed: {e}. Trying alternate voice...")
 
         # Attempt 2: Swapping to alternate voice if Vietnamese or English
         if not success:
@@ -165,7 +340,9 @@ class VoiceAgent:
             "srt_path": output_srt_path,
             "duration": duration,
             "voice": selected_voice,
-            "boundaries": boundaries
+            "boundaries": boundaries,
+            "is_fallback": is_fallback,
+            "fallback_from": fallback_from
         }
 
     @staticmethod

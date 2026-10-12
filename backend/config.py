@@ -74,18 +74,31 @@ ART_STYLES = {
     }
 }
 
-# Voices available in Edge-TTS
+# Voices available (Google Gemini Native Neural Voices & Edge-TTS)
 VOICES = [
-    # English
+    # Google Gemini Native Multimodal Voices (Fluent in Vietnamese & English)
+    {"id": "gemini-Aoede", "name": "✨ Gemini Aoede (Nữ truyền cảm - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini"},
+    {"id": "gemini-Kore", "name": "✨ Gemini Kore (Nữ nhẹ nhàng kể chuyện - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini"},
+    {"id": "gemini-Puck", "name": "✨ Gemini Puck (Nam hoạt bát, sinh động - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini"},
+    {"id": "gemini-Charon", "name": "✨ Gemini Charon (Nam trầm ấm điện ảnh - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini"},
+    {"id": "gemini-Fenrir", "name": "✨ Gemini Fenrir (Nam hào hùng, lôi cuốn - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini"},
+
+    # Vietnamese Dedicated Voices (Microsoft Edge Neural & Google)
+    {"id": "vi-VN-HoaiMyNeural", "name": "Hoài My (Việt Nam - Nữ dịu dàng miền Bắc)", "lang": "vi", "gender": "Female"},
+    {"id": "vi-VN-NamMinhNeural", "name": "Nam Minh (Việt Nam - Nam truyền cảm miền Bắc)", "lang": "vi", "gender": "Male"},
+    {"id": "vi-VN-HoaiMyNeural-story", "name": "Hoài My Kể Chuyện (Việt Nam - Nữ êm đềm, chậm rãi)", "lang": "vi", "gender": "Female"},
+    {"id": "vi-VN-NamMinhNeural-story", "name": "Nam Minh Thuyết Minh (Việt Nam - Nam sâu lắng, ấm áp)", "lang": "vi", "gender": "Male"},
+    {"id": "vi-VN-HoaiMyNeural-energetic", "name": "Hoài My Hoạt Bát (Việt Nam - Nữ vui tươi, nhí nhảnh)", "lang": "vi", "gender": "Female"},
+    {"id": "vi-VN-NamMinhNeural-heroic", "name": "Nam Minh Khí Thế (Việt Nam - Nam mạnh mẽ, dứt khoát)", "lang": "vi", "gender": "Male"},
+    {"id": "gtts-vi", "name": "Google Voice VN (Việt Nam - Nữ chuẩn Google TTS)", "lang": "vi", "gender": "Female"},
+
+    # English (Edge-TTS)
     {"id": "en-US-ChristopherNeural", "name": "Christopher (US - Storyteller Male)", "lang": "en", "gender": "Male"},
     {"id": "en-US-JennyNeural", "name": "Jenny (US - Warm Expressive Female)", "lang": "en", "gender": "Female"},
     {"id": "en-US-GuyNeural", "name": "Guy (US - Casual Friendly Male)", "lang": "en", "gender": "Male"},
     {"id": "en-US-AriaNeural", "name": "Aria (US - Clear Narrator Female)", "lang": "en", "gender": "Female"},
     {"id": "en-GB-SoniaNeural", "name": "Sonia (British - Elegant Female)", "lang": "en", "gender": "Female"},
     {"id": "en-GB-RyanNeural", "name": "Ryan (British - Documentary Male)", "lang": "en", "gender": "Male"},
-    # Vietnamese
-    {"id": "vi-VN-NamMinhNeural", "name": "Nam Minh (Việt Nam - Nam truyền cảm)", "lang": "vi", "gender": "Male"},
-    {"id": "vi-VN-HoaiMyNeural", "name": "Hoài My (Việt Nam - Nữ dịu dàng)", "lang": "vi", "gender": "Female"},
     # Japanese
     {"id": "ja-JP-NanamiNeural", "name": "Nanami (Japanese - Female)", "lang": "ja", "gender": "Female"},
     {"id": "ja-JP-KeitaNeural", "name": "Keita (Japanese - Male)", "lang": "ja", "gender": "Male"},

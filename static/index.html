@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=5">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -104,6 +104,14 @@
 
           <!-- Panel A: Story Idea -->
           <div id="panelPromptMode">
+            <div class="form-row" style="margin-bottom: 16px;">
+              <label for="inputProjectTitle" class="input-label">
+                <span>🎬 Project Name / Film Title</span>
+                <span class="hint-text">Give your film a custom title (optional — AI will generate one if empty)</span>
+              </label>
+              <input type="text" id="inputProjectTitle" class="styled-input" placeholder="e.g. Whispers of the Ancient Woods, Đôi Bạn Rừng Xanh...">
+            </div>
+
             <div class="form-row">
               <label for="inputIdeaPrompt" class="input-label">
                 <span>🌟 Your Story Idea or Topic</span>
@@ -164,41 +172,48 @@ Narration: The detective scanned the horizon for clues..."></textarea>
 
             <!-- Voice and Settings -->
             <div class="config-column controls-column">
-              <div class="form-group">
-                <label for="selectVoice" class="input-label">🎙️ Narrator Voice</label>
+              <div class="form-group" id="groupVoiceSelect">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <label for="selectVoice" class="input-label" style="margin-bottom:0;">🎙️ Narrator Voice</label>
+                  <span id="voiceSampleStatus" style="font-size:11px; color:var(--text-muted);">Audition Ready</span>
+                </div>
                 <div class="select-with-btn">
                   <select id="selectVoice" class="styled-select">
                     <!-- Injected via JavaScript -->
                   </select>
-                  <button id="btnAuditionSampleVoice" class="glass-btn icon-only-btn" title="Preview voice sample">
-                    <span>🔊</span>
+                  <button id="btnAuditionSampleVoice" type="button" class="glass-btn icon-only-btn" title="Click to listen to sample audio">
+                    <span id="iconAuditionVoice">🔊</span>
                   </button>
+                </div>
+                <!-- Interactive Audition Audio Player & Status Bar -->
+                <div id="auditionPlayerContainer" style="display:none; margin-top:8px; padding:10px 12px; background:rgba(0,0,0,0.45); border:1px solid rgba(139,92,246,0.35); border-radius:10px; animation:fadeInPanel 0.25s ease;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span id="auditionVoiceLabel" style="font-size:12px; font-weight:600; color:var(--primary-light);">🔊 Playing Sample</span>
+                    <button id="btnCloseAuditionPlayer" type="button" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; padding:0 4px;" title="Close player">✕</button>
+                  </div>
+                  <audio id="audioAuditionPlayer" controls style="width:100%; height:34px; border-radius:6px;"></audio>
+                  <div id="auditionSampleText" style="font-size:11px; color:var(--text-muted); margin-top:5px; font-style:italic; line-height:1.35;"></div>
                 </div>
               </div>
 
               <div class="form-group" id="groupSceneCount">
                 <label for="selectSceneCount" class="input-label">🎞️ Number of Scenes</label>
                 <select id="selectSceneCount" class="styled-select">
+                  <option value="1">1 Scene (Single Shot / Teaser)</option>
                   <option value="2">2 Scenes (Flash Bite / 2 Shots)</option>
                   <option value="3">3 Scenes (Short Teaser)</option>
                   <option value="4" selected>4 Scenes (Standard Classic Film)</option>
-                  <option value="5">5 Scenes (Full Dramatic Arc)</option>
+                  <option value="5">5 Scenes (Dramatic Arc)</option>
                   <option value="6">6 Scenes (Extended Story)</option>
+                  <option value="7">7 Scenes (Full Chapter)</option>
                   <option value="8">8 Scenes (Epic Adventure)</option>
                   <option value="10">10 Scenes (Mini Episode)</option>
-                  <option value="12">12 Scenes (Full Short Film)</option>
-                </select>
-              </div>
-
-              <div class="form-group" id="groupTargetDuration">
-                <label for="selectTargetDuration" class="input-label">⏱️ Total Video Duration</label>
-                <select id="selectTargetDuration" class="styled-select">
-                  <option value="30">30s — Social Short / Quick Reel</option>
-                  <option value="60" selected>60s — 1 Minute Standard Film</option>
-                  <option value="90">90s — 1.5 Minutes Spotlight</option>
-                  <option value="120">120s — 2 Minutes Mini Film</option>
-                  <option value="180">180s — 3 Minutes Storybook</option>
-                  <option value="300">300s — 5 Minutes Cinematic Feature</option>
+                  <option value="12">12 Scenes (Full Narrative Film)</option>
+                  <option value="14">14 Scenes (Cinema Short)</option>
+                  <option value="16">16 Scenes (Extended Episode)</option>
+                  <option value="18">18 Scenes (Saga Arc)</option>
+                  <option value="20">20 Scenes (Complete Short Movie)</option>
+                  <option value="24">24 Scenes (Grand Cinematic Masterpiece)</option>
                 </select>
               </div>
 
@@ -557,8 +572,10 @@ Narration: The detective scanned the horizon for clues..."></textarea>
           <button id="btnCloseProjects" class="modal-close-btn">&times;</button>
         </div>
       </div>
-      <div id="savedProjectsList" class="modal-body projects-grid">
-        <!-- Rendered dynamically -->
+      <div class="modal-body" style="padding: 0; max-height: 70vh; overflow-y: auto;">
+        <div id="savedProjectsList" class="projects-grid">
+          <!-- Rendered dynamically -->
+        </div>
       </div>
     </div>
   </div>
@@ -652,13 +669,11 @@ Narration: The detective scanned the horizon for clues..."></textarea>
     </div>
   </div>
 
-  <!-- Audio player for voice audition -->
-  <audio id="audioAuditionPlayer" style="display:none;"></audio>
 
   <!-- Notification Toast Container -->
   <div id="toastNotification" class="toast-popup"></div>
 
   <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=2.2"></script>
+  <script src="/js/app.js?v=2.4"></script>
 </body>
 </html>

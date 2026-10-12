@@ -15,10 +15,11 @@ class ScriptAgent:
         self,
         idea: str,
         num_scenes: int = 4,
-        target_duration: int = 60,
+        target_duration: int = None,
         art_style: str = "ghibli",
         language: str = "en",
-        audience: str = "general"
+        audience: str = "general",
+        title: str = None
     ) -> Dict[str, Any]:
         """
         Brainstorms and structures an animated short film from a user idea.
@@ -30,7 +31,7 @@ class ScriptAgent:
         - NVIDIA NIM (meta/llama-3.1-70b-instruct, deepseek-r1, etc.)
         - Built-in Genre-Aware Creative Story Architect (offline/zero-key fallback)
         """
-        prompt = self._build_story_prompt(idea, num_scenes, target_duration, art_style, language, audience)
+        prompt = self._build_story_prompt(idea, num_scenes, target_duration, art_style, language, audience, title=title)
 
         if self.api_key:
             try:
@@ -98,25 +99,28 @@ class ScriptAgent:
         self,
         idea: str,
         num_scenes: int,
-        target_duration: int,
-        art_style: str,
-        language: str,
-        audience: str
+        target_duration: int = None,
+        art_style: str = "ghibli",
+        language: str = "en",
+        audience: str = "general",
+        title: str = None
     ) -> str:
-        target_scene_sec = max(5, int(target_duration / max(1, num_scenes)))
+        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 12)
+        target_scene_sec = max(5, int(calc_duration / max(1, num_scenes)))
         target_words = int(target_scene_sec * 2.5)
+
+        title_line = f'Project Title: "{title}" (IMPORTANT: Use this exact title for the film)\n' if title else f'Film Title: Catchy, cinematic, specific to the plot in {language}.\n'
 
         return f"""You are an award-winning animation director and screenwriter at Pixar and Studio Ghibli.
 Create a rich, completely unique, and captivating animated short film storyboard based on this premise:
 Idea: "{idea}"
-Target Audience: {audience}
-Total Target Video Duration: {target_duration} seconds ({target_scene_sec} seconds per scene)
+{title_line}Target Audience: {audience}
 Number of Scenes: Exactly {num_scenes} scenes
 Art Style: {art_style}
 Language for Narration & Titles: {language}
 
 Requirements:
-- Film Title: Catchy, cinematic, specific to the plot in {language}.
+- Film Title: {"Use '" + title + "'" if title else "Catchy, cinematic, specific to the plot in " + language}.
 - Logline: 1 compelling sentence.
 - Characters: Visual traits and personality for visual consistency across scenes.
 - Scenes: Exactly {num_scenes} scenes following a dramatic narrative arc (Beginning -> Rising Tension -> Climax -> Resolution).

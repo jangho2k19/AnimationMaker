@@ -1,6 +1,8 @@
 import os
 import sys
 import io
+import uuid
+import re
 from pathlib import Path
 
 # Ensure UTF-8 console output on Windows across reload workers
@@ -25,10 +27,11 @@ app = FastAPI(title="AniStory AI - Animated Video Creator Agent", version="1.0.0
 # Request Models
 class CreateStoryRequest(BaseModel):
     idea: str
+    title: Optional[str] = None
     art_style: str = "ghibli"
     voice: str = "en-US-ChristopherNeural"
     num_scenes: int = 4
-    target_duration: int = 60
+    target_duration: Optional[int] = None
     aspect_ratio: str = "16:9"
     language: str = "en"
     audience: str = "general"
@@ -39,6 +42,7 @@ class CreateStoryRequest(BaseModel):
 
 class ImportStoryRequest(BaseModel):
     text: str
+    title: Optional[str] = None
     art_style: str = "ghibli"
     voice: str = "en-US-ChristopherNeural"
     aspect_ratio: str = "16:9"
@@ -64,6 +68,12 @@ class DetectModelsRequest(BaseModel):
     api_key: Optional[str] = None
     cookie: Optional[str] = None
     provider: Optional[str] = "gemini"
+
+class AuditionVoiceRequest(BaseModel):
+    voice: str
+    text: Optional[str] = None
+    language: Optional[str] = None
+    api_key: Optional[str] = None
 
 pipeline = AnimationPipeline()
 
@@ -275,6 +285,7 @@ async def create_story(req: CreateStoryRequest):
     )
     project = custom_pipeline.create_project(
         idea=req.idea,
+        title=req.title or "",
         art_style=req.art_style,
         voice=req.voice,
         num_scenes=req.num_scenes,
@@ -289,7 +300,8 @@ async def create_story(req: CreateStoryRequest):
         num_scenes=req.num_scenes,
         target_duration=req.target_duration,
         language=req.language,
-        audience=req.audience
+        audience=req.audience,
+        title=req.title
     )
     return updated_project
 
@@ -308,14 +320,16 @@ async def import_story(req: ImportStoryRequest):
 
     try:
         custom_pipeline = AnimationPipeline(api_key=req.api_key) if req.api_key else pipeline
+        initial_title = (req.title or story_data.get("title") or "Imported Story").strip()
         project = custom_pipeline.create_project(
-            idea=story_data.get("title", "Imported Story"),
+            idea=initial_title,
+            title=initial_title,
             art_style=req.art_style,
             voice=req.voice,
             aspect_ratio=req.aspect_ratio,
             image_mode=req.image_mode
         )
-        project["title"] = story_data.get("title", "Imported Animated Story")
+        project["title"] = req.title or story_data.get("title", "Imported Animated Story")
         project["logline"] = story_data.get("logline", "")
         project["characters"] = story_data.get("characters", "")
         project["scenes"] = story_data["scenes"]
@@ -333,8 +347,30 @@ async def update_scenes(project_id: str, req: UpdateScenesRequest):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    if req.title:
-        project["title"] = req.title
+    old_title = project.get("title", "")
+    new_title = (req.title or "").strip()
+    if new_title:
+        project["title"] = new_title
+
+    # Synchronize folder name if title changed in storyboard stage
+    if new_title and new_title != old_title and project.get("status") in ["created", "storyboard_ready"]:
+        clean_target = AnimationPipeline.sanitize_title_for_folder(new_title)
+        if clean_target != project_id:
+            new_id = AnimationPipeline.get_unique_project_id(clean_target, current_id=project_id)
+            old_dir = Path(OUTPUT_DIR) / "projects" / project_id
+            new_dir = Path(OUTPUT_DIR) / "projects" / new_id
+            try:
+                if old_dir.exists() and not new_dir.exists():
+                    os.rename(old_dir, new_dir)
+                    for sc in project.get("scenes", []):
+                        for k in ["image_path", "audio_path", "srt_path"]:
+                            if sc.get(k):
+                                sc[k] = sc[k].replace(f"projects/{project_id}/", f"projects/{new_id}/")
+                    project["id"] = new_id
+                    project_id = new_id
+            except Exception as e_rn:
+                print(f"Could not rename project folder: {e_rn}")
+
     if req.logline:
         project["logline"] = req.logline
     project["scenes"] = req.scenes
@@ -395,11 +431,110 @@ async def regenerate_scene_image(project_id: str, scene_idx: int, req: Optional[
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/projects/{project_id}/generate-images")
+async def generate_all_images(project_id: str, req: Optional[RegenerateImageRequest] = None):
+    try:
+        project = pipeline.get_project(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if req:
+            if req.api_key:
+                project["api_key"] = req.api_key
+            if req.ai_provider:
+                project["ai_provider"] = req.ai_provider
+            pipeline.save_project(project)
+
+        updated = await pipeline.generate_all_scene_images(project_id)
+        return updated
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/projects/{project_id}/regenerate-audio/{scene_idx}")
 async def regenerate_scene_audio(project_id: str, scene_idx: int):
     try:
         updated = await pipeline.generate_scene_audio(project_id, scene_idx)
         return updated
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/audition-voice")
+async def audition_voice(req: AuditionVoiceRequest):
+    try:
+        # Determine appropriate language
+        lang_code = (req.language or "en").lower()
+        voice_lower = (req.voice or "").lower()
+        if "vi-" in voice_lower or "gtts-vi" in voice_lower:
+            lang_code = "vi"
+        elif "ja-" in voice_lower:
+            lang_code = "ja"
+        elif "fr-" in voice_lower:
+            lang_code = "fr"
+        elif "es-" in voice_lower:
+            lang_code = "es"
+
+        # Localized sample phrases
+        samples = {
+            "vi": "Xin chào! Đây là giọng đọc mẫu của AniStory AI trên nền tảng phim hoạt hình điện ảnh.",
+            "ja": "こんにちは！AniStory AIの音声プレビューです。映画のようなアニメーションをお届けします。",
+            "fr": "Bonjour ! Bienvenue sur AniStory AI, la plateforme d'animation cinématographique.",
+            "es": "¡Hola! Bienvenidos a AniStory AI, creando historias animadas cinematográficas.",
+            "en": "Welcome to AniStory AI. Bringing your stories to life with cinematic animation!"
+        }
+        sample_text = req.text or samples.get(lang_code, samples["en"])
+
+        temp_audio_dir = Path(OUTPUT_DIR) / "temp_audition"
+        temp_audio_dir.mkdir(parents=True, exist_ok=True)
+
+        # Cache preview sample per voice + lang so subsequent auditions are instant
+        safe_voice = re.sub(r"[^a-zA-Z0-9_\-]", "_", req.voice or "default")
+        cached_file = temp_audio_dir / f"sample_{safe_voice}_{lang_code}.mp3"
+
+        if cached_file.exists() and cached_file.stat().st_size > 2000 and not req.text:
+            rel_path = str(cached_file.relative_to(OUTPUT_DIR)).replace("\\", "/")
+            return {
+                "status": "ok",
+                "audio_url": f"/media/{rel_path}",
+                "sample_text": sample_text,
+                "duration": pipeline.voice_agent.get_audio_duration(str(cached_file)),
+                "voice": req.voice,
+                "effective_voice": req.voice,
+                "is_fallback": False,
+                "cached": True
+            }
+
+        target_file = cached_file if not req.text else temp_audio_dir / f"audition_{uuid.uuid4().hex[:8]}.mp3"
+
+        res = await pipeline.voice_agent.synthesize(
+            text=sample_text,
+            output_audio_path=str(target_file),
+            voice=req.voice,
+            api_key=req.api_key
+        )
+
+        is_fallback = res.get("is_fallback", False)
+        effective_voice = res.get("voice", req.voice)
+
+        # If it was a fallback, do not keep target_file as cached_file so quota restoration uses real Gemini
+        if is_fallback and target_file == cached_file:
+            alt_path = temp_audio_dir / f"audition_fallback_{uuid.uuid4().hex[:8]}.mp3"
+            try:
+                if target_file.exists():
+                    os.rename(target_file, alt_path)
+                    target_file = alt_path
+            except Exception:
+                pass
+
+        rel_path = str(target_file.relative_to(OUTPUT_DIR)).replace("\\", "/")
+        return {
+            "status": "ok",
+            "audio_url": f"/media/{rel_path}",
+            "sample_text": sample_text,
+            "duration": res.get("duration", 3.0),
+            "voice": req.voice,
+            "effective_voice": effective_voice,
+            "is_fallback": is_fallback,
+            "cached": False
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

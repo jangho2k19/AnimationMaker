@@ -32,6 +32,7 @@ class AniStoryApp {
     ];
 
     // Form inputs
+    this.inputProjectTitle = document.getElementById("inputProjectTitle");
     this.inputIdeaPrompt = document.getElementById("inputIdeaPrompt");
     this.styleOptionsGrid = document.getElementById("styleOptionsGrid");
     this.selectVoice = document.getElementById("selectVoice");
@@ -94,6 +95,12 @@ class AniStoryApp {
 
     this.audioAuditionPlayer = document.getElementById("audioAuditionPlayer");
     this.btnAuditionSampleVoice = document.getElementById("btnAuditionSampleVoice");
+    this.iconAuditionVoice = document.getElementById("iconAuditionVoice");
+    this.auditionPlayerContainer = document.getElementById("auditionPlayerContainer");
+    this.auditionVoiceLabel = document.getElementById("auditionVoiceLabel");
+    this.auditionSampleText = document.getElementById("auditionSampleText");
+    this.btnCloseAuditionPlayer = document.getElementById("btnCloseAuditionPlayer");
+    this.voiceSampleStatus = document.getElementById("voiceSampleStatus");
     this.toastNotification = document.getElementById("toastNotification");
 
     // Global Navigation Elements
@@ -195,6 +202,7 @@ class AniStoryApp {
     if (this.btnNewStoryFromStage2) {
       this.btnNewStoryFromStage2.addEventListener("click", () => {
         this.currentProject = null;
+        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         this.inputIdeaPrompt.value = "";
         localStorage.removeItem("anistory_draft_prompt");
         this.switchStage(1);
@@ -320,6 +328,7 @@ class AniStoryApp {
     // Cinema restart
     this.btnStartNewStory.addEventListener("click", () => {
       this.currentProject = null;
+      if (this.inputProjectTitle) this.inputProjectTitle.value = "";
       this.inputIdeaPrompt.value = "";
       localStorage.removeItem("anistory_draft_prompt");
       this.switchStage(1);
@@ -462,6 +471,7 @@ class AniStoryApp {
       this.btnNewFilmFromModal.addEventListener("click", () => {
         this.modalProjects.classList.remove("active");
         this.currentProject = null;
+        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         this.inputIdeaPrompt.value = "";
         this.switchStage(1);
         this.showToast("Ready to create a new animated story! 🎬");
@@ -469,10 +479,135 @@ class AniStoryApp {
     }
 
     // Audition sample voice
-    this.btnAuditionSampleVoice.addEventListener("click", () => {
-      const selectedVoice = this.selectVoice.value;
-      this.showToast(`Voice set to: ${selectedVoice}`);
-    });
+    if (this.btnAuditionSampleVoice && this.audioAuditionPlayer) {
+      const resetAuditionUI = () => {
+        if (this.iconAuditionVoice) this.iconAuditionVoice.textContent = "🔊";
+        if (this.btnAuditionSampleVoice) {
+          this.btnAuditionSampleVoice.title = "Click to listen to sample audio";
+          this.btnAuditionSampleVoice.disabled = false;
+        }
+        if (this.voiceSampleStatus) this.voiceSampleStatus.textContent = "Audition Ready";
+      };
+
+      this.audioAuditionPlayer.addEventListener("ended", resetAuditionUI);
+      this.audioAuditionPlayer.addEventListener("pause", () => {
+        if (this.audioAuditionPlayer.currentTime === 0 || this.audioAuditionPlayer.ended) {
+          resetAuditionUI();
+        }
+      });
+      this.audioAuditionPlayer.addEventListener("error", () => {
+        resetAuditionUI();
+        this.showToast("Audio playback error occurred", true);
+      });
+
+      if (this.btnCloseAuditionPlayer) {
+        this.btnCloseAuditionPlayer.addEventListener("click", () => {
+          this.audioAuditionPlayer.pause();
+          this.audioAuditionPlayer.currentTime = 0;
+          if (this.auditionPlayerContainer) this.auditionPlayerContainer.style.display = "none";
+          resetAuditionUI();
+        });
+      }
+
+      if (this.selectVoice) {
+        this.selectVoice.addEventListener("change", () => {
+          if (!this.audioAuditionPlayer.paused) {
+            this.audioAuditionPlayer.pause();
+            this.audioAuditionPlayer.currentTime = 0;
+            resetAuditionUI();
+          }
+        });
+      }
+
+      this.btnAuditionSampleVoice.addEventListener("click", async (e) => {
+        e.preventDefault();
+
+        // If audio is already actively playing, toggle pause/stop
+        if (!this.audioAuditionPlayer.paused && this.audioAuditionPlayer.currentTime > 0) {
+          this.audioAuditionPlayer.pause();
+          this.audioAuditionPlayer.currentTime = 0;
+          resetAuditionUI();
+          this.showToast("Audio preview stopped ⏹️");
+          return;
+        }
+
+        const selectedVoice = this.selectVoice ? this.selectVoice.value : "en-US-ChristopherNeural";
+        const selectedLang = this.selectLanguage ? this.selectLanguage.value : "en";
+        const curProvider = this.selectAiProvider?.value || "gemini";
+        const curKey = this.getEffectiveApiKey(curProvider);
+
+        this.btnAuditionSampleVoice.disabled = true;
+        if (this.iconAuditionVoice) this.iconAuditionVoice.textContent = "⏳";
+        if (this.voiceSampleStatus) this.voiceSampleStatus.textContent = "Synthesizing voice...";
+        this.showToast(`Synthesizing preview: ${selectedVoice}... 🎙️`);
+
+        try {
+          const resp = await fetch("/api/audition-voice", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              voice: selectedVoice,
+              language: selectedLang,
+              api_key: curKey
+            })
+          });
+
+          if (!resp.ok) {
+            let errMsg = "Voice audition failed";
+            try {
+              const err = await resp.json();
+              errMsg = err.detail || errMsg;
+            } catch {}
+            throw new Error(errMsg);
+          }
+
+          const data = await resp.json();
+          if (data.audio_url) {
+            if (this.auditionPlayerContainer) {
+              this.auditionPlayerContainer.style.display = "block";
+            }
+            if (this.auditionVoiceLabel) {
+              if (data.is_fallback) {
+                this.auditionVoiceLabel.textContent = `🔊 ${selectedVoice} (⚡ Matched: ${data.effective_voice})`;
+              } else {
+                this.auditionVoiceLabel.textContent = `🔊 ${selectedVoice}`;
+              }
+            }
+            if (this.auditionSampleText) {
+              this.auditionSampleText.textContent = `"${data.sample_text || ''}"`;
+            }
+            if (this.voiceSampleStatus) {
+              this.voiceSampleStatus.textContent = data.is_fallback ? `🔊 Playing (${data.effective_voice})...` : "🔊 Playing sample...";
+            }
+
+            this.audioAuditionPlayer.src = `${data.audio_url}?t=${Date.now()}`;
+            this.audioAuditionPlayer.volume = 1.0;
+            this.audioAuditionPlayer.muted = false;
+
+            if (this.iconAuditionVoice) this.iconAuditionVoice.textContent = "⏹️";
+            this.btnAuditionSampleVoice.title = "Click to stop playing";
+            this.btnAuditionSampleVoice.disabled = false;
+
+            try {
+              await this.audioAuditionPlayer.play();
+              if (data.is_fallback) {
+                this.showToast(`Gemini quota limit reached (10/day). Playing matched neural voice: ${data.effective_voice} 🎙️`, false);
+              } else {
+                this.showToast(`Playing sample: ${selectedVoice} 🔊`);
+              }
+            } catch (playErr) {
+              console.warn("Direct play rejected by browser policy, native controls are ready:", playErr);
+              this.showToast(`Preview loaded! Click Play on the player below 🎧`, false);
+              resetAuditionUI();
+            }
+          }
+        } catch (e) {
+          console.error("Audition error:", e);
+          this.showToast(e.message || "Failed to generate voice sample", true);
+          resetAuditionUI();
+        }
+      });
+    }
 
     // Import from Gemini Modal Events
     if (this.btnOpenImportModal) {
@@ -1182,7 +1317,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       const opt = document.createElement("option");
       opt.value = v.id;
       opt.textContent = `${v.name} (${v.gender})`;
-      if (savedVoice ? (v.id === savedVoice) : (v.id === "christopher")) {
+      if (savedVoice ? (v.id === savedVoice) : (v.id === "gemini-Aoede" || v.id === "en-US-ChristopherNeural")) {
         opt.selected = true;
       }
       this.selectVoice.appendChild(opt);
@@ -1275,14 +1410,14 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         return;
       }
       const numScenes = parseInt(this.selectSceneCount.value, 10);
-      const targetDuration = this.selectTargetDuration ? parseInt(this.selectTargetDuration.value, 10) : 60;
+      const targetDuration = this.selectTargetDuration ? parseInt(this.selectTargetDuration.value, 10) : (numScenes * 12);
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
+      const projectTitle = this.inputProjectTitle ? this.inputProjectTitle.value.trim() : "";
 
       // Persist active configuration choices
       localStorage.setItem("anistory_cfg_art_style", this.selectedStyleKey);
       if (this.selectVoice) localStorage.setItem("anistory_cfg_voice", this.selectVoice.value);
       if (this.selectSceneCount) localStorage.setItem("anistory_cfg_scene_count", this.selectSceneCount.value);
-      if (this.selectTargetDuration) localStorage.setItem("anistory_cfg_target_duration", this.selectTargetDuration.value);
       if (this.selectAspectRatio) localStorage.setItem("anistory_cfg_aspect_ratio", this.selectAspectRatio.value);
       if (this.selectLanguage) localStorage.setItem("anistory_cfg_language", this.selectLanguage.value);
       if (this.selectAudience) localStorage.setItem("anistory_cfg_audience", this.selectAudience.value);
@@ -1290,6 +1425,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       if (model) localStorage.setItem("anistory_cfg_model", model);
 
       const payload = {
+        title: projectTitle,
         idea: idea,
         art_style: this.selectedStyleKey,
         voice: this.selectVoice.value,
@@ -1325,7 +1461,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       this.currentProject = await resp.json();
       this.renderStoryboardView();
       this.switchStage(2);
-      this.showToast(`✨ Generated ${this.currentProject.scenes.length} scenes (${targetDuration}s film) with ${provider.toUpperCase()}!`);
+      const titleDisplay = this.currentProject.title ? `"${this.currentProject.title}"` : `${this.currentProject.scenes.length} scenes`;
+      this.showToast(`✨ Generated ${titleDisplay} (${this.currentProject.scenes.length} scenes) with ${provider.toUpperCase()}!`);
+      // Display and generate scene artwork immediately after response
+      this.autoGenerateMissingSceneImages();
     } catch (e) {
       console.error(e);
       this.showToast(e.message, true);
@@ -1358,10 +1497,12 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     try {
       const apiKey = localStorage.getItem("anistory_gemini_key") || null;
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
+      const projectTitle = this.inputProjectTitle ? this.inputProjectTitle.value.trim() : "";
       const resp = await fetch("/api/import-story", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          title: projectTitle,
           text: text,
           art_style: this.selectedStyleKey,
           voice: this.selectVoice.value,
@@ -1390,6 +1531,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       this.renderStoryboardView();
       this.switchStage(2);
       this.showToast("AI Storyboard loaded! Review your scenes and render. 🎬");
+      // Display and generate scene artwork immediately after response
+      this.autoGenerateMissingSceneImages();
     } catch (e) {
       console.error(e);
       this.showToast(e.message, true);
@@ -1399,6 +1542,25 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         btnEl.innerHTML = `<span class="btn-glow-layer"></span><span class="btn-text">Load Into Director's Board</span><span class="btn-arrow">🚀</span>`;
       }
     }
+  }
+
+  getInstantPreviewUrl(scene, idx) {
+    const artStyle = this.currentProject?.art_style || this.selectedStyleKey || "ghibli";
+    const styleInfo = this.config?.art_styles?.[artStyle] || {};
+    const suffix = styleInfo.prompt_suffix || ", anime illustration";
+    const basePrompt = (scene?.visual_prompt || scene?.title || "cinematic animated short film scene").trim();
+    const cleanPrompt = basePrompt.replace(/[\n\r]/g, " ").slice(0, 320);
+    const fullPrompt = `${cleanPrompt}${suffix}`;
+    const encoded = encodeURIComponent(fullPrompt.slice(0, 350));
+
+    const ar = this.currentProject?.aspect_ratio || "16:9";
+    const dim = this.config?.video_dimensions?.[ar] || { width: 1280, height: 720 };
+    const w = dim.width || 1280;
+    const h = dim.height || 720;
+    const projSeed = this.currentProject?.id ? (this.currentProject.id.charCodeAt(0) * 100) : 500;
+    const seed = Math.abs((scene?.scene_number || idx + 1) * 31415 + projSeed);
+
+    return `https://image.pollinations.ai/prompt/${encoded}?model=flux&width=${w}&height=${h}&seed=${seed}&nologo=true`;
   }
 
   renderStoryboardView() {
@@ -1433,16 +1595,23 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       card.className = "scene-card";
       card.dataset.index = idx;
 
-      // Image source if already generated, or procedural preview
-      const imgSrc = scene.image_path ? `/media/${scene.image_path}` : "data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22640%22%20height%3D%22360%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20fill%3D%22%2312162a%22%2F%3E%3Ctext%20x%3D%2250%25%22%20y%3D%2250%25%22%20fill%3D%22%2364748b%22%20font-size%3D%2218%22%20text-anchor%3D%22middle%22%20dominant-baseline%3D%22middle%22%3EScene%20Frame%20Preview%3C%2Ftext%3E%3C%2Fsvg%3E";
+      // Image source: if saved image exists, use it; otherwise immediately display high-speed AI preview!
+      const hasSavedImage = Boolean(scene.image_path);
+      const instantSrc = this.getInstantPreviewUrl(scene, idx);
+      const imgSrc = hasSavedImage ? `/media/${scene.image_path}?t=${Date.now()}` : instantSrc;
 
       card.innerHTML = `
         <div class="scene-card-header">
-          <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
+            <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" id="sceneStatusPill_${idx}">
+              ${hasSavedImage ? '✓ Ready' : '🎨 AI Painting...'}
+            </span>
+          </div>
           <span class="scene-card-title">${scene.title || "Scene " + (idx + 1)}</span>
         </div>
         <div class="scene-preview-container">
-          <img src="${imgSrc}" class="scene-preview-img" alt="Scene ${idx + 1} Preview" id="sceneImg_${idx}">
+          <img src="${imgSrc}" class="scene-preview-img" alt="Scene ${idx + 1} Preview" id="sceneImg_${idx}" loading="lazy">
           <div class="scene-img-actions">
             <button class="scene-action-pill btn-reroll-img" data-idx="${idx}">🎨 AI Paint</button>
             <button class="scene-action-pill btn-upload-img" data-idx="${idx}">📁 Upload</button>
@@ -1486,6 +1655,83 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
 
       this.storyboardScenesGrid.appendChild(card);
     });
+  }
+
+  async autoGenerateMissingSceneImages() {
+    if (!this.currentProject || !this.currentProject.scenes) return;
+    const projectId = this.currentProject.id;
+    const scenesToPaint = [];
+
+    this.currentProject.scenes.forEach((scene, idx) => {
+      if (!scene.image_path) {
+        scenesToPaint.push(idx);
+      }
+    });
+
+    if (scenesToPaint.length === 0) return;
+
+    // Concurrency limit of 2 for fast & steady background rendering
+    const concurrency = 2;
+    let index = 0;
+
+    const worker = async () => {
+      while (index < scenesToPaint.length) {
+        const sceneIdx = scenesToPaint[index++];
+        if (!this.currentProject || this.currentProject.id !== projectId) return;
+
+        const btn = document.querySelector(`.btn-reroll-img[data-idx="${sceneIdx}"]`);
+        const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "Painting... ⏳";
+        }
+        if (statusPill) {
+          statusPill.className = "scene-status-pill pending";
+          statusPill.textContent = "🎨 AI Painting...";
+        }
+
+        try {
+          const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
+          const curKey = this.getEffectiveApiKey(curProvider);
+          const resp = await fetch(`/api/projects/${projectId}/regenerate-image/${sceneIdx}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ api_key: curKey, ai_provider: curProvider })
+          });
+
+          if (resp.ok) {
+            const updatedProject = await resp.json();
+            if (this.currentProject && this.currentProject.id === projectId) {
+              if (updatedProject.scenes && updatedProject.scenes[sceneIdx]) {
+                this.currentProject.scenes[sceneIdx] = updatedProject.scenes[sceneIdx];
+              }
+              const updatedScene = this.currentProject.scenes[sceneIdx];
+              const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
+              if (imgEl && updatedScene && updatedScene.image_path) {
+                imgEl.src = `/media/${updatedScene.image_path}?t=${Date.now()}`;
+              }
+              if (statusPill) {
+                statusPill.className = "scene-status-pill ready";
+                statusPill.textContent = "✓ Ready";
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`Auto-paint scene ${sceneIdx + 1} error:`, err);
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = "🎨 AI Paint";
+          }
+        }
+      }
+    };
+
+    const workers = [];
+    for (let i = 0; i < Math.min(concurrency, scenesToPaint.length); i++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
   }
 
   async rerollSceneImage(sceneIdx, buttonEl) {
@@ -1558,6 +1804,11 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         // Cache bust
         imgEl.src = `/media/${updatedScene.image_path}?t=${Date.now()}`;
       }
+      const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
+      if (statusPill) {
+        statusPill.className = "scene-status-pill ready";
+        statusPill.textContent = "✓ Ready";
+      }
     } catch (e) {
       console.error(e);
       this.showToast(e.message || "Failed to regenerate image", true);
@@ -1587,6 +1838,11 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
       if (imgEl && updatedScene.image_path) {
         imgEl.src = `/media/${updatedScene.image_path}?t=${Date.now()}`;
+      }
+      const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
+      if (statusPill) {
+        statusPill.className = "scene-status-pill ready";
+        statusPill.textContent = "✓ Custom Art";
       }
       this.showToast(`Custom illustration applied to Scene ${sceneIdx + 1}! 🖼️`);
     } catch (e) {
@@ -1799,6 +2055,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           } else {
             this.renderStoryboardView();
             this.switchStage(2);
+            this.autoGenerateMissingSceneImages();
           }
         });
         this.savedProjectsList.appendChild(item);

@@ -2,6 +2,7 @@ import os
 import json
 import time
 import uuid
+import re
 import asyncio
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional
@@ -24,22 +25,54 @@ class AnimationPipeline:
         self.video_engine = VideoEngine()
         self.music_service = MusicService()
 
+    @staticmethod
+    def sanitize_title_for_folder(title: str, fallback: str = "") -> str:
+        """Sanitizes project title into a clean, filesystem-safe folder name."""
+        raw = (title or "").strip()
+        if not raw and fallback:
+            raw = fallback.strip()[:40]
+        if not raw:
+            raw = "Animated Story"
+
+        # Remove illegal Windows / Linux filesystem characters: \ / : * ? " < > |
+        clean = re.sub(r'[\\/:*?"<>|\r\n\t]', '', raw).strip()
+        clean = re.sub(r'\s+', ' ', clean).strip('. ')
+        if not clean:
+            clean = "Animated Story"
+        return clean
+
+    @staticmethod
+    def get_unique_project_id(base_name: str, current_id: str = None) -> str:
+        """Finds an unused project folder name by appending (2), (3), etc. if needed."""
+        candidate = base_name
+        if current_id and candidate == current_id:
+            return candidate
+        counter = 2
+        while (PROJECTS_DIR / candidate).exists() and candidate != current_id:
+            candidate = f"{base_name} ({counter})"
+            counter += 1
+        return candidate
+
     def create_project(
         self,
         idea: str,
+        title: str = "",
         art_style: str = "ghibli",
         voice: str = "en-US-ChristopherNeural",
         num_scenes: int = 4,
-        target_duration: int = 60,
+        target_duration: int = None,
         aspect_ratio: str = "16:9",
         image_mode: str = "server"
     ) -> Dict[str, Any]:
-        """Initialize a new project record."""
-        project_id = str(uuid.uuid4())[:8]
+        """Initialize a new project record with folder name matching the title."""
+        chosen_title = (title or "").strip()
+        base_name = self.sanitize_title_for_folder(chosen_title, fallback=idea)
+        project_id = self.get_unique_project_id(base_name)
         project_dir = PROJECTS_DIR / project_id
         project_dir.mkdir(parents=True, exist_ok=True)
 
         dim = VIDEO_DIMENSIONS.get(aspect_ratio, VIDEO_DIMENSIONS["16:9"])
+        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 12)
 
         project_data = {
             "id": project_id,
@@ -51,13 +84,13 @@ class AnimationPipeline:
             "ai_model": self.ai_model or "",
             "api_key": self.api_key or "",
             "num_scenes": num_scenes,
-            "target_duration": target_duration,
+            "target_duration": calc_duration,
             "aspect_ratio": aspect_ratio,
             "video_width": dim["width"],
             "video_height": dim["height"],
             "image_mode": image_mode,
             "enable_subtitles": True,
-            "title": "",
+            "title": (title or "").strip(),
             "logline": "",
             "characters": "",
             "scenes": [],
@@ -89,7 +122,9 @@ class AnimationPipeline:
             if p_dir.is_dir() and (p_dir / "project.json").exists():
                 try:
                     with open(p_dir / "project.json", "r", encoding="utf-8") as f:
-                        projects.append(json.load(f))
+                        data = json.load(f)
+                        data["id"] = p_dir.name
+                        projects.append(data)
                 except Exception:
                     pass
         projects.sort(key=lambda x: x.get("created_at", 0), reverse=True)
@@ -99,14 +134,18 @@ class AnimationPipeline:
         self,
         project_id: str,
         num_scenes: int = 4,
-        target_duration: int = 60,
+        target_duration: int = None,
         language: str = "en",
-        audience: str = "general"
+        audience: str = "general",
+        title: str = None
     ) -> Dict[str, Any]:
         """Step 1: Brainstorm story and scenes."""
         project = self.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
+
+        project_title = (title or project.get("title") or "").strip()
+        calc_duration = target_duration or project.get("target_duration") or (num_scenes * 12)
 
         project["status"] = "brainstorming"
         project["current_step"] = "Brainstorming storyboard and scenes..."
@@ -116,19 +155,37 @@ class AnimationPipeline:
         story_data = self.script_agent.generate_storyboard(
             idea=project["idea"],
             num_scenes=num_scenes,
-            target_duration=target_duration,
+            target_duration=calc_duration,
             art_style=project["art_style"],
             language=language,
-            audience=audience
+            audience=audience,
+            title=project_title
         )
 
-        project["title"] = story_data["title"]
+        final_title = project_title or story_data.get("title") or "Animated Short Film"
+        project["title"] = final_title
         project["logline"] = story_data["logline"]
         project["characters"] = story_data.get("characters", "")
         project["scenes"] = story_data["scenes"]
         project["status"] = "storyboard_ready"
         project["progress"] = 30
         project["current_step"] = "Storyboard ready for review"
+
+        # If project folder was created without custom title, rename folder to the AI story title
+        old_id = project["id"]
+        target_folder_name = self.sanitize_title_for_folder(final_title)
+        if target_folder_name != old_id and not (title and title.strip()):
+            new_id = self.get_unique_project_id(target_folder_name, current_id=old_id)
+            old_dir = PROJECTS_DIR / old_id
+            new_dir = PROJECTS_DIR / new_id
+            try:
+                if old_dir.exists() and not new_dir.exists():
+                    os.rename(old_dir, new_dir)
+                    project["id"] = new_id
+                    print(f"Renamed project folder from '{old_id}' to title-based folder '{new_id}'")
+            except Exception as e_rename:
+                print(f"Could not rename project folder to '{new_id}': {e_rename}")
+
         self.save_project(project)
         return project
 
@@ -162,9 +219,33 @@ class AnimationPipeline:
             image_mode=project.get("image_mode", "server")
         )
 
-        scene["image_path"] = str(img_path.relative_to(PROJECTS_DIR.parent))
+        # Re-fetch latest project state to avoid race condition overwrite with concurrent scene renders
+        fresh_project = self.get_project(project_id) or project
+        if scene_idx < len(fresh_project["scenes"]):
+            fresh_project["scenes"][scene_idx]["image_path"] = str(img_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+            self.save_project(fresh_project)
+            return fresh_project
+
+        scene["image_path"] = str(img_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
         self.save_project(project)
         return project
+
+    async def generate_all_scene_images(self, project_id: str) -> Dict[str, Any]:
+        """Generate images for all scenes in a project that do not have an image yet."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        scenes = project.get("scenes", [])
+        tasks = []
+        for idx, scene in enumerate(scenes):
+            if not scene.get("image_path"):
+                tasks.append(self.generate_scene_image(project_id, idx))
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        return self.get_project(project_id) or project
 
     async def generate_scene_audio(self, project_id: str, scene_idx: int) -> Dict[str, Any]:
         """Regenerate voiceover and subtitles for a specific scene."""
@@ -181,11 +262,12 @@ class AnimationPipeline:
             text=scene["narration"],
             output_audio_path=str(audio_path),
             output_srt_path=str(srt_path),
-            voice=project["voice"]
+            voice=project["voice"],
+            api_key=project.get("api_key")
         )
 
-        scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent))
-        scene["srt_path"] = str(srt_path.relative_to(PROJECTS_DIR.parent))
+        scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+        scene["srt_path"] = str(srt_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
         scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_path))
         self.save_project(project)
         return project
@@ -245,7 +327,7 @@ class AnimationPipeline:
                     title=scene.get("title", f"Scene {idx + 1}"),
                     image_mode=project.get("image_mode", "server")
                 )
-            scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent))
+            scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             if idx < total_scenes - 1:
                 await asyncio.sleep(1.0)
 
@@ -260,14 +342,15 @@ class AnimationPipeline:
                     text=scene["narration"],
                     output_audio_path=str(audio_file),
                     output_srt_path=str(srt_file),
-                    voice=project["voice"]
+                    voice=project["voice"],
+                    api_key=project.get("api_key")
                 )
                 scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_file))
             else:
                 scene["duration"] = self.voice_agent.get_audio_duration(str(audio_file))
 
-            scene["audio_path"] = str(audio_file.relative_to(PROJECTS_DIR.parent))
-            scene["srt_path"] = str(srt_file.relative_to(PROJECTS_DIR.parent))
+            scene["audio_path"] = str(audio_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+            scene["srt_path"] = str(srt_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
 
         # 3. Render scene clips with Ken Burns camera motion & subtitles
         notify(70, "Applying camera animations (zoom & pan) and burning subtitles...")
@@ -311,7 +394,7 @@ class AnimationPipeline:
             bgm_volume=0.12
         )
 
-        project["video_path"] = str(final_video.relative_to(PROJECTS_DIR.parent))
+        project["video_path"] = str(final_video.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
         project["status"] = "completed"
         project["progress"] = 100
         project["current_step"] = "Animation rendered successfully!"
