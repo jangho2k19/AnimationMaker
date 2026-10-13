@@ -107,7 +107,22 @@ class AnimationPipeline:
         meta_file = PROJECTS_DIR / project_id / "project.json"
         if meta_file.exists():
             with open(meta_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                p_dir = PROJECTS_DIR / project_id
+                changed = False
+                for idx, sc in enumerate(data.get("scenes", [])):
+                    if not sc.get("video_path"):
+                        clip_file = p_dir / f"clip_{idx + 1}.mp4"
+                        if clip_file.exists():
+                            sc["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                            changed = True
+                if changed:
+                    try:
+                        with open(meta_file, "w", encoding="utf-8") as fw:
+                            json.dump(data, fw, indent=2, ensure_ascii=False)
+                    except Exception:
+                        pass
+                return data
         return None
 
     def save_project(self, data: Dict[str, Any]):
@@ -299,6 +314,91 @@ class AnimationPipeline:
         self.save_project(project)
         return project
 
+    async def render_scene_video(
+        self,
+        project_id: str,
+        scene_idx: int,
+        force_revoice: bool = False,
+        force_repaint: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Renders an animated video clip for a single scene:
+        1. Ensures scene image is generated (with character consistency)
+        2. Ensures voiceover narration & subtitles SRT are synthesized
+        3. Renders MP4 clip using Ken Burns camera motion & burnt-in subtitles
+        """
+        project = self.get_project(project_id)
+        if not project or scene_idx >= len(project.get("scenes", [])):
+            raise ValueError("Invalid project or scene index")
+
+        project_dir = PROJECTS_DIR / project_id
+        scene = project["scenes"][scene_idx]
+
+        # 1. Ensure scene illustration exists
+        img_file = project_dir / f"scene_{scene_idx + 1}.jpg"
+        if force_repaint or not img_file.exists() or not scene.get("image_path"):
+            await self.generate_scene_image(project_id, scene_idx)
+            project = self.get_project(project_id)
+            scene = project["scenes"][scene_idx]
+
+        # 2. Ensure voiceover audio & subtitles exist
+        audio_file = project_dir / f"scene_{scene_idx + 1}.mp3"
+        srt_file = project_dir / f"scene_{scene_idx + 1}.srt"
+        if force_revoice or not audio_file.exists() or not srt_file.exists() or not scene.get("audio_path") or not scene.get("srt_path"):
+            await self.generate_scene_audio(project_id, scene_idx)
+            project = self.get_project(project_id)
+            scene = project["scenes"][scene_idx]
+
+        # 3. Render video clip with Ken Burns camera motion & subtitles
+        width = project.get("video_width", 1280)
+        height = project.get("video_height", 720)
+        engine = VideoEngine(width=width, height=height)
+
+        clip_file = project_dir / f"clip_{scene_idx + 1}.mp4"
+        img_full = str(PROJECTS_DIR.parent / scene["image_path"])
+        audio_full = str(PROJECTS_DIR.parent / scene["audio_path"])
+        srt_full = str(PROJECTS_DIR.parent / scene["srt_path"])
+        motion = scene.get("camera_motion", "zoom_in")
+        duration = scene.get("duration", 4.0)
+        enable_subtitles = project.get("enable_subtitles", True)
+
+        engine.render_scene_clip(
+            image_path=img_full,
+            audio_path=audio_full,
+            srt_path=srt_full,
+            output_clip_path=str(clip_file),
+            motion_type=motion,
+            duration=duration,
+            enable_subtitles=enable_subtitles
+        )
+
+        scene["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+        self.save_project(project)
+        return project
+
+    async def render_all_scene_videos(
+        self,
+        project_id: str,
+        force_revoice: bool = False,
+        progress_callback: Optional[Callable[[int, str, int], None]] = None
+    ) -> Dict[str, Any]:
+        """Renders animation video clips for all scenes in the project sequentially."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        total_scenes = len(project.get("scenes", []))
+        if total_scenes == 0:
+            return project
+
+        for idx in range(total_scenes):
+            if progress_callback:
+                progress_callback(idx + 1, f"Rendering animation for scene {idx + 1} of {total_scenes}...", total_scenes)
+            await self.render_scene_video(project_id, idx, force_revoice=force_revoice)
+            await asyncio.sleep(0.3)
+
+        return self.get_project(project_id) or project
+
     async def render_full_animation(
         self,
         project_id: str,
@@ -465,7 +565,9 @@ class AnimationPipeline:
                 duration=scene.get("duration", 4.0),
                 enable_subtitles=project.get("enable_subtitles", True)
             )
+            scene["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             scene_clips.append(str(clip_file))
+            self.save_project(project)
 
         # 4. Synthesize Background Music
         notify(88, "Composing atmospheric ambient soundtrack...")

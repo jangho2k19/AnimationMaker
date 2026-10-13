@@ -1200,3 +1200,145 @@ body {
   }
 }
 
+/* ====================================================================
+   SCENE ANIMATION VIDEO CONTROLS & CINEMA CLIPS GALLERY
+   ==================================================================== */
+.scene-preview-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  background: #000;
+}
+
+.scene-play-overlay-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.82);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  z-index: 3;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+}
+
+.scene-play-overlay-btn:hover {
+  background: var(--primary, #6366f1);
+  border-color: #fff;
+  transform: translate(-50%, -50%) scale(1.12);
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.6);
+}
+
+.scene-action-pill.video-ready {
+  background: rgba(99, 102, 241, 0.45);
+  border-color: rgba(165, 180, 252, 0.5);
+  color: #e0e7ff;
+}
+
+.btn-animate-scene {
+  font-size: 12px;
+  padding: 7px 12px;
+  white-space: nowrap;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #c7d2fe;
+  border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.btn-animate-scene:hover {
+  background: rgba(99, 102, 241, 0.35);
+  border-color: #818cf8;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.btn-animate-scene:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.cinema-scene-clip-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.25s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.cinema-scene-clip-card:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.cinema-clip-video-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--project-aspect-ratio, 16 / 9);
+  background: #000;
+}
+
+.cinema-clip-video-box video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cinema-clip-info {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.cinema-clip-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cinema-clip-narration {
+  font-size: 11px;
+  color: var(--text-dim, #94a3b8);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.cinema-clip-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+

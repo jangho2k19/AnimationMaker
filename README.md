@@ -47,8 +47,9 @@ This starts the local FastAPI server and opens your browser at `http://localhost
 2. **Choose Art Style & Narrator**: Select your favorite visual style and voice actor.
 3. **Generate Storyboard**: Click **Generate Storyboard & Scenes**.
 4. **Direct & Customize**: Review your scene cards, tweak dialogue, or re-paint any illustration.
-5. **Render Full Film**: Click **Render Full Film 🚀** to watch the agents generate speech, apply camera motion, and mix the soundtrack.
-6. **Download & Share**: Play the finished animation in the Cinema player and download your `.mp4` file!
+5. **Create Scene Videos**: Click **🎬 Animate Scene** on individual cards or **🎬 Animate All Scenes (1-by-1)** to render MP4 video clips with Ken Burns camera motion, synchronized voiceover, and burnt subtitles for every scene!
+6. **Render Full Film**: Click **Render Full Film 🚀** to watch the agents generate speech, apply camera motion, and mix the soundtrack.
+7. **Download & Share**: Play the finished animation in the Cinema player and download your `.mp4` files (both the complete master film and each individual scene clip)!
 
 ---
 

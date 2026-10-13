@@ -171,8 +171,21 @@ class AniStoryApp {
     this.btnSaveStoryboardEdits = document.getElementById("btnSaveStoryboardEdits");
     this.btnProceedToRender = document.getElementById("btnProceedToRender");
     this.btnPaintAllImages = document.getElementById("btnPaintAllImages");
+    this.btnAnimateAllScenes = document.getElementById("btnAnimateAllScenes");
     this.inputCharacterConsistency = document.getElementById("inputCharacterConsistency");
     this.btnLockCharacter = document.getElementById("btnLockCharacter");
+
+    // Scene Video Modal & Cinema Clips elements
+    this.modalSceneVideo = document.getElementById("modalSceneVideo");
+    this.btnCloseSceneVideoModal = document.getElementById("btnCloseSceneVideoModal");
+    this.modalSceneVideoPlayer = document.getElementById("modalSceneVideoPlayer");
+    this.modalSceneVideoTitle = document.getElementById("modalSceneVideoTitle");
+    this.modalSceneVideoMeta = document.getElementById("modalSceneVideoMeta");
+    this.modalSceneVideoDownloadBtn = document.getElementById("modalSceneVideoDownloadBtn");
+    this.cinemaSceneClipsWrapper = document.getElementById("cinemaSceneClipsWrapper");
+    this.cinemaSceneClipsGrid = document.getElementById("cinemaSceneClipsGrid");
+    this.cinemaClipsCountBadge = document.getElementById("cinemaClipsCountBadge");
+    window.aniStoryApp = this;
 
     // Rendering stage elements
     this.renderStepDetail = document.getElementById("renderStepDetail");
@@ -455,8 +468,19 @@ class AniStoryApp {
     if (this.btnPaintAllImages) {
       this.btnPaintAllImages.addEventListener("click", () => this.paintAllSceneImages(true));
     }
+    if (this.btnAnimateAllScenes) {
+      this.btnAnimateAllScenes.addEventListener("click", () => this.animateAllSceneVideos());
+    }
     if (this.btnLockCharacter) {
       this.btnLockCharacter.addEventListener("click", () => this.saveCharacterConsistency());
+    }
+    if (this.btnCloseSceneVideoModal) {
+      this.btnCloseSceneVideoModal.addEventListener("click", () => this.closeSceneVideoModal());
+    }
+    if (this.modalSceneVideo) {
+      this.modalSceneVideo.addEventListener("click", (e) => {
+        if (e.target === this.modalSceneVideo) this.closeSceneVideoModal();
+      });
     }
 
     // Cinema restart
@@ -1691,7 +1715,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     const projSeed = this.currentProject?.id ? (this.currentProject.id.charCodeAt(0) * 100) : 500;
     const seed = Math.abs((scene?.scene_number || idx + 1) * 31415 + projSeed);
 
-    return `https://image.pollinations.ai/prompt/${encoded}?model=flux&width=${w}&height=${h}&seed=${seed}&nologo=true`;
+    return `https://image.pollinations.ai/prompt/${encoded}?width=${w}&height=${h}&seed=${seed}&nologo=true`;
   }
 
   renderStoryboardView() {
@@ -1729,26 +1753,35 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       card.className = "scene-card";
       card.dataset.index = idx;
 
-      // Image source: if saved image exists, use it; otherwise immediately display high-speed AI preview!
+      // Image & Video source
       const hasSavedImage = Boolean(scene.image_path);
       const instantSrc = this.getInstantPreviewUrl(scene, idx);
       const imgSrc = hasSavedImage ? `/media/${scene.image_path}?t=${Date.now()}` : instantSrc;
+      const hasVideo = Boolean(scene.video_path);
+      const videoSrc = hasVideo ? `/media/${scene.video_path}?t=${Date.now()}` : "";
 
       card.innerHTML = `
         <div class="scene-card-header">
-          <div style="display:flex;align-items:center;gap:8px;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
             <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" id="sceneStatusPill_${idx}">
               ${hasSavedImage ? '✓ Ready' : '🎨 AI Painting...'}
+            </span>
+            <span class="scene-status-pill ready" id="sceneVideoPill_${idx}" style="${hasVideo ? '' : 'display:none;'}">
+              🎬 Video Ready
             </span>
           </div>
           <span class="scene-card-title">${scene.title || "Scene " + (idx + 1)}</span>
         </div>
         <div class="scene-preview-container">
           <img src="${imgSrc}" class="scene-preview-img" alt="Scene ${idx + 1} Preview" id="sceneImg_${idx}" loading="lazy">
+          <video class="scene-preview-video" id="sceneVideo_${idx}" src="${videoSrc}" controls playsinline preload="metadata" style="display:none;"></video>
+          <button class="scene-play-overlay-btn" id="btnPlayOverlay_${idx}" data-idx="${idx}" title="Play scene animation video" style="${hasVideo ? 'display:flex;' : 'display:none;'}">▶️</button>
           <div class="scene-img-actions">
             <button class="scene-action-pill btn-reroll-img" data-idx="${idx}">🎨 AI Paint</button>
             <button class="scene-action-pill btn-upload-img" data-idx="${idx}">📁 Upload</button>
+            <button class="scene-action-pill ${hasVideo ? 'video-ready' : ''} btn-toggle-video" id="btnToggleVideo_${idx}" data-idx="${idx}" style="${hasVideo ? '' : 'display:none;'}">▶️ Play Clip</button>
+            <a class="scene-action-pill btn-download-scene-clip" id="btnDownloadClip_${idx}" href="/api/projects/${this.currentProject.id}/download-scene-video/${idx}" download title="Download Scene MP4" style="${hasVideo ? '' : 'display:none;'}">⬇️ MP4</a>
             <input type="file" accept="image/*" class="scene-file-input" style="display:none;" id="fileInput_${idx}">
           </div>
         </div>
@@ -1769,6 +1802,9 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
               <option value="pan_right" ${scene.camera_motion === "pan_right" ? "selected" : ""}>➡️ Pan Right</option>
               <option value="subtle_drift" ${scene.camera_motion === "subtle_drift" ? "selected" : ""}>✨ Subtle Drift</option>
             </select>
+            <button class="btn-animate-scene" id="btnAnimateScene_${idx}" data-idx="${idx}" title="Render animation video clip for this scene">
+              🎬 ${hasVideo ? 'Re-animate' : 'Animate Scene'}
+            </button>
           </div>
         </div>
       `;
@@ -1786,6 +1822,22 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           await this.uploadCustomSceneImage(idx, e.target.files[0]);
         }
       });
+
+      // Event listener for animating single scene video
+      const btnAnimate = card.querySelector(`#btnAnimateScene_${idx}`);
+      if (btnAnimate) {
+        btnAnimate.addEventListener("click", () => this.animateSingleSceneVideo(idx, btnAnimate));
+      }
+
+      // Event listeners for opening video modal player
+      const btnOverlay = card.querySelector(`#btnPlayOverlay_${idx}`);
+      if (btnOverlay) {
+        btnOverlay.addEventListener("click", () => this.openSceneVideoModal(idx));
+      }
+      const btnToggleVideo = card.querySelector(`#btnToggleVideo_${idx}`);
+      if (btnToggleVideo) {
+        btnToggleVideo.addEventListener("click", () => this.openSceneVideoModal(idx));
+      }
 
       this.storyboardScenesGrid.appendChild(card);
     });
@@ -1895,6 +1947,194 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       this.btnPaintAllImages.textContent = "🎨 Paint All (1-by-1)";
     }
     this.showToast("Sequential scene painting completed with consistent characters! 🎬✨");
+  }
+
+  async animateSingleSceneVideo(sceneIdx, buttonEl) {
+    if (!this.currentProject) return;
+    const projectId = this.currentProject.id;
+    const scene = this.currentProject.scenes?.[sceneIdx];
+    if (!scene) return;
+
+    // Save pending edits (narration, prompt, camera motion) first
+    await this.saveStoryboardEdits(false);
+
+    if (buttonEl) {
+      buttonEl.disabled = true;
+      buttonEl.textContent = "Animating... ⏳";
+    }
+
+    const videoPill = document.getElementById(`sceneVideoPill_${sceneIdx}`);
+    if (videoPill) {
+      videoPill.style.display = "";
+      videoPill.className = "scene-status-pill pending";
+      videoPill.textContent = "🎬 Rendering video...";
+    }
+
+    this.showToast(`Rendering animated video for Scene ${sceneIdx + 1}... 🎬`);
+
+    try {
+      const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
+      const curKey = this.getEffectiveApiKey(curProvider);
+
+      const resp = await fetch(`/api/projects/${projectId}/render-scene-video/${sceneIdx}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: curKey,
+          ai_provider: curProvider,
+          force_revoice: false,
+          force_repaint: false
+        })
+      });
+
+      if (resp.ok) {
+        const resData = await resp.json();
+        const updatedProject = resData.project || this.currentProject;
+        if (this.currentProject && this.currentProject.id === projectId) {
+          if (updatedProject.scenes?.[sceneIdx]) {
+            this.currentProject.scenes[sceneIdx] = updatedProject.scenes[sceneIdx];
+          }
+          const upScene = this.currentProject.scenes[sceneIdx];
+
+          // Update image if refreshed
+          const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
+          if (imgEl && upScene.image_path) {
+            imgEl.src = `/media/${upScene.image_path}?t=${Date.now()}`;
+          }
+
+          // Update video pill
+          if (videoPill) {
+            videoPill.className = "scene-status-pill ready";
+            videoPill.textContent = "🎬 Video Ready";
+          }
+
+          // Update video player
+          const vidEl = document.getElementById(`sceneVideo_${sceneIdx}`);
+          if (vidEl && upScene.video_path) {
+            vidEl.src = `/media/${upScene.video_path}?t=${Date.now()}`;
+          }
+
+          // Show overlay and action buttons
+          const overlayBtn = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
+          if (overlayBtn) overlayBtn.style.display = "flex";
+
+          const toggleBtn = document.getElementById(`btnToggleVideo_${sceneIdx}`);
+          if (toggleBtn) {
+            toggleBtn.style.display = "";
+            toggleBtn.className = "scene-action-pill video-ready btn-toggle-video";
+          }
+
+          const dlBtn = document.getElementById(`btnDownloadClip_${sceneIdx}`);
+          if (dlBtn && upScene.video_path) {
+            dlBtn.style.display = "";
+            dlBtn.href = `/api/projects/${projectId}/download-scene-video/${sceneIdx}`;
+          }
+
+          this.saveActiveProjectState();
+          this.showToast(`Scene ${sceneIdx + 1} animation video ready! 🎬✨`);
+        }
+      } else {
+        let errDetail = "Render error";
+        try {
+          const errJson = await resp.json();
+          errDetail = errJson.detail || errDetail;
+        } catch {}
+        if (videoPill) {
+          videoPill.className = "scene-status-pill error";
+          videoPill.textContent = "⚠️ Render Error";
+        }
+        this.showToast(`Failed to render Scene ${sceneIdx + 1}: ${errDetail}`, true);
+      }
+    } catch (err) {
+      console.error(`Error rendering scene ${sceneIdx + 1} video:`, err);
+      if (videoPill) {
+        videoPill.className = "scene-status-pill error";
+        videoPill.textContent = "⚠️ Error";
+      }
+      this.showToast(`Render failed: ${err.message}`, true);
+    } finally {
+      if (buttonEl) {
+        buttonEl.disabled = false;
+        buttonEl.textContent = "🎬 Re-animate";
+      }
+    }
+  }
+
+  async animateAllSceneVideos() {
+    if (!this.currentProject || !this.currentProject.scenes) return;
+    const projectId = this.currentProject.id;
+    const totalScenes = this.currentProject.scenes.length;
+    if (totalScenes === 0) return;
+
+    await this.saveStoryboardEdits(false);
+
+    if (this.btnAnimateAllScenes) {
+      this.btnAnimateAllScenes.disabled = true;
+      this.btnAnimateAllScenes.textContent = "Animating 1-by-1... ⏳";
+    }
+
+    this.showToast(`Creating animation videos for all ${totalScenes} scenes sequentially... 🎬✨`);
+
+    for (let idx = 0; idx < totalScenes; idx++) {
+      if (!this.currentProject || this.currentProject.id !== projectId) break;
+
+      if (this.btnAnimateAllScenes) {
+        this.btnAnimateAllScenes.textContent = `🎬 Animating ${idx + 1}/${totalScenes}... ⏳`;
+      }
+
+      const sceneBtn = document.getElementById(`btnAnimateScene_${idx}`);
+      await this.animateSingleSceneVideo(idx, sceneBtn);
+
+      if (idx < totalScenes - 1) {
+        await new Promise(r => setTimeout(r, 600));
+      }
+    }
+
+    if (this.btnAnimateAllScenes) {
+      this.btnAnimateAllScenes.disabled = false;
+      this.btnAnimateAllScenes.textContent = "🎬 Animate All Scenes";
+    }
+    this.showToast("All scene animation videos successfully created! 🎬🚀");
+  }
+
+  openSceneVideoModal(sceneIdx) {
+    if (!this.currentProject || !this.modalSceneVideo) return;
+    const scene = this.currentProject.scenes?.[sceneIdx];
+    if (!scene || !scene.video_path) {
+      this.showToast("Video clip has not been rendered yet. Click 'Animate Scene' first! 🎬", true);
+      return;
+    }
+
+    const videoUrl = `/media/${scene.video_path}?t=${Date.now()}`;
+    if (this.modalSceneVideoTitle) {
+      this.modalSceneVideoTitle.textContent = `🎬 Scene ${scene.scene_number || sceneIdx + 1}: ${scene.title || 'Animation Clip'}`;
+    }
+    if (this.modalSceneVideoMeta) {
+      const motionName = (scene.camera_motion || "zoom_in").replace("_", " ").toUpperCase();
+      const dur = scene.duration ? `${scene.duration.toFixed(1)}s` : "Dynamic";
+      this.modalSceneVideoMeta.textContent = `Motion: ${motionName} • Duration: ${dur} • Burnt Captions: ${this.currentProject.enable_subtitles !== false ? 'ON' : 'OFF'}`;
+    }
+    if (this.modalSceneVideoDownloadBtn) {
+      this.modalSceneVideoDownloadBtn.href = `/api/projects/${this.currentProject.id}/download-scene-video/${sceneIdx}`;
+    }
+    if (this.modalSceneVideoPlayer) {
+      this.modalSceneVideoPlayer.src = videoUrl;
+      this.modalSceneVideoPlayer.load();
+      this.modalSceneVideoPlayer.play().catch(() => {});
+    }
+
+    this.modalSceneVideo.classList.add("active");
+  }
+
+  closeSceneVideoModal() {
+    if (this.modalSceneVideoPlayer) {
+      this.modalSceneVideoPlayer.pause();
+      this.modalSceneVideoPlayer.removeAttribute("src");
+      this.modalSceneVideoPlayer.load();
+    }
+    if (this.modalSceneVideo) {
+      this.modalSceneVideo.classList.remove("active");
+    }
   }
 
   async rerollSceneImage(sceneIdx, buttonEl) {
@@ -2204,6 +2444,63 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
 
     const styleInfo = this.config?.art_styles?.[this.currentProject.art_style];
     this.specArtStyle.textContent = styleInfo ? styleInfo.name : this.currentProject.art_style;
+
+    // Populate Individual Scene Clips Gallery
+    if (this.cinemaSceneClipsGrid) {
+      this.cinemaSceneClipsGrid.innerHTML = "";
+      const scenes = this.currentProject.scenes || [];
+      let clipsReady = 0;
+
+      scenes.forEach((sc, idx) => {
+        if (sc.video_path) clipsReady++;
+        const card = document.createElement("div");
+        card.className = "cinema-scene-clip-card";
+        const hasVid = Boolean(sc.video_path);
+        const vidSrc = hasVid ? `/media/${sc.video_path}?t=${Date.now()}` : "";
+        const imgSrc = sc.image_path ? `/media/${sc.image_path}?t=${Date.now()}` : this.getInstantPreviewUrl(sc, idx);
+
+        card.innerHTML = `
+          <div class="cinema-clip-video-box">
+            ${hasVid 
+              ? `<video src="${vidSrc}" controls playsinline preload="metadata"></video>` 
+              : `<img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;" alt="Scene ${idx + 1}">`
+            }
+          </div>
+          <div class="cinema-clip-info">
+            <div class="cinema-clip-title">
+              <span>Scene ${idx + 1}: ${sc.title || "Scene " + (idx + 1)}</span>
+              ${hasVid 
+                ? `<span class="tag-badge" style="background:rgba(16,185,129,0.2);color:#34d399;font-size:10px;">✓ Clip Ready</span>` 
+                : `<span class="tag-badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;font-size:10px;">Still Only</span>`
+              }
+            </div>
+            <p class="cinema-clip-narration">${sc.narration || ""}</p>
+            <div class="cinema-clip-actions">
+              ${hasVid 
+                ? `<a href="/api/projects/${this.currentProject.id}/download-scene-video/${idx}" download class="glass-btn secondary-btn" style="padding:6px 12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">⬇️ Download MP4</a>` 
+                : `<button class="glass-btn secondary-btn" id="btnCinemaRenderScene_${idx}" style="padding:6px 12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">🎬 Animate Clip</button>`
+              }
+            </div>
+          </div>
+        `;
+
+        if (!hasVid) {
+          const btnRen = card.querySelector(`#btnCinemaRenderScene_${idx}`);
+          if (btnRen) {
+            btnRen.addEventListener("click", async () => {
+              await this.animateSingleSceneVideo(idx, btnRen);
+              this.showCinemaPremiere(false);
+            });
+          }
+        }
+
+        this.cinemaSceneClipsGrid.appendChild(card);
+      });
+
+      if (this.cinemaClipsCountBadge) {
+        this.cinemaClipsCountBadge.textContent = `${clipsReady} / ${scenes.length} clips ready`;
+      }
+    }
 
     this.switchStage(4);
     if (notify) {

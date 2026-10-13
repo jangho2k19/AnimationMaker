@@ -69,6 +69,17 @@ class RegenerateImageRequest(BaseModel):
     api_key: Optional[str] = None
     ai_provider: Optional[str] = None
 
+class RenderSceneVideoRequest(BaseModel):
+    force_revoice: bool = False
+    force_repaint: bool = False
+    api_key: Optional[str] = None
+    ai_provider: Optional[str] = None
+
+class RenderAllSceneVideosRequest(BaseModel):
+    force_revoice: bool = False
+    api_key: Optional[str] = None
+    ai_provider: Optional[str] = None
+
 class DetectModelsRequest(BaseModel):
     api_key: Optional[str] = None
     cookie: Optional[str] = None
@@ -708,6 +719,95 @@ async def download_video(project_id: str):
         raise HTTPException(status_code=404, detail="Video file missing from disk")
 
     filename = f"{project.get('title', 'animation')[:30].replace(' ', '_')}.mp4"
+    return FileResponse(str(full_path), media_type="video/mp4", filename=filename)
+
+@app.post("/api/projects/{project_id}/render-scene-video/{scene_idx}")
+async def render_scene_video_endpoint(
+    project_id: str,
+    scene_idx: int,
+    req: Optional[RenderSceneVideoRequest] = None
+):
+    try:
+        project = pipeline.get_project(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if req:
+            if req.api_key:
+                project["api_key"] = req.api_key
+            if req.ai_provider:
+                project["ai_provider"] = req.ai_provider
+            pipeline.save_project(project)
+
+        force_revoice = req.force_revoice if req else False
+        force_repaint = req.force_repaint if req else False
+        updated_project = await pipeline.render_scene_video(
+            project_id=project_id,
+            scene_idx=scene_idx,
+            force_revoice=force_revoice,
+            force_repaint=force_repaint
+        )
+        scene = updated_project["scenes"][scene_idx]
+        return {
+            "status": "success",
+            "scene_idx": scene_idx,
+            "scene": scene,
+            "video_url": f"/media/{scene['video_path']}" if scene.get("video_path") else None,
+            "project": updated_project
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/render-all-scene-videos")
+async def render_all_scene_videos_endpoint(
+    project_id: str,
+    req: Optional[RenderAllSceneVideosRequest] = None
+):
+    try:
+        project = pipeline.get_project(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if req:
+            if req.api_key:
+                project["api_key"] = req.api_key
+            if req.ai_provider:
+                project["ai_provider"] = req.ai_provider
+            pipeline.save_project(project)
+
+        force_revoice = req.force_revoice if req else False
+        updated_project = await pipeline.render_all_scene_videos(
+            project_id=project_id,
+            force_revoice=force_revoice
+        )
+        return {
+            "status": "success",
+            "project": updated_project
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/projects/{project_id}/download-scene-video/{scene_idx}")
+async def download_scene_video(project_id: str, scene_idx: int):
+    project = pipeline.get_project(project_id)
+    if not project or scene_idx >= len(project.get("scenes", [])):
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    scene = project["scenes"][scene_idx]
+    video_path = scene.get("video_path")
+    if not video_path:
+        clip_cand = OUTPUT_DIR / "projects" / project_id / f"clip_{scene_idx + 1}.mp4"
+        if clip_cand.exists():
+            video_path = str(clip_cand.relative_to(OUTPUT_DIR)).replace("\\", "/")
+            scene["video_path"] = video_path
+            pipeline.save_project(project)
+        else:
+            raise HTTPException(status_code=404, detail="Scene video clip not yet rendered")
+
+    full_path = OUTPUT_DIR / video_path
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Scene video clip missing from disk")
+
+    project_title = project.get("title", "story")[:30].strip().replace(" ", "_")
+    filename = f"{project_title}_scene_{scene_idx + 1}.mp4"
     return FileResponse(str(full_path), media_type="video/mp4", filename=filename)
 
 # Mount media directory for images, audio, and videos

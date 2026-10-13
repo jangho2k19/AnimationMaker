@@ -362,6 +362,7 @@ Narration: The detective scanned the horizon for clues..."></textarea>
           </div>
           <div class="top-stage-actions">
             <button id="btnPaintAllImages" class="glass-btn secondary-btn" title="Paint all scenes sequentially one by one while keeping character consistency">🎨 Paint All (1-by-1)</button>
+            <button id="btnAnimateAllScenes" class="glass-btn secondary-btn" style="border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.12); color: #c7d2fe;" title="Render animated video clips for every scene sequentially">🎬 Animate All Scenes</button>
             <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn">💾 Save Script Changes</button>
             <button id="btnProceedToRender" class="hero-action-btn compact-btn">
               <span class="btn-text">Render Full Film</span>
@@ -481,6 +482,22 @@ Narration: The detective scanned the horizon for clues..."></textarea>
             <div class="spec-card">
               <span class="spec-label">Audio & Subtitles</span>
               <span class="spec-val">Edge-TTS & Burnt Captions</span>
+            </div>
+          </div>
+
+          <!-- Individual Scene Clips Gallery -->
+          <div id="cinemaSceneClipsWrapper" style="margin-top: 28px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 24px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px; flex-wrap:wrap; gap:10px;">
+              <div>
+                <h3 style="font-family:'Outfit', sans-serif; font-size: 18px; font-weight:700; color:#f1f5f9; display:flex; align-items:center; gap:8px;">
+                  <span>🎬</span> Individual Scene Animation Clips
+                  <span id="cinemaClipsCountBadge" class="tag-badge" style="background:rgba(99, 102, 241, 0.2); color:#a5b4fc; font-size:11px;">0 clips</span>
+                </h3>
+                <p style="color:var(--text-dim); font-size:12px; margin-top:2px;">Watch and download each animated scene video separately</p>
+              </div>
+            </div>
+            <div id="cinemaSceneClipsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+              <!-- Populated dynamically with scene clip cards -->
             </div>
           </div>
         </div>
@@ -687,6 +704,27 @@ Narration: The detective scanned the horizon for clues..."></textarea>
     </div>
   </div>
 
+  <!-- MODAL: Scene Video Player -->
+  <div id="modalSceneVideo" class="modal-backdrop">
+    <div class="modal-card glass-panel" style="max-width: 820px; width: 94%;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalSceneVideoTitle">🎬 Scene Animation Preview</h3>
+        <button id="btnCloseSceneVideoModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 18px;">
+        <div style="width: 100%; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 8px 32px rgba(0,0,0,0.6);">
+          <video id="modalSceneVideoPlayer" controls playsinline style="width:100%; display:block; aspect-ratio: var(--project-aspect-ratio, 16 / 9);"></video>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 14px; flex-wrap:wrap; gap:10px;">
+          <div id="modalSceneVideoMeta" style="font-size:13px; color:var(--text-dim);"></div>
+          <a id="modalSceneVideoDownloadBtn" class="hero-action-btn compact-btn" href="#" download>
+            <span class="btn-text">Download Scene MP4</span>
+            <span class="btn-arrow">📥</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Notification Toast Container -->
   <div id="toastNotification" class="toast-popup"></div>
