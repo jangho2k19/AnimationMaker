@@ -648,8 +648,8 @@ body {
 /* STAGE 2: STORYBOARD CARDS */
 .scenes-masonry-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
   margin-top: 20px;
 }
 
@@ -689,6 +689,31 @@ body {
   border: 1px solid rgba(139, 92, 246, 0.3);
 }
 
+.scene-status-pill {
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.25s ease;
+}
+
+.scene-status-pill.ready {
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.scene-status-pill.pending {
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  animation: pulseScale 2s infinite ease-in-out;
+}
+
 .scene-card-title {
   font-family: 'Outfit', sans-serif;
   font-size: 15px;
@@ -699,6 +724,7 @@ body {
   position: relative;
   width: 100%;
   aspect-ratio: var(--project-aspect-ratio, 16 / 9);
+  max-height: 320px;
   background: #0d1120;
   overflow: hidden;
 }
@@ -1082,20 +1108,21 @@ body {
 /* Projects grid in modal */
 .projects-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  align-content: start;
 }
 
 .project-item-card {
   background: rgba(8, 11, 22, 0.8);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 14px;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .project-item-card:hover {
@@ -1106,11 +1133,14 @@ body {
 .project-card-title {
   font-family: 'Outfit', sans-serif;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .project-card-date {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-dim);
 }
 
