@@ -170,6 +170,9 @@ class AniStoryApp {
     this.storyboardScenesGrid = document.getElementById("storyboardScenesGrid");
     this.btnSaveStoryboardEdits = document.getElementById("btnSaveStoryboardEdits");
     this.btnProceedToRender = document.getElementById("btnProceedToRender");
+    this.btnPaintAllImages = document.getElementById("btnPaintAllImages");
+    this.inputCharacterConsistency = document.getElementById("inputCharacterConsistency");
+    this.btnLockCharacter = document.getElementById("btnLockCharacter");
 
     // Rendering stage elements
     this.renderStepDetail = document.getElementById("renderStepDetail");
@@ -449,6 +452,12 @@ class AniStoryApp {
     // Storyboard Actions
     this.btnSaveStoryboardEdits.addEventListener("click", () => this.saveStoryboardEdits(true));
     this.btnProceedToRender.addEventListener("click", () => this.startRenderingProcess());
+    if (this.btnPaintAllImages) {
+      this.btnPaintAllImages.addEventListener("click", () => this.paintAllSceneImages(true));
+    }
+    if (this.btnLockCharacter) {
+      this.btnLockCharacter.addEventListener("click", () => this.saveCharacterConsistency());
+    }
 
     // Cinema restart
     this.btnStartNewStory.addEventListener("click", () => {
@@ -1690,6 +1699,9 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
 
     this.storyboardFilmTitle.textContent = this.currentProject.title || "Animated Short Film";
     this.storyboardLogline.textContent = this.currentProject.logline || "";
+    if (this.inputCharacterConsistency) {
+      this.inputCharacterConsistency.value = this.currentProject.characters || "";
+    }
     this.storyboardScenesGrid.innerHTML = "";
 
     // Set aspect ratio CSS variable on the scenes grid
@@ -1780,80 +1792,109 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
   }
 
   async autoGenerateMissingSceneImages() {
+    await this.paintAllSceneImages(false);
+  }
+
+  async paintAllSceneImages(forceAll = false) {
     if (!this.currentProject || !this.currentProject.scenes) return;
     const projectId = this.currentProject.id;
     const scenesToPaint = [];
 
     this.currentProject.scenes.forEach((scene, idx) => {
-      if (!scene.image_path) {
+      if (forceAll || !scene.image_path) {
         scenesToPaint.push(idx);
       }
     });
 
-    if (scenesToPaint.length === 0) return;
+    if (scenesToPaint.length === 0) {
+      if (forceAll) this.showToast("All scenes already have illustrations! ✨");
+      return;
+    }
 
-    // Concurrency limit of 2 for fast & steady background rendering
-    const concurrency = 2;
-    let index = 0;
+    if (this.btnPaintAllImages) {
+      this.btnPaintAllImages.disabled = true;
+      this.btnPaintAllImages.textContent = "Painting 1-by-1... ⏳";
+    }
 
-    const worker = async () => {
-      while (index < scenesToPaint.length) {
-        const sceneIdx = scenesToPaint[index++];
-        if (!this.currentProject || this.currentProject.id !== projectId) return;
+    this.showToast(`Painting ${scenesToPaint.length} scene(s) one by one with character consistency... 🎨`);
 
-        const btn = document.querySelector(`.btn-reroll-img[data-idx="${sceneIdx}"]`);
-        const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
-        if (btn) {
-          btn.disabled = true;
-          btn.textContent = "Painting... ⏳";
-        }
-        if (statusPill) {
-          statusPill.className = "scene-status-pill pending";
-          statusPill.textContent = "🎨 AI Painting...";
-        }
+    // Strictly generate images ONE BY ONE to preserve character consistency & prevent API clashes
+    for (let i = 0; i < scenesToPaint.length; i++) {
+      const sceneIdx = scenesToPaint[i];
+      if (!this.currentProject || this.currentProject.id !== projectId) break;
 
-        try {
-          const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
-          const curKey = this.getEffectiveApiKey(curProvider);
-          const resp = await fetch(`/api/projects/${projectId}/regenerate-image/${sceneIdx}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ api_key: curKey, ai_provider: curProvider })
-          });
+      const btn = document.querySelector(`.btn-reroll-img[data-idx="${sceneIdx}"]`);
+      const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Painting... ⏳";
+      }
+      if (statusPill) {
+        statusPill.className = "scene-status-pill pending";
+        statusPill.textContent = `🎨 Painting ${i + 1}/${scenesToPaint.length}...`;
+      }
 
-          if (resp.ok) {
-            const updatedProject = await resp.json();
-            if (this.currentProject && this.currentProject.id === projectId) {
-              if (updatedProject.scenes && updatedProject.scenes[sceneIdx]) {
-                this.currentProject.scenes[sceneIdx] = updatedProject.scenes[sceneIdx];
-              }
-              const updatedScene = this.currentProject.scenes[sceneIdx];
-              const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
-              if (imgEl && updatedScene && updatedScene.image_path) {
-                imgEl.src = `/media/${updatedScene.image_path}?t=${Date.now()}`;
-              }
-              if (statusPill) {
-                statusPill.className = "scene-status-pill ready";
-                statusPill.textContent = "✓ Ready";
-              }
+      try {
+        const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
+        const curKey = this.getEffectiveApiKey(curProvider);
+        const resp = await fetch(`/api/projects/${projectId}/regenerate-image/${sceneIdx}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: curKey, ai_provider: curProvider })
+        });
+
+        if (resp.ok) {
+          const updatedProject = await resp.json();
+          if (this.currentProject && this.currentProject.id === projectId) {
+            if (updatedProject.scenes && updatedProject.scenes[sceneIdx]) {
+              this.currentProject.scenes[sceneIdx] = updatedProject.scenes[sceneIdx];
+            }
+            const updatedScene = this.currentProject.scenes[sceneIdx];
+            const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
+            if (imgEl && updatedScene && updatedScene.image_path) {
+              imgEl.src = `/media/${updatedScene.image_path}?t=${Date.now()}`;
+            }
+            if (statusPill) {
+              statusPill.className = "scene-status-pill ready";
+              statusPill.textContent = "✓ Ready";
             }
           }
-        } catch (err) {
-          console.warn(`Auto-paint scene ${sceneIdx + 1} error:`, err);
-        } finally {
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = "🎨 AI Paint";
+        } else {
+          let errDetail = "Generation error";
+          try {
+            const errJson = await resp.json();
+            errDetail = errJson.detail || errDetail;
+          } catch {}
+          if (statusPill) {
+            statusPill.className = "scene-status-pill error";
+            statusPill.textContent = "⚠️ Error";
           }
+          console.warn(`Scene ${sceneIdx + 1} paint issue:`, errDetail);
+        }
+      } catch (err) {
+        console.warn(`Sequential paint scene ${sceneIdx + 1} error:`, err);
+        if (statusPill) {
+          statusPill.className = "scene-status-pill error";
+          statusPill.textContent = "⚠️ Error";
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "🎨 AI Paint";
         }
       }
-    };
 
-    const workers = [];
-    for (let i = 0; i < Math.min(concurrency, scenesToPaint.length); i++) {
-      workers.push(worker());
+      // Pacing delay between sequential scenes for smooth visual updates and socket stability
+      if (i < scenesToPaint.length - 1) {
+        await new Promise(r => setTimeout(r, 600));
+      }
     }
-    await Promise.all(workers);
+
+    if (this.btnPaintAllImages) {
+      this.btnPaintAllImages.disabled = false;
+      this.btnPaintAllImages.textContent = "🎨 Paint All (1-by-1)";
+    }
+    this.showToast("Sequential scene painting completed with consistent characters! 🎬✨");
   }
 
   async rerollSceneImage(sceneIdx, buttonEl) {
@@ -1976,8 +2017,21 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     }
   }
 
+  async saveCharacterConsistency() {
+    if (!this.currentProject) return;
+    if (this.inputCharacterConsistency) {
+      this.currentProject.characters = this.inputCharacterConsistency.value.trim();
+    }
+    await this.saveStoryboardEdits(false);
+    this.showToast("Character consistency anchor locked! 🔒👥");
+  }
+
   async saveStoryboardEdits(notify = true) {
     if (!this.currentProject) return;
+
+    if (this.inputCharacterConsistency) {
+      this.currentProject.characters = this.inputCharacterConsistency.value.trim();
+    }
 
     const scenes = this.currentProject.scenes || [];
     scenes.forEach((scene, idx) => {
@@ -1994,7 +2048,12 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       const resp = await fetch(`/api/projects/${this.currentProject.id}/scenes`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenes })
+        body: JSON.stringify({
+          scenes,
+          characters: this.currentProject.characters,
+          title: this.currentProject.title,
+          logline: this.currentProject.logline
+        })
       });
       if (resp.ok) {
         this.currentProject = await resp.json();

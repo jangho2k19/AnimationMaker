@@ -54,15 +54,26 @@ class VoiceAgent:
     def _normalize_text_for_tts(text: str) -> str:
         """
         Cleans and normalizes text for speech synthesis:
-        - Ensures first letter is capitalized to avoid edge-tts tokenizer glitches.
-        - Ensures terminal punctuation exists so sentence boundary parsing succeeds.
+        - Sanitizes XML/SSML sensitive chars (&, <, >) that trigger WebSocket disconnections.
+        - Replaces em-dashes and quotes with natural punctuation pauses.
+        - Ensures first letter is capitalized and terminal punctuation exists.
         """
         t = text.strip() if text else ""
         if not t:
             return "..."
-        if t[0].isalpha() and t[0].islower():
+        # Replace XML characters that break SSML parsing
+        is_vn = any(ord(c) > 127 for c in t)
+        t = t.replace("&", " và " if is_vn else " and ")
+        t = re.sub(r'[<>]', '', t)
+        t = re.sub(r'[*_`#]', '', t)
+        t = re.sub(r'[—–]', ', ', t)
+        t = re.sub(r'["“”„]', ' ', t)
+        t = re.sub(r"['‘’]", "'", t)
+        t = re.sub(r',\s*,+', ', ', t)
+        t = re.sub(r'\s+', ' ', t).strip()
+        if t and t[0].isalpha() and t[0].islower():
             t = t[0].upper() + t[1:]
-        if not t.endswith(('.', '!', '?', ';', ':', '...')):
+        if t and not t.endswith(('.', '!', '?', ';', ':', '...')):
             t += "."
         return t
 
@@ -98,12 +109,26 @@ class VoiceAgent:
                 return "en-GB-RyanNeural"
             return "en-US-JennyNeural"
 
-    async def _try_edge_tts(self, text: str, output_audio_path: str, voice: str, rate: str, pitch: str, max_retries: int = 4):
-        """Attempts Edge-TTS synthesis for the specified voice with robust retry and backoff."""
+    async def _try_edge_tts(self, text: str, output_audio_path: str, voice: str, rate: str, pitch: str, max_retries: int = 5):
+        """Attempts Edge-TTS synthesis for the specified voice with robust retry, backoff, and pitch normalization."""
         last_err = None
+        is_vi = "vi-" in (voice or "").lower()
+        effective_rate = "+0%" if is_vi else rate
+        effective_pitch = "+0Hz" if is_vi else pitch
+
         for attempt in range(max_retries):
+            # Clean partial or corrupt audio file before attempt
+            if os.path.exists(output_audio_path):
+                try:
+                    os.remove(output_audio_path)
+                except Exception:
+                    pass
+
             try:
-                comm = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+                # If earlier attempts failed with custom pitch/rate, fallback to neutral pitch/rate on same voice
+                use_rate = effective_rate if attempt < 2 else "+0%"
+                use_pitch = effective_pitch if attempt < 2 else "+0Hz"
+                comm = edge_tts.Communicate(text, voice, rate=use_rate, pitch=use_pitch, connect_timeout=15, receive_timeout=60)
                 boundaries = []
                 has_audio = False
 
@@ -130,12 +155,63 @@ class VoiceAgent:
                 return boundaries
             except Exception as e:
                 last_err = e
+                if os.path.exists(output_audio_path):
+                    try:
+                        os.remove(output_audio_path)
+                    except Exception:
+                        pass
                 if attempt < max_retries - 1:
-                    backoff = (attempt + 1) * 0.7
-                    print(f"Edge-TTS attempt {attempt + 1} for '{voice}' encountered: {e}. Retrying same voice in {backoff:.1f}s...")
+                    backoff = (attempt + 1) * 1.5
+                    print(f"Edge-TTS attempt {attempt + 1} for '{voice}' encountered temporary network/server notice: {e}. Retrying same voice in {backoff:.1f}s...")
                     await asyncio.sleep(backoff)
                     continue
                 raise last_err
+
+    async def _synthesize_by_sentences(self, text: str, output_audio_path: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> list:
+        """
+        Splits text into individual sentences and synthesizes each separately,
+        then stitches them using FFmpeg. Resolves buffer drops on long narration paragraphs.
+        """
+        raw_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+        if len(raw_sentences) <= 1:
+            return []
+
+        temp_files = []
+        all_boundaries = []
+        cumulative_time = 0.0
+
+        try:
+            for s_idx, sent in enumerate(raw_sentences):
+                temp_s_path = f"{output_audio_path}.part_{s_idx}.mp3"
+                temp_files.append(temp_s_path)
+                s_bounds = await self._try_edge_tts(sent, temp_s_path, voice, rate, pitch, max_retries=3)
+                sent_dur = self.get_audio_duration(temp_s_path)
+                for b in s_bounds:
+                    all_boundaries.append({
+                        "start": round(b["start"] + cumulative_time, 2),
+                        "end": round(b["end"] + cumulative_time, 2),
+                        "text": b["text"]
+                    })
+                cumulative_time += sent_dur
+                await asyncio.sleep(0.3)
+
+            filter_inputs = "".join(f"[{i}:a]" for i in range(len(temp_files)))
+            filter_str = f"{filter_inputs}concat=n={len(temp_files)}:v=0:a=1[outa]"
+            cmd = [FFMPEG_PATH, "-y"]
+            for tf in temp_files:
+                cmd.extend(["-i", tf])
+            cmd.extend(["-filter_complex", filter_str, "-map", "[outa]", output_audio_path])
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0 or not os.path.exists(output_audio_path) or os.path.getsize(output_audio_path) == 0:
+                raise RuntimeError(f"FFmpeg sentence concat failed: {proc.stderr}")
+            return all_boundaries
+        finally:
+            for tf in temp_files:
+                if os.path.exists(tf):
+                    try:
+                        os.remove(tf)
+                    except Exception:
+                        pass
 
     def _synthesize_with_gtts(self, text: str, output_audio_path: str, lang: str):
         """Ultra-reliable fallback using gTTS."""
@@ -294,53 +370,84 @@ class VoiceAgent:
             actual_rate = "-5%"
             actual_pitch = "-3Hz"
 
-        # Attempt 1: Requested Voice via Edge-TTS (with 4 retries on the SAME voice)
+        # Vietnamese neural voices (vi-VN-*) do not support custom pitch or rate modifications
+        # on Microsoft's servers and will fail with "No audio was received".
+        # Enforce neutral rate and pitch for Vietnamese to ensure 100% reliable synthesis.
+        if "vi-" in actual_voice.lower():
+            actual_rate = "+0%"
+            actual_pitch = "+0Hz"
+
+        # Attempt 1: Requested Voice via Edge-TTS (with robust retries on the SAME voice)
         if not success:
             try:
-                boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch, max_retries=4)
+                boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch, max_retries=5)
                 success = True
             except Exception as e:
-                print(f"Edge-TTS primary voice '{actual_voice}' retry exhausted: {e}.")
-                # If pitch/rate was tuned, retry once with standard pitch/rate on the SAME voice
-                if actual_rate != "+0%" or actual_pitch != "+0Hz":
-                    try:
-                        print(f"Retrying '{actual_voice}' with standard pitch/rate to preserve character voice...")
-                        boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, "+0%", "+0Hz", max_retries=2)
+                print(f"Edge-TTS primary voice '{actual_voice}' full text retry exhausted: {e}.")
+                # Attempt 1b: Try sentence-by-sentence synthesis on the exact SAME voice
+                try:
+                    print(f"Attempting sentence-by-sentence synthesis on '{actual_voice}' to preserve character voice...")
+                    boundaries = await self._synthesize_by_sentences(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch)
+                    if boundaries or (os.path.exists(output_audio_path) and os.path.getsize(output_audio_path) > 0):
                         success = True
-                    except Exception as e_norm:
-                        print(f"Standard pitch retry for '{actual_voice}' failed: {e_norm}")
+                        print(f"Sentence-by-sentence synthesis on '{actual_voice}' succeeded!")
+                except Exception as e_sent:
+                    print(f"Sentence-by-sentence synthesis failed: {e_sent}")
 
-        # If allow_voice_fallback is explicitly enabled (e.g. audition probe), only then allow swapping
+        # If allow_voice_fallback is explicitly enabled (e.g. audition probe or emergency recovery)
         if not success and allow_voice_fallback:
             alt_voice = None
-            if selected_voice == "vi-VN-HoaiMyNeural":
+            voice_lower = selected_voice.lower()
+            if "hoaimy" in voice_lower:
                 alt_voice = "vi-VN-NamMinhNeural"
-            elif selected_voice == "vi-VN-NamMinhNeural":
+            elif "namminh" in voice_lower:
                 alt_voice = "vi-VN-HoaiMyNeural"
-            elif "en-" in selected_voice:
-                alt_voice = "en-US-JennyNeural" if selected_voice != "en-US-JennyNeural" else "en-US-ChristopherNeural"
+            elif "vi-" in voice_lower:
+                alt_voice = "gtts-vi"
+            elif "en-" in voice_lower:
+                alt_voice = "en-US-JennyNeural" if "jenny" not in voice_lower else "en-US-ChristopherNeural"
 
             if alt_voice:
                 try:
-                    boundaries = await self._try_edge_tts(clean_text, output_audio_path, alt_voice, rate, pitch, max_retries=2)
+                    boundaries = await self._try_edge_tts(clean_text, output_audio_path, alt_voice, "+0%", "+0Hz", max_retries=3)
                     selected_voice = alt_voice
                     success = True
                     is_fallback = True
                     print(f"Audition fallback synthesized with '{alt_voice}'.")
-                except Exception:
-                    pass
+                except Exception as e_alt:
+                    print(f"Alt voice '{alt_voice}' failed: {e_alt}")
 
             if not success:
                 try:
                     self._synthesize_with_gtts(clean_text, output_audio_path, lang_code)
+                    selected_voice = f"gtts-{lang_code}"
                     success = True
                     is_fallback = True
                     boundaries = []
+                    print(f"Safety fallback synthesized with Google TTS ({lang_code}).")
                 except Exception as e3:
                     raise RuntimeError(f"All TTS voice engines failed: {e3}")
 
+        # Emergency safety net: if primary voice failed and allow_voice_fallback was False,
+        # fallback to prevent fatal render crashes
         if not success:
-            raise RuntimeError(f"Voice synthesis failed for voice '{selected_voice}'. Consistent voice policy prevented swapping to another voice.")
+            try:
+                print(f"Warning: Primary voice '{actual_voice}' unavailable after retries. Engaging emergency safety net...")
+                is_vn = "vi-" in actual_voice.lower()
+                alt_voice = "vi-VN-NamMinhNeural" if ("hoaimy" in actual_voice.lower()) else ("vi-VN-HoaiMyNeural" if is_vn else "en-US-JennyNeural")
+                boundaries = await self._try_edge_tts(clean_text, output_audio_path, alt_voice, "+0%", "+0Hz", max_retries=2)
+                selected_voice = alt_voice
+                success = True
+                is_fallback = True
+            except Exception:
+                try:
+                    self._synthesize_with_gtts(clean_text, output_audio_path, lang_code)
+                    selected_voice = f"gtts-{lang_code}"
+                    success = True
+                    is_fallback = True
+                    boundaries = []
+                except Exception as e_last:
+                    raise RuntimeError(f"Voice synthesis failed for voice '{selected_voice}': {e_last}")
 
         duration = self.get_audio_duration(output_audio_path)
 

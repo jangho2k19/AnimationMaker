@@ -40,13 +40,24 @@ class ImageService:
         p = p.strip(',').strip()
         return p
 
-    def craft_full_prompt(self, base_prompt: str, style_key: str = None) -> str:
-        """Combine base scene prompt with tuned artistic style keywords and anti-text constraints."""
+    def craft_full_prompt(self, base_prompt: str, style_key: str = None, character_desc: str = None) -> str:
+        """Combine base scene prompt with character consistency anchors, artistic style keywords, and anti-text constraints."""
         style_info = ART_STYLES.get(style_key or self.default_style, ART_STYLES["ghibli"])
         suffix = style_info.get("prompt_suffix", "")
         clean_base = self.sanitize_visual_prompt(base_prompt)
+
+        char_addon = ""
+        if character_desc and str(character_desc).strip():
+            clean_char = self.sanitize_visual_prompt(str(character_desc))
+            # If not already detailed in base prompt, append character consistency anchor
+            char_tokens = [w for w in re.findall(r'\b\w{4,}\b', clean_char.lower()) if w not in ("character", "protagonist", "appearance", "visual", "consistency")]
+            matching_tokens = sum(1 for tok in char_tokens if tok in clean_base.lower())
+            if not char_tokens or matching_tokens < len(char_tokens) * 0.4:
+                short_char = clean_char[:160].rsplit(' ', 1)[0] if len(clean_char) > 160 else clean_char
+                char_addon = f", character visual consistency: {short_char}, exact same character appearance and outfit across scenes"
+
         anti_text = ", clean textless illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark"
-        return f"{clean_base}{suffix}{anti_text}"
+        return f"{clean_base}{char_addon}{suffix}{anti_text}"
 
     def extract_keywords(self, prompt: str, title: str = "") -> list:
         """Extract clean, meaningful visual keywords for thematic asset discovery."""
@@ -92,7 +103,9 @@ class ImageService:
         height: int = 720,
         scene_idx: int = 0,
         title: str = "",
-        image_mode: str = "server"
+        image_mode: str = "server",
+        character_desc: str = None,
+        reference_image_path: str = None
     ) -> str:
         """
         Multi-tier robust scene visual pipeline:
@@ -104,7 +117,7 @@ class ImageService:
         """
         output_path = str(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        full_prompt = self.craft_full_prompt(prompt, style_key)
+        full_prompt = self.craft_full_prompt(prompt, style_key=style_key, character_desc=character_desc)
 
         # Determine best aspect ratios
         curr_ratio = width / float(height)
@@ -152,9 +165,20 @@ class ImageService:
                     client = genai.Client(api_key=self.api_key)
                     for img_model in ["gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image"]:
                         try:
+                            contents = []
+                            if reference_image_path and os.path.exists(reference_image_path):
+                                try:
+                                    ref_pil = Image.open(reference_image_path).convert("RGB")
+                                    contents.append(ref_pil)
+                                    contents.append(f"CHARACTER REFERENCE IMAGE ATTACHED. CRITICAL: Maintain the exact same character appearance, face, hairstyle, and clothing shown in this reference image. Now generate the next scene illustration: {full_prompt[:800]}. STRICT: Textless illustration, no speech bubbles, no dialogue, no words.")
+                                except Exception:
+                                    contents = [f"Generate a high quality illustration: {full_prompt[:1000]}. STRICT: No speech bubbles, no dialogue, no text in the artwork."]
+                            else:
+                                contents = [f"Generate a high quality illustration: {full_prompt[:1000]}. STRICT: No speech bubbles, no dialogue, no text in the artwork."]
+
                             resp = client.models.generate_content(
                                 model=img_model,
-                                contents=f"Generate a high quality illustration: {full_prompt[:1000]}. STRICT: No speech bubbles, no dialogue, no text in the artwork."
+                                contents=contents
                             )
                             if resp.candidates:
                                 for cand in resp.candidates:
@@ -168,7 +192,7 @@ class ImageService:
                                                 img = Image.open(io.BytesIO(raw_data))
                                                 fitted = self.fit_image_to_aspect_ratio(img, width, height)
                                                 fitted.save(output_path, "JPEG", quality=93)
-                                                print(f"Generated scene {scene_idx + 1} using Google Gemini Image Model ({img_model})!")
+                                                print(f"Generated scene {scene_idx + 1} using Google Gemini Image Model ({img_model}) with character consistency!")
                                                 return output_path
                         except Exception as e_gen:
                             gemini_error = str(e_gen)
@@ -187,8 +211,15 @@ class ImageService:
                 try:
                     from backend.services.gemini_wrapper import GeminiWebWrapper
                     wrapper = GeminiWebWrapper.get_instance()
+                    req_files = [reference_image_path] if (reference_image_path and os.path.exists(reference_image_path)) else None
+                    if req_files:
+                        gemini_prompt = f"Maintain the exact same character appearance, facial features, hairstyle, and outfit from the attached reference image. Generate the next scene illustration: {full_prompt[:750]}. Clean illustration without text, no speech bubbles, no words."
+                    else:
+                        gemini_prompt = f"Generate an image of: {full_prompt[:800]}. Clean illustration without text, no speech bubbles, no words."
+
                     resp = await wrapper.generate_content(
-                        f"Generate an image of: {full_prompt[:800]}. Clean illustration without text, no speech bubbles, no words.",
+                        gemini_prompt,
+                        files=req_files,
                         cookie_override=cookie_input
                     )
                     saved_img = None
@@ -205,7 +236,7 @@ class ImageService:
                             os.remove(saved_img)
                         except Exception:
                             pass
-                        print(f"Generated scene {scene_idx + 1} using Gemini Pro Web Session Imagen 3!")
+                        print(f"Generated scene {scene_idx + 1} using Gemini Pro Web Session Imagen 3 with character consistency!")
                         return output_path
                 except RuntimeError:
                     raise
@@ -264,14 +295,15 @@ class ImageService:
         for model_name in ["flux", "turbo"]:
             try:
                 safe_prompt = urllib.parse.quote(full_prompt[:350])
-                poll_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?model={model_name}&width={width}&height={height}&nologo=true"
+                seed_param = f"&seed={seed}" if seed is not None else ""
+                poll_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?model={model_name}&width={width}&height={height}&nologo=true{seed_param}"
                 async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                     poll_resp = await client.get(poll_url)
                     if poll_resp.status_code == 200 and len(poll_resp.content) > 10000:
                         img = Image.open(io.BytesIO(poll_resp.content))
                         fitted = self.fit_image_to_aspect_ratio(img, width, height)
                         fitted.save(output_path, "JPEG", quality=92)
-                        print(f"Generated scene {scene_idx + 1} using Free Neural AI Engine ({model_name.upper()})!")
+                        print(f"Generated scene {scene_idx + 1} using Free Neural AI Engine ({model_name.upper()}) [seed={seed}]!")
                         return output_path
                     else:
                         last_poll_error = f"HTTP {poll_resp.status_code}"

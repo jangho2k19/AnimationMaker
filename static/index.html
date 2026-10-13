@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
   <link rel="stylesheet" href="/css/style.css?v=5">
 </head>
 <body>
@@ -360,11 +361,28 @@ Narration: The detective scanned the horizon for clues..."></textarea>
             <p id="storyboardLogline" class="stage-subtitle">Logline summary</p>
           </div>
           <div class="top-stage-actions">
+            <button id="btnPaintAllImages" class="glass-btn secondary-btn" title="Paint all scenes sequentially one by one while keeping character consistency">🎨 Paint All (1-by-1)</button>
             <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn">💾 Save Script Changes</button>
             <button id="btnProceedToRender" class="hero-action-btn compact-btn">
               <span class="btn-text">Render Full Film</span>
               <span class="btn-arrow">🚀</span>
             </button>
+          </div>
+        </div>
+
+        <!-- Character Consistency Anchor Card -->
+        <div id="characterConsistencyCard" class="glass-panel" style="margin-bottom: 20px; padding: 14px 18px; border-radius: 12px; background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(148, 163, 184, 0.2);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 16px;">👥</span>
+              <span style="font-weight: 600; font-size: 13px; color: #f1f5f9;">Character Consistency Anchor:</span>
+              <span class="tag-badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7; font-size: 11px; padding: 3px 8px;">🔒 Locked across scenes</span>
+            </div>
+            <span style="font-size: 12px; color: var(--text-dim);">Locks face, hair, and clothing traits across every scene illustration</span>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="inputCharacterConsistency" class="styled-input" style="font-size: 13px; padding: 9px 14px; flex: 1;" placeholder="Describe main character visual features (e.g. Leo, 10yo boy, tousled brown hair, yellow hoodie, blue jeans)...">
+            <button id="btnLockCharacter" class="glass-btn secondary-btn" style="white-space: nowrap; padding: 8px 14px; font-size: 12px;" title="Save character specification">🔒 Lock Character</button>
           </div>
         </div>
 

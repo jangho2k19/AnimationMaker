@@ -119,15 +119,27 @@ Number of Scenes: Exactly {num_scenes} scenes
 Art Style: {art_style}
 Language for Narration & Titles: {language}
 
+DIRECTORIAL MANDATE FOR CHARACTER VISUAL CONSISTENCY:
+1. CHARACTERS SPECIFICATION:
+   - Create a specific, detailed visual design for the main protagonist(s).
+   - Specify: Name, age/species, exact hairstyle & color, skin tone & facial features, and EXACT signature outfit with specific colors (e.g., "wearing an oversized golden-yellow hoodie, blue denim jeans, and red sneakers").
+   - This exact visual design must remain consistent throughout the entire film.
+
+2. SCENE VISUAL PROMPTS (MANDATORY CONSISTENCY RULE):
+   - In EVERY scene where the character appears, you MUST repeat their signature visual attributes (e.g., "10-year-old boy Leo with tousled chestnut hair, bright yellow hoodie, and blue jeans").
+   - NEVER use ambiguous references like "the person" or "they" and NEVER change their outfit/hair between scenes.
+   - Repeating the exact same visual character tokens across every scene's prompt guarantees the AI image generator paints the exact same character from start to finish.
+   - Textless Artwork: Visual description ONLY. No dialogue, quotes, speech bubbles, words, letters, or subtitles in the prompt.
+
 Requirements:
 - Film Title: {"Use '" + title + "'" if title else "Catchy, cinematic, specific to the plot in " + language}.
 - Logline: 1 compelling sentence.
-- Characters: Visual traits and personality for visual consistency across scenes.
+- Characters: Visual traits and signature appearance for strict character consistency across all scenes.
 - Scenes: Exactly {num_scenes} scenes following a dramatic narrative arc (Beginning -> Rising Tension -> Climax -> Resolution).
   - Each scene MUST have:
     - scene_number (int, from 1 to {num_scenes})
     - title (creative scene title in {language})
-    - visual_prompt (ultra-detailed visual prompt describing setting, lighting, characters, and action for an AI image generator, 16:9 cinematic framing. CRITICAL: Visual description ONLY! NEVER include dialogue, quotes, spoken words, speech bubbles, thought bubbles, words, letters, or subtitles. Audio voiceover handles speech separately, NOT the image artwork)
+    - visual_prompt (ultra-detailed visual prompt describing setting, lighting, the character with their full consistent visual appearance, and the scene action, 16:9 cinematic framing)
     - narration (paced for {target_scene_sec}s, approximately {target_words} words of evocative voiceover story narration in {language})
     - camera_motion (choose one: "zoom_in", "zoom_out", "pan_left", "pan_right", "subtle_drift")
 
@@ -135,7 +147,7 @@ Return ONLY valid JSON matching this exact structure:
 {{
   "title": "Title",
   "logline": "Logline",
-  "characters": "Character details",
+  "characters": "Protagonist: [Name], [Age/Gender], [Hair & Eyes], [Signature Outfit & Colors], [Key visual features]",
   "scenes": [
     {{
       "scene_number": 1,
@@ -609,6 +621,30 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         logline = genre_pack["logline_vi"] if is_vi else genre_pack["logline_en"]
         beats_pool = genre_pack["beats"]
 
+        genre_characters = {
+            "cyberpunk": {
+                "en": f"Protagonist: Cyra, agile 24-year-old cyberpunk detective with bright neon-cyan undercut hair, glowing cybernetic eye implant, wearing an oversized dark charcoal trench coat with glowing cyan trim, dark tactical pants, and silver boots.",
+                "vi": f"Nhân vật chính: Cyra, nữ thám tử cyberpunk 24 tuổi với mái tóc undercut xanh neon, mắt công nghệ phát sáng, khoác áo măng-tô đen viền cyan dạ quang, quần chiến thuật và giày bạc."
+            },
+            "folklore": {
+                "en": f"Protagonist: Tam, a graceful 18-year-old village maiden with long silky jet-black hair tied with a soft pink lotus ribbon, kind almond eyes, wearing an indigo-blue traditional Ao Ba Ba with white trim and wooden clogs.",
+                "vi": f"Nhân vật chính: Tấm, thiếu nữ 18 tuổi dịu hiền với mái tóc đen mượt buộc dải lụa sen hồng, đôi mắt bồ câu đôn hậu, mặc áo bà ba chàm mộc mạc và guốc mộc."
+            },
+            "space": {
+                "en": f"Protagonist: Captain Orion, 28-year-old astronaut with short auburn hair, hazel eyes, wearing a sleek white-and-orange pressurized exploration spacesuit with a glowing chest telemetry beacon.",
+                "vi": f"Nhân vật chính: Cơ trưởng Orion, phi hành gia 28 tuổi với mái tóc nâu đỏ ngắn, mặc bộ đồ du hành vũ trụ màu trắng phối cam hiện đại với đèn định vị ngực phát sáng."
+            },
+            "nature_animals": {
+                "en": f"Protagonist: Pip, an adorable stylized golden-furred red panda kitten with oversized fluffy striped tail, emerald-green eyes, wearing a tiny leaf-green explorer satchel and carved acorn necklace.",
+                "vi": f"Nhân vật chính: Pip, chú gấu trúc đỏ lông vàng cam đáng yêu với chiếc đuôi bông sọc to tròn, đôi mắt xanh ngọc bích lấp lánh, đeo túi thám hiểm lá xanh tí hon."
+            },
+            "adventure": {
+                "en": f"Protagonist: Kael, 16-year-old spirited explorer with tousled chestnut hair, amber eyes, wearing a rugged beige linen adventurer tunic, brown leather belt with brass compass, and worn traveler boots.",
+                "vi": f"Nhân vật chính: Kael, nhà thám hiểm 16 tuổi với mái tóc hạt dẻ bồng bềnh, mắt hổ phách, mặc áo vải lanh màu be, thắt lưng da nâu gắn la bàn đồng."
+            }
+        }
+        chosen_char = genre_characters.get(genre, genre_characters["adventure"])["vi" if is_vi else "en"]
+
         scenes = []
         for i in range(num_scenes):
             beat = beats_pool[i % len(beats_pool)]
@@ -618,7 +654,7 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
             scenes.append({
                 "scene_number": i + 1,
                 "title": scene_title,
-                "visual_prompt": beat["prompt"],
+                "visual_prompt": f"{beat['prompt']}, character consistency: {chosen_char}",
                 "narration": narration,
                 "camera_motion": beat.get("motion", "zoom_in")
             })
@@ -626,6 +662,6 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         return {
             "title": title,
             "logline": logline,
-            "characters": f"Protagonist representing {clean_idea}, stylized, expressive, cinematic consistency.",
+            "characters": chosen_char,
             "scenes": scenes
         }

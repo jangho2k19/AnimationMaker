@@ -14,7 +14,7 @@ if sys.platform == "win32":
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from PIL import Image
 
@@ -23,6 +23,10 @@ from backend.pipeline import AnimationPipeline
 from backend.agents.script_agent import ScriptAgent
 
 app = FastAPI(title="AniStory AI - Animated Video Creator Agent", version="1.0.0")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
 
 # Request Models
 class CreateStoryRequest(BaseModel):
@@ -53,6 +57,7 @@ class ImportStoryRequest(BaseModel):
 class UpdateScenesRequest(BaseModel):
     title: Optional[str] = None
     logline: Optional[str] = None
+    characters: Optional[str] = None
     scenes: List[Dict[str, Any]]
 
 class RenderRequest(BaseModel):
@@ -493,6 +498,8 @@ async def update_scenes(project_id: str, req: UpdateScenesRequest):
 
     if req.logline:
         project["logline"] = req.logline
+    if req.characters is not None:
+        project["characters"] = req.characters
     project["scenes"] = req.scenes
     pipeline.save_project(project)
     return project
@@ -628,7 +635,8 @@ async def audition_voice(req: AuditionVoiceRequest):
             text=sample_text,
             output_audio_path=str(target_file),
             voice=req.voice,
-            api_key=req.api_key
+            api_key=req.api_key,
+            allow_voice_fallback=True
         )
 
         is_fallback = res.get("is_fallback", False)

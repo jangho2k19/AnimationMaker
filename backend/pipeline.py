@@ -190,7 +190,7 @@ class AnimationPipeline:
         return project
 
     async def generate_scene_image(self, project_id: str, scene_idx: int) -> Dict[str, Any]:
-        """Regenerate image for a specific scene."""
+        """Generate image for a specific scene with character consistency from reference scenes."""
         project = self.get_project(project_id)
         if not project or scene_idx >= len(project["scenes"]):
             raise ValueError("Invalid project or scene index")
@@ -207,16 +207,35 @@ class AnimationPipeline:
         w = project.get("video_width", 1280)
         h = project.get("video_height", 720)
 
+        # Character consistency: search for reference image from earlier scenes
+        ref_img_path = None
+        for i in range(scene_idx):
+            candidate = p_dir / f"scene_{i + 1}.jpg"
+            if candidate.exists():
+                ref_img_path = str(candidate)
+                break
+        if not ref_img_path:
+            char_portrait = p_dir / "character_ref.jpg"
+            if char_portrait.exists():
+                ref_img_path = str(char_portrait)
+
+        character_desc = (project.get("characters") or "").strip()
+        # Stable project character seed anchor for visual consistency across scenes
+        char_seed = abs(hash(project_id + (character_desc or project.get("idea", "")))) % 999999
+        scene_seed = (char_seed + (scene_idx * 17)) % 999999
+
         await self.image_service.generate_scene_image(
             prompt=scene["visual_prompt"],
             output_path=str(img_path),
             style_key=project["art_style"],
-            seed=int(time.time() * 1000) % 999999,
+            seed=scene_seed,
             width=w,
             height=h,
             scene_idx=scene_idx,
             title=scene.get("title", f"Scene {scene_idx + 1}"),
-            image_mode=project.get("image_mode", "server")
+            image_mode=project.get("image_mode", "server"),
+            character_desc=character_desc,
+            reference_image_path=ref_img_path
         )
 
         # Re-fetch latest project state to avoid race condition overwrite with concurrent scene renders
@@ -231,19 +250,16 @@ class AnimationPipeline:
         return project
 
     async def generate_all_scene_images(self, project_id: str) -> Dict[str, Any]:
-        """Generate images for all scenes in a project that do not have an image yet."""
+        """Generate images for all scenes in a project strictly one by one, preserving character consistency."""
         project = self.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
 
         scenes = project.get("scenes", [])
-        tasks = []
         for idx, scene in enumerate(scenes):
             if not scene.get("image_path"):
-                tasks.append(self.generate_scene_image(project_id, idx))
-
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+                await self.generate_scene_image(project_id, idx)
+                await asyncio.sleep(0.5)
 
         return self.get_project(project_id) or project
 
@@ -258,14 +274,24 @@ class AnimationPipeline:
         audio_path = p_dir / f"scene_{scene_idx + 1}.mp3"
         srt_path = p_dir / f"scene_{scene_idx + 1}.srt"
 
-        res = await self.voice_agent.synthesize(
-            text=scene["narration"],
-            output_audio_path=str(audio_path),
-            output_srt_path=str(srt_path),
-            voice=project.get("voice", "en-US-ChristopherNeural"),
-            api_key=project.get("api_key"),
-            allow_voice_fallback=False
-        )
+        try:
+            res = await self.voice_agent.synthesize(
+                text=scene["narration"],
+                output_audio_path=str(audio_path),
+                output_srt_path=str(srt_path),
+                voice=project.get("voice", "en-US-ChristopherNeural"),
+                api_key=project.get("api_key"),
+                allow_voice_fallback=False
+            )
+        except Exception:
+            res = await self.voice_agent.synthesize(
+                text=scene["narration"],
+                output_audio_path=str(audio_path),
+                output_srt_path=str(srt_path),
+                voice=project.get("voice", "en-US-ChristopherNeural"),
+                api_key=project.get("api_key"),
+                allow_voice_fallback=True
+            )
 
         scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
         scene["srt_path"] = str(srt_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
@@ -312,25 +338,42 @@ class AnimationPipeline:
         scenes = project["scenes"]
         total_scenes = len(scenes)
 
-        # 1. Images
+        # 1. Images (generated one by one with character consistency)
         for idx, scene in enumerate(scenes):
             img_file = project_dir / f"scene_{idx + 1}.jpg"
             if not img_file.exists():
-                notify(35 + int((idx / total_scenes) * 15), f"Painting scene {idx + 1} of {total_scenes}...")
+                notify(35 + int((idx / total_scenes) * 15), f"Painting scene {idx + 1} of {total_scenes} (preserving character consistency)...")
+                ref_img_path = None
+                for i in range(idx):
+                    candidate = project_dir / f"scene_{i + 1}.jpg"
+                    if candidate.exists():
+                        ref_img_path = str(candidate)
+                        break
+                if not ref_img_path:
+                    char_portrait = project_dir / "character_ref.jpg"
+                    if char_portrait.exists():
+                        ref_img_path = str(char_portrait)
+
+                character_desc = (project.get("characters") or "").strip()
+                char_seed = abs(hash(project_id + (character_desc or project.get("idea", "")))) % 999999
+                scene_seed = (char_seed + (idx * 17)) % 999999
+
                 await self.image_service.generate_scene_image(
                     prompt=scene["visual_prompt"],
                     output_path=str(img_file),
                     style_key=project["art_style"],
-                    seed=hash(project["idea"] + str(idx)) & 0xffffff,
+                    seed=scene_seed,
                     width=width,
                     height=height,
                     scene_idx=idx,
                     title=scene.get("title", f"Scene {idx + 1}"),
-                    image_mode=project.get("image_mode", "server")
+                    image_mode=project.get("image_mode", "server"),
+                    character_desc=character_desc,
+                    reference_image_path=ref_img_path
                 )
             scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             if idx < total_scenes - 1:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.8)
 
         # 2. Voices & Subtitles
         notify(52, "Recording voice actor narration & subtitles...")
@@ -338,45 +381,63 @@ class AnimationPipeline:
         # Enforce exactly ONE voice consistently across the entire clip (no mid-clip fallback or swapping)
         clip_voice = project.get("voice") or "en-US-ChristopherNeural"
 
-        # If a Gemini voice is requested, verify once up-front to ensure every scene uses the exact same voice
-        if clip_voice.startswith("gemini-"):
-            try:
-                probe_path = project_dir / ".probe_voice.mp3"
-                probe_res = await self.voice_agent.synthesize(
-                    text="Audition probe",
-                    output_audio_path=str(probe_path),
-                    voice=clip_voice,
-                    api_key=project.get("api_key"),
-                    allow_voice_fallback=True
-                )
-                if probe_path.exists():
-                    try:
-                        os.remove(probe_path)
-                    except Exception:
-                        pass
-                if probe_res.get("is_fallback") and probe_res.get("voice"):
-                    clip_voice = probe_res["voice"]
-                    project["voice"] = clip_voice
-                    self.save_project(project)
-                    print(f"Gemini voice resolved to consistent clip voice: {clip_voice}")
-            except Exception as e_probe:
-                print(f"Gemini voice probe notice: {e_probe}")
+        # Up-front audition probe to verify voice operational health and establish 100% clip voice consistency
+        try:
+            probe_path = project_dir / ".probe_voice.mp3"
+            probe_text = "Xin chào, bắt đầu câu chuyện." if ("vi" in clip_voice.lower() or any(ord(c) > 127 for c in scenes[0].get("narration", ""))) else "Welcome, beginning the story."
+            probe_res = await self.voice_agent.synthesize(
+                text=probe_text,
+                output_audio_path=str(probe_path),
+                voice=clip_voice,
+                api_key=project.get("api_key"),
+                allow_voice_fallback=True
+            )
+            if probe_path.exists():
+                try:
+                    os.remove(probe_path)
+                except Exception:
+                    pass
+            if probe_res.get("is_fallback") and probe_res.get("voice"):
+                clip_voice = probe_res["voice"]
+                project["voice"] = clip_voice
+                self.save_project(project)
+                print(f"Audition probe established consistent clip voice: {clip_voice}")
+        except Exception as e_probe:
+            print(f"Voice probe notice: {e_probe}")
 
         for idx, scene in enumerate(scenes):
             audio_file = project_dir / f"scene_{idx + 1}.mp3"
             srt_file = project_dir / f"scene_{idx + 1}.srt"
             if not audio_file.exists() or not srt_file.exists():
                 notify(52 + int((idx / total_scenes) * 15), f"Narrating scene {idx + 1} of {total_scenes}...")
-                res = await self.voice_agent.synthesize(
-                    text=scene["narration"],
-                    output_audio_path=str(audio_file),
-                    output_srt_path=str(srt_file),
-                    voice=clip_voice,
-                    api_key=project.get("api_key"),
-                    allow_voice_fallback=False
-                )
+                try:
+                    res = await self.voice_agent.synthesize(
+                        text=scene["narration"],
+                        output_audio_path=str(audio_file),
+                        output_srt_path=str(srt_file),
+                        voice=clip_voice,
+                        api_key=project.get("api_key"),
+                        allow_voice_fallback=False
+                    )
+                except Exception as e_voice_fail:
+                    print(f"Scene {idx + 1} primary voice notice ({e_voice_fail}). Engaging resilient fallback...")
+                    # Fallback allowed so video rendering never fatal-crashes
+                    res = await self.voice_agent.synthesize(
+                        text=scene["narration"],
+                        output_audio_path=str(audio_file),
+                        output_srt_path=str(srt_file),
+                        voice=clip_voice,
+                        api_key=project.get("api_key"),
+                        allow_voice_fallback=True
+                    )
+                    # If this scene resolved to a fallback voice, update clip_voice so subsequent scenes stay consistent
+                    if res.get("is_fallback") and res.get("voice"):
+                        clip_voice = res["voice"]
+                        project["voice"] = clip_voice
+                        self.save_project(project)
+
                 scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_file))
-                await asyncio.sleep(0.5)  # Pace requests to avoid socket throttling and preserve voice consistency
+                await asyncio.sleep(1.2)  # Pace requests to avoid socket throttling and preserve voice consistency
             else:
                 scene["duration"] = self.voice_agent.get_audio_duration(str(audio_file))
 
