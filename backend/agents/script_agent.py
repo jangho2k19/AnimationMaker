@@ -127,7 +127,7 @@ Requirements:
   - Each scene MUST have:
     - scene_number (int, from 1 to {num_scenes})
     - title (creative scene title in {language})
-    - visual_prompt (ultra-detailed visual prompt describing setting, lighting, characters, and action for an AI image generator, 16:9 cinematic framing)
+    - visual_prompt (ultra-detailed visual prompt describing setting, lighting, characters, and action for an AI image generator, 16:9 cinematic framing. CRITICAL: Visual description ONLY! NEVER include dialogue, quotes, spoken words, speech bubbles, thought bubbles, words, letters, or subtitles. Audio voiceover handles speech separately, NOT the image artwork)
     - narration (paced for {target_scene_sec}s, approximately {target_words} words of evocative voiceover story narration in {language})
     - camera_motion (choose one: "zoom_in", "zoom_out", "pan_left", "pan_right", "subtle_drift")
 
@@ -294,33 +294,14 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         return psid, psidts
 
     async def _generate_with_gemini_cookie(self, prompt: str, cookie_input: str) -> Dict[str, Any]:
-        psid, psidts = self._extract_gemini_cookies(cookie_input)
-        if not psid:
-            raise ValueError("No valid __Secure-1PSID cookie found. Please provide a valid cookie value.")
-        if not psidts:
-            print("[Gemini Web Notice] __Secure-1PSIDTS was not provided. Google sessions require both __Secure-1PSID and __Secure-1PSIDTS for full authentication.")
-
-        from backend.services.gemini_web_session import GeminiWebSessionManager
-        manager = GeminiWebSessionManager.get_instance()
-        client = await manager.get_client(psid_override=psid, psidts_override=psidts)
-
-        chosen_model = None
-        if self.model and str(self.model).strip():
-            req_model = str(self.model).strip()
-            try:
-                chosen_model = client.resolve_model(req_model)
-            except Exception:
-                m_lower = req_model.lower()
-                for m in (client.list_models() or []):
-                    if m_lower in m.model_name.lower() or m_lower in m.display_name.lower() or (m.aliases and any(m_lower in a.lower() for a in m.aliases)):
-                        chosen_model = m
-                        break
-
-        if chosen_model:
-            res = await client.generate_content(prompt, model=chosen_model)
-        else:
-            res = await client.generate_content(prompt)
-
+        from backend.services.gemini_wrapper import GeminiWebWrapper
+        wrapper = GeminiWebWrapper.get_instance()
+        res = await wrapper.generate_content(
+            prompt=prompt,
+            model=self.model,
+            cookie_override=cookie_input,
+            extended_thinking=True
+        )
         return self._clean_json_response(res.text)
 
     def _generate_with_gemini(self, prompt: str, model: str = "gemini-2.0-flash") -> Dict[str, Any]:
@@ -406,12 +387,18 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         Genre-Aware Creative Story Architect: Generates unique, non-generic,
         tailored screenplays and narrative beats tailored to the story topic.
         """
-        clean_idea = idea.strip()
-        genre = self._detect_genre(clean_idea)
+        clean_idea_raw = idea.strip()
+        genre = self._detect_genre(clean_idea_raw)
         is_vi = language.startswith("vi")
 
-        words = clean_idea.split()
-        short_title = " ".join([w.capitalize() for w in words[:5]])
+        # Strip quotes, dialogue, and multi-line paragraphs to extract a concise subject
+        no_dialogue = re.sub(r'["“][^"”]*["”]', '', clean_idea_raw)
+        no_dialogue = re.sub(r"['‘][^'’]*['’]", '', no_dialogue)
+        first_line = no_dialogue.strip().splitlines()[0] if no_dialogue.strip() else clean_idea_raw
+        first_sentence = re.split(r'[.!?\n]', first_line)[0].strip()
+        words = [w for w in first_sentence.split() if w]
+        clean_idea = " ".join(words[:6]) if words else "the story"
+        short_title = " ".join([w.capitalize() for w in words[:4]]) if words else "Animation Story" 
 
         # Genre narrative templates with distinct story beats
         genre_beats = {

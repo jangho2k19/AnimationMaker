@@ -75,6 +75,24 @@ class AuditionVoiceRequest(BaseModel):
     language: Optional[str] = None
     api_key: Optional[str] = None
 
+class GeminiGenerateRequest(BaseModel):
+    prompt: str
+    model: Optional[str] = None
+    extended_thinking: bool = False
+    cookie: Optional[str] = None
+
+class GeminiChatRequest(BaseModel):
+    prompt: str
+    session_id: Optional[str] = None
+    model: Optional[str] = None
+    extended_thinking: bool = False
+    cookie: Optional[str] = None
+
+class GeminiImageGenRequest(BaseModel):
+    prompt: str
+    aspect_ratio: str = "16:9"
+    cookie: Optional[str] = None
+
 pipeline = AnimationPipeline()
 
 class SaveCredentialsRequest(BaseModel):
@@ -266,6 +284,102 @@ async def detect_gemini_models(
         "total_cookie": len(cookie_models),
         "warning": warning_msg
     }
+
+# ====================================================================
+# GEMINI WEB WRAPPER ENDPOINTS (Inspired by HanaokaYuzu/Gemini-API)
+# ====================================================================
+
+@app.post("/api/gemini/generate")
+async def gemini_web_generate(req: GeminiGenerateRequest):
+    """Single-turn generation supporting text, thoughts, and images via Gemini Web session."""
+    try:
+        from backend.services.gemini_wrapper import GeminiWebWrapper
+        wrapper = GeminiWebWrapper.get_instance()
+        res = await wrapper.generate_content(
+            prompt=req.prompt,
+            model=req.model,
+            extended_thinking=req.extended_thinking,
+            cookie_override=req.cookie
+        )
+        return {
+            "status": "success",
+            "text": res.text,
+            "thoughts": res.thoughts,
+            "images": [img.url for img in res.images],
+            "model_used": res.model_used
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/gemini/chat")
+async def gemini_web_chat(req: GeminiChatRequest):
+    """Multi-turn chat session with context persistence and model selection."""
+    try:
+        from backend.services.gemini_wrapper import GeminiWebWrapper
+        wrapper = GeminiWebWrapper.get_instance()
+        chat = await wrapper.start_chat(model=req.model, session_id=req.session_id)
+        res = await chat.send_message(
+            prompt=req.prompt,
+            extended_thinking=req.extended_thinking
+        )
+        return {
+            "status": "success",
+            "session_id": chat.session_id,
+            "text": res.text,
+            "thoughts": res.thoughts,
+            "images": [img.url for img in res.images],
+            "history": chat.history
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/gemini/generate-image")
+async def gemini_web_generate_image(req: GeminiImageGenRequest):
+    """Generates high-resolution illustration using Google Imagen 3 via Gemini Web."""
+    try:
+        from backend.services.gemini_wrapper import GeminiWebWrapper
+        from backend.config import PROJECTS_DIR, VIDEO_DIMENSIONS
+        wrapper = GeminiWebWrapper.get_instance()
+
+        dim = VIDEO_DIMENSIONS.get(req.aspect_ratio, {"width": 1280, "height": 720})
+        out_dir = PROJECTS_DIR / "gemini_generated"
+        paths = await wrapper.generate_images(
+            prompt=req.prompt,
+            output_dir=out_dir,
+            width=dim.get("width", 1280),
+            height=dim.get("height", 720),
+            cookie_override=req.cookie
+        )
+        if not paths:
+            raise RuntimeError("No image was returned by Gemini Web.")
+
+        rel_path = str(Path(paths[0]).relative_to(PROJECTS_DIR)).replace("\\", "/")
+        return {
+            "status": "success",
+            "image_path": rel_path,
+            "media_url": f"/media/{rel_path}",
+            "prompt": req.prompt
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/gemini/models")
+async def gemini_web_list_models():
+    """Lists available models directly from the active Gemini Web session."""
+    try:
+        from backend.services.gemini_wrapper import GeminiWebWrapper
+        wrapper = GeminiWebWrapper.get_instance()
+        models = await wrapper.list_available_models()
+        return {"status": "success", "models": models}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "models": []}
+
+@app.get("/api/gemini/status")
+async def gemini_web_status():
+    """Returns the authentication and auto-refresh health of the Gemini Web session."""
+    from backend.services.gemini_wrapper import GeminiWebWrapper
+    wrapper = GeminiWebWrapper.get_instance()
+    return await wrapper.get_status()
 
 @app.get("/api/projects")
 async def list_projects():

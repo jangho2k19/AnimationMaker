@@ -3,6 +3,7 @@ import re
 import asyncio
 import subprocess
 from pathlib import Path
+from typing import Optional
 import edge_tts
 from backend.config import FFMPEG_PATH, VOICES
 
@@ -50,6 +51,22 @@ class VoiceAgent:
         return "en"
 
     @staticmethod
+    def _normalize_text_for_tts(text: str) -> str:
+        """
+        Cleans and normalizes text for speech synthesis:
+        - Ensures first letter is capitalized to avoid edge-tts tokenizer glitches.
+        - Ensures terminal punctuation exists so sentence boundary parsing succeeds.
+        """
+        t = text.strip() if text else ""
+        if not t:
+            return "..."
+        if t[0].isalpha() and t[0].islower():
+            t = t[0].upper() + t[1:]
+        if not t.endswith(('.', '!', '?', ';', ':', '...')):
+            t += "."
+        return t
+
+    @staticmethod
     def _get_fallback_voice_for_gemini(voice_id: str, is_vietnamese: bool = False) -> str:
         """
         Maps a Gemini voice to a personality- and gender-matched Edge-TTS voice
@@ -81,10 +98,10 @@ class VoiceAgent:
                 return "en-GB-RyanNeural"
             return "en-US-JennyNeural"
 
-    async def _try_edge_tts(self, text: str, output_audio_path: str, voice: str, rate: str, pitch: str):
-        """Attempts Edge-TTS synthesis and returns sentence boundaries with retry."""
+    async def _try_edge_tts(self, text: str, output_audio_path: str, voice: str, rate: str, pitch: str, max_retries: int = 4):
+        """Attempts Edge-TTS synthesis for the specified voice with robust retry and backoff."""
         last_err = None
-        for attempt in range(2):
+        for attempt in range(max_retries):
             try:
                 comm = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
                 boundaries = []
@@ -108,13 +125,15 @@ class VoiceAgent:
                                 })
 
                 if not has_audio or os.path.getsize(output_audio_path) == 0:
-                    raise RuntimeError("Edge-TTS generated zero audio bytes.")
+                    raise RuntimeError(f"Edge-TTS voice '{voice}' generated zero audio bytes.")
 
                 return boundaries
             except Exception as e:
                 last_err = e
-                if attempt == 0:
-                    await asyncio.sleep(0.3)
+                if attempt < max_retries - 1:
+                    backoff = (attempt + 1) * 0.7
+                    print(f"Edge-TTS attempt {attempt + 1} for '{voice}' encountered: {e}. Retrying same voice in {backoff:.1f}s...")
+                    await asyncio.sleep(backoff)
                     continue
                 raise last_err
 
@@ -214,28 +233,29 @@ class VoiceAgent:
         voice: str = None,
         rate: str = "+0%",
         pitch: str = "+0Hz",
-        api_key: str = None
+        api_key: str = None,
+        allow_voice_fallback: bool = False
     ) -> dict:
         """
-        Synthesize speech with multi-layered fallback:
-        1. Google Gemini Native Voice (if selected)
-        2. Requested Edge-TTS voice
-        3. Alternative Edge-TTS voice
-        4. gTTS (Google TTS) fallback
-        Guarantees audio is ALWAYS successfully produced without crashing.
+        Synthesizes narration speech using ONE consistent voice throughout the clip.
+        When allow_voice_fallback is False (default for clip narration), it strictly preserves
+        the chosen character voice and will NOT swap to an alternate gender or robotic voice.
         """
-        clean_text = text.strip() if text and text.strip() else "..."
+        clean_text = self._normalize_text_for_tts(text)
         selected_voice = voice or self.default_voice
         output_audio_path = str(output_audio_path)
-        os.makedirs(os.path.dirname(output_audio_path), exist_ok=True)
+        parent_dir = os.path.dirname(output_audio_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
 
         lang_code = self._get_lang_code_from_voice(selected_voice)
         boundaries = []
         success = False
 
-        # Attempt 0: Google Gemini Native Audio if selected
         is_fallback = False
         fallback_from = None
+
+        # Attempt 0: Google Gemini Native Audio if selected
         if selected_voice and selected_voice.startswith("gemini-"):
             try:
                 await self._synthesize_with_gemini(clean_text, output_audio_path, selected_voice, api_key=api_key)
@@ -246,7 +266,7 @@ class VoiceAgent:
                 is_fallback = True
                 is_vn = any(ord(c) > 127 for c in clean_text) or "vi" in lang_code
                 matched_voice = self._get_fallback_voice_for_gemini(selected_voice, is_vietnamese=is_vn)
-                print(f"Gemini voice synthesis error ({selected_voice}): {e_gemini}. Intelligent fallback to matched voice '{matched_voice}'...")
+                print(f"Gemini voice synthesis notice ({selected_voice}): {e_gemini}. Using matched voice '{matched_voice}'...")
                 selected_voice = matched_voice
 
         # Extract tuning variants if any
@@ -274,16 +294,24 @@ class VoiceAgent:
             actual_rate = "-5%"
             actual_pitch = "-3Hz"
 
-        # Attempt 1: Requested Voice via Edge-TTS
+        # Attempt 1: Requested Voice via Edge-TTS (with 4 retries on the SAME voice)
         if not success:
             try:
-                boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch)
+                boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch, max_retries=4)
                 success = True
             except Exception as e:
-                print(f"Edge-TTS primary voice '{actual_voice}' failed: {e}. Trying alternate voice...")
+                print(f"Edge-TTS primary voice '{actual_voice}' retry exhausted: {e}.")
+                # If pitch/rate was tuned, retry once with standard pitch/rate on the SAME voice
+                if actual_rate != "+0%" or actual_pitch != "+0Hz":
+                    try:
+                        print(f"Retrying '{actual_voice}' with standard pitch/rate to preserve character voice...")
+                        boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, "+0%", "+0Hz", max_retries=2)
+                        success = True
+                    except Exception as e_norm:
+                        print(f"Standard pitch retry for '{actual_voice}' failed: {e_norm}")
 
-        # Attempt 2: Swapping to alternate voice if Vietnamese or English
-        if not success:
+        # If allow_voice_fallback is explicitly enabled (e.g. audition probe), only then allow swapping
+        if not success and allow_voice_fallback:
             alt_voice = None
             if selected_voice == "vi-VN-HoaiMyNeural":
                 alt_voice = "vi-VN-NamMinhNeural"
@@ -294,30 +322,34 @@ class VoiceAgent:
 
             if alt_voice:
                 try:
-                    boundaries = await self._try_edge_tts(clean_text, output_audio_path, alt_voice, rate, pitch)
+                    boundaries = await self._try_edge_tts(clean_text, output_audio_path, alt_voice, rate, pitch, max_retries=2)
                     selected_voice = alt_voice
                     success = True
-                    print(f"Successfully synthesized with alternate voice '{alt_voice}'!")
-                except Exception as e2:
-                    print(f"Edge-TTS alternate voice '{alt_voice}' also failed: {e2}.")
+                    is_fallback = True
+                    print(f"Audition fallback synthesized with '{alt_voice}'.")
+                except Exception:
+                    pass
 
-        # Attempt 3: Fail-safe gTTS fallback
+            if not success:
+                try:
+                    self._synthesize_with_gtts(clean_text, output_audio_path, lang_code)
+                    success = True
+                    is_fallback = True
+                    boundaries = []
+                except Exception as e3:
+                    raise RuntimeError(f"All TTS voice engines failed: {e3}")
+
         if not success:
-            try:
-                print(f"Activating gTTS engine fallback for language '{lang_code}'...")
-                self._synthesize_with_gtts(clean_text, output_audio_path, lang_code)
-                success = True
-                boundaries = []
-            except Exception as e3:
-                print(f"gTTS fallback error: {e3}")
-                raise RuntimeError(f"All TTS voice engines failed: {e3}")
+            raise RuntimeError(f"Voice synthesis failed for voice '{selected_voice}'. Consistent voice policy prevented swapping to another voice.")
 
         duration = self.get_audio_duration(output_audio_path)
 
         # Generate SRT if path is provided
         if output_srt_path:
             output_srt_path = str(output_srt_path)
-            os.makedirs(os.path.dirname(output_srt_path), exist_ok=True)
+            parent_srt = os.path.dirname(output_srt_path)
+            if parent_srt:
+                os.makedirs(parent_srt, exist_ok=True)
 
             all_cues = []
             if boundaries:

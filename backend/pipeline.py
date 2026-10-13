@@ -262,8 +262,9 @@ class AnimationPipeline:
             text=scene["narration"],
             output_audio_path=str(audio_path),
             output_srt_path=str(srt_path),
-            voice=project["voice"],
-            api_key=project.get("api_key")
+            voice=project.get("voice", "en-US-ChristopherNeural"),
+            api_key=project.get("api_key"),
+            allow_voice_fallback=False
         )
 
         scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
@@ -333,6 +334,34 @@ class AnimationPipeline:
 
         # 2. Voices & Subtitles
         notify(52, "Recording voice actor narration & subtitles...")
+
+        # Enforce exactly ONE voice consistently across the entire clip (no mid-clip fallback or swapping)
+        clip_voice = project.get("voice") or "en-US-ChristopherNeural"
+
+        # If a Gemini voice is requested, verify once up-front to ensure every scene uses the exact same voice
+        if clip_voice.startswith("gemini-"):
+            try:
+                probe_path = project_dir / ".probe_voice.mp3"
+                probe_res = await self.voice_agent.synthesize(
+                    text="Audition probe",
+                    output_audio_path=str(probe_path),
+                    voice=clip_voice,
+                    api_key=project.get("api_key"),
+                    allow_voice_fallback=True
+                )
+                if probe_path.exists():
+                    try:
+                        os.remove(probe_path)
+                    except Exception:
+                        pass
+                if probe_res.get("is_fallback") and probe_res.get("voice"):
+                    clip_voice = probe_res["voice"]
+                    project["voice"] = clip_voice
+                    self.save_project(project)
+                    print(f"Gemini voice resolved to consistent clip voice: {clip_voice}")
+            except Exception as e_probe:
+                print(f"Gemini voice probe notice: {e_probe}")
+
         for idx, scene in enumerate(scenes):
             audio_file = project_dir / f"scene_{idx + 1}.mp3"
             srt_file = project_dir / f"scene_{idx + 1}.srt"
@@ -342,10 +371,12 @@ class AnimationPipeline:
                     text=scene["narration"],
                     output_audio_path=str(audio_file),
                     output_srt_path=str(srt_file),
-                    voice=project["voice"],
-                    api_key=project.get("api_key")
+                    voice=clip_voice,
+                    api_key=project.get("api_key"),
+                    allow_voice_fallback=False
                 )
                 scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_file))
+                await asyncio.sleep(0.5)  # Pace requests to avoid socket throttling and preserve voice consistency
             else:
                 scene["duration"] = self.voice_agent.get_audio_duration(str(audio_file))
 

@@ -14,12 +14,39 @@ class ImageService:
         self.provider = (provider or "gemini").lower()
         self.api_key = api_key or os.environ.get(f"{self.provider.upper()}_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
 
+    @staticmethod
+    def sanitize_visual_prompt(prompt: str) -> str:
+        """
+        Strips quotes, spoken dialogue, and speech bubble indicators from prompt
+        to prevent image models from drawing speech bubbles with garbled text.
+        """
+        if not prompt:
+            return ""
+        p = prompt.strip()
+        # Remove quoted dialogue like "..." or “...” or '...'
+        p = re.sub(r'["“][^"”]{2,}["”]', '', p)
+        p = re.sub(r"['‘][^'’]{2,}['’]", '', p)
+        # Remove dialogue markers and speech bubble requests
+        p = re.sub(r'(?i)\b(?:speech bubble|dialogue bubble|thought bubble|speech balloon|comic bubble|text bubble)\b', '', p)
+        p = re.sub(r'(?i)\b(?:nói rằng|cất tiếng nói|nói với|bảo rằng|lời nói|says|saying)\b[:\s]*', '', p)
+        # If a massive story paragraph was mistakenly passed in, keep only the visual description parts
+        if len(p) > 500:
+            # Keep first 250 characters and strip trailing half-words
+            p = p[:250].rsplit(' ', 1)[0]
+        # Collapse multiple spaces and commas
+        p = re.sub(r'\s*,\s*', ', ', p)
+        p = re.sub(r',\s*,+', ', ', p)
+        p = re.sub(r'\s+', ' ', p).strip()
+        p = p.strip(',').strip()
+        return p
+
     def craft_full_prompt(self, base_prompt: str, style_key: str = None) -> str:
-        """Combine base scene prompt with tuned artistic style keywords."""
+        """Combine base scene prompt with tuned artistic style keywords and anti-text constraints."""
         style_info = ART_STYLES.get(style_key or self.default_style, ART_STYLES["ghibli"])
         suffix = style_info.get("prompt_suffix", "")
-        clean_base = base_prompt.strip().rstrip(",")
-        return f"{clean_base}{suffix}"
+        clean_base = self.sanitize_visual_prompt(base_prompt)
+        anti_text = ", clean textless illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark"
+        return f"{clean_base}{suffix}{anti_text}"
 
     def extract_keywords(self, prompt: str, title: str = "") -> list:
         """Extract clean, meaningful visual keywords for thematic asset discovery."""
@@ -127,7 +154,7 @@ class ImageService:
                         try:
                             resp = client.models.generate_content(
                                 model=img_model,
-                                contents=f"Generate a high quality illustration: {full_prompt[:1000]}"
+                                contents=f"Generate a high quality illustration: {full_prompt[:1000]}. STRICT: No speech bubbles, no dialogue, no text in the artwork."
                             )
                             if resp.candidates:
                                 for cand in resp.candidates:
@@ -158,18 +185,17 @@ class ImageService:
 
             if psid:
                 try:
-                    from backend.services.gemini_web_session import GeminiWebSessionManager
-                    manager = GeminiWebSessionManager.get_instance()
-                    client = await manager.get_client(psid_override=psid, psidts_override=psidts)
-                    resp = await client.generate_content(f"Generate an image of: {full_prompt[:800]}")
+                    from backend.services.gemini_wrapper import GeminiWebWrapper
+                    wrapper = GeminiWebWrapper.get_instance()
+                    resp = await wrapper.generate_content(
+                        f"Generate an image of: {full_prompt[:800]}. Clean illustration without text, no speech bubbles, no words.",
+                        cookie_override=cookie_input
+                    )
                     saved_img = None
-                    if resp.candidates:
-                        for cand in resp.candidates:
-                            if cand.generated_images:
-                                temp_dir = Path(output_path).parent / "temp_gemini"
-                                os.makedirs(temp_dir, exist_ok=True)
-                                saved_img = await cand.generated_images[0].save(path=str(temp_dir))
-                                break
+                    if resp.has_images:
+                        temp_dir = Path(output_path).parent / "temp_gemini"
+                        os.makedirs(temp_dir, exist_ok=True)
+                        saved_img = await resp.images[0].save(path=str(temp_dir))
 
                     if saved_img and os.path.exists(saved_img):
                         img = Image.open(saved_img)

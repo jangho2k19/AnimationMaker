@@ -10,8 +10,131 @@ class AniStoryApp {
     this.pollInterval = null;
 
     this.initElements();
+    this.restoreCachedProjectSync();
     this.attachEvents();
     this.loadConfig();
+  }
+
+  saveActiveProjectState() {
+    if (this.currentProject && this.currentProject.id) {
+      localStorage.setItem("anistory_active_project_id", this.currentProject.id);
+      try {
+        sessionStorage.setItem("anistory_cached_project", JSON.stringify(this.currentProject));
+      } catch (e) {
+        // Safe ignore on heavy quota
+      }
+    } else {
+      localStorage.removeItem("anistory_active_project_id");
+      sessionStorage.removeItem("anistory_cached_project");
+    }
+  }
+
+  clearActiveProjectState() {
+    this.currentProject = null;
+    localStorage.removeItem("anistory_active_project_id");
+    localStorage.removeItem("anistory_active_stage");
+    sessionStorage.removeItem("anistory_cached_project");
+    if (window.history && typeof window.history.replaceState === "function") {
+      try {
+        window.history.replaceState({ stage: 1 }, "", window.location.pathname);
+      } catch (e) {}
+    }
+  }
+
+  restoreCachedProjectSync() {
+    try {
+      const cached = sessionStorage.getItem("anistory_cached_project");
+      if (!cached) return;
+      const proj = JSON.parse(cached);
+      if (!proj || !proj.id) return;
+      this.currentProject = proj;
+
+      let targetStage = 1;
+      const hashMatch = window.location.hash.match(/#stage([1-4])/);
+      if (hashMatch) {
+        targetStage = parseInt(hashMatch[1], 10);
+      } else {
+        const savedStage = localStorage.getItem("anistory_active_stage");
+        if (savedStage) {
+          targetStage = parseInt(savedStage, 10);
+        } else if (proj.status === "completed") {
+          targetStage = 4;
+        } else if (proj.status === "rendering") {
+          targetStage = 3;
+        } else {
+          targetStage = 2;
+        }
+      }
+
+      if (targetStage === 4 || (proj.status === "completed" && targetStage >= 3)) {
+        this.showCinemaPremiere(false);
+      } else if (targetStage === 3) {
+        this.renderStoryboardView();
+        this.switchStage(3, false);
+      } else if (targetStage === 2) {
+        this.renderStoryboardView();
+        this.switchStage(2, false);
+      }
+    } catch (e) {
+      console.warn("restoreCachedProjectSync error:", e);
+    }
+  }
+
+  async restoreActiveProject() {
+    const savedProjectId = localStorage.getItem("anistory_active_project_id");
+    if (!savedProjectId) return;
+
+    try {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(savedProjectId)}`);
+      if (!resp.ok) {
+        this.clearActiveProjectState();
+        this.switchStage(1, false);
+        return;
+      }
+      const proj = await resp.json();
+      this.currentProject = proj;
+      this.saveActiveProjectState();
+
+      let targetStage = 1;
+      const hashMatch = window.location.hash.match(/#stage([1-4])/);
+      if (hashMatch) {
+        targetStage = parseInt(hashMatch[1], 10);
+      } else {
+        const savedStage = localStorage.getItem("anistory_active_stage");
+        if (savedStage) {
+          targetStage = parseInt(savedStage, 10);
+        } else if (proj.status === "completed") {
+          targetStage = 4;
+        } else if (proj.status === "rendering") {
+          targetStage = 3;
+        } else {
+          targetStage = 2;
+        }
+      }
+
+      if (targetStage === 4 || (proj.status === "completed" && targetStage >= 3)) {
+        this.showCinemaPremiere(false);
+      } else if (targetStage === 3) {
+        this.renderStoryboardView();
+        this.switchStage(3, false);
+        const pct = proj.progress || 35;
+        this.renderProgressBar.style.width = `${pct}%`;
+        this.renderProgressPercent.textContent = `${pct}%`;
+        this.renderStepDetail.textContent = proj.current_step || "Processing animation...";
+        this.updateActivityLogs(pct, proj.current_step);
+        if (proj.status === "rendering") {
+          this.pollRenderProgress();
+        }
+      } else if (targetStage === 2) {
+        this.renderStoryboardView();
+        this.switchStage(2, false);
+        this.autoGenerateMissingSceneImages();
+      } else {
+        this.switchStage(1, false);
+      }
+    } catch (err) {
+      console.warn("Could not restore active project:", err);
+    }
   }
 
   initElements() {
@@ -200,7 +323,7 @@ class AniStoryApp {
 
     if (this.btnNewStoryFromStage2) {
       this.btnNewStoryFromStage2.addEventListener("click", () => {
-        this.currentProject = null;
+        this.clearActiveProjectState();
         if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         this.inputIdeaPrompt.value = "";
         localStorage.removeItem("anistory_draft_prompt");
@@ -236,6 +359,10 @@ class AniStoryApp {
     // Browser back/forward button history support
     window.addEventListener("popstate", (e) => {
       const targetStage = (e.state && e.state.stage) ? e.state.stage : 1;
+      if (targetStage > 1 && !this.currentProject) {
+        this.switchStage(1, false);
+        return;
+      }
       this.switchStage(targetStage, false);
     });
 
@@ -325,7 +452,7 @@ class AniStoryApp {
 
     // Cinema restart
     this.btnStartNewStory.addEventListener("click", () => {
-      this.currentProject = null;
+      this.clearActiveProjectState();
       if (this.inputProjectTitle) this.inputProjectTitle.value = "";
       this.inputIdeaPrompt.value = "";
       localStorage.removeItem("anistory_draft_prompt");
@@ -468,7 +595,7 @@ class AniStoryApp {
     if (this.btnNewFilmFromModal) {
       this.btnNewFilmFromModal.addEventListener("click", () => {
         this.modalProjects.classList.remove("active");
-        this.currentProject = null;
+        this.clearActiveProjectState();
         if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         this.inputIdeaPrompt.value = "";
         this.switchStage(1);
@@ -641,6 +768,7 @@ class AniStoryApp {
       this.initImageMode();
       this.restoreSavedConfig();
       await this.loadServerCredentials();
+      await this.restoreActiveProject();
     } catch (e) {
       console.error("Config load error:", e);
       this.showToast("Failed to connect to backend engine", true);
@@ -1323,6 +1451,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       tab.classList.toggle("active", i === stageNum - 1);
       tab.classList.toggle("completed", i < stageNum - 1);
     });
+    localStorage.setItem("anistory_active_stage", String(stageNum));
     if (pushState && window.history && typeof window.history.pushState === "function") {
       try {
         window.history.pushState({ stage: stageNum }, "", `#stage${stageNum}`);
@@ -1450,6 +1579,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       }
 
       this.currentProject = await resp.json();
+      this.saveActiveProjectState();
       this.renderStoryboardView();
       this.switchStage(2);
       const titleDisplay = this.currentProject.title ? `"${this.currentProject.title}"` : `${this.currentProject.scenes.length} scenes`;
@@ -1516,6 +1646,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       }
 
       this.currentProject = await resp.json();
+      this.saveActiveProjectState();
       if (this.modalImport) this.modalImport.classList.remove("active");
       if (this.inputImportText) this.inputImportText.value = "";
       if (this.inputDirectPasteText) this.inputDirectPasteText.value = "";
@@ -1753,6 +1884,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
               });
               if (upResp.ok) {
                 this.currentProject = await upResp.json();
+                this.saveActiveProjectState();
                 painted = true;
                 this.showToast(`Scene ${sceneIdx + 1} painted using In-Browser Puter AI! 🖌️`);
               }
@@ -1785,6 +1917,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           throw new Error(errDetail);
         }
         this.currentProject = await resp.json();
+        this.saveActiveProjectState();
         const modeLabel = (curProvider === "gemini_cookie" || curProvider === "gemini") ? "Google Imagen 3" : "Free Neural AI";
         this.showToast(`Scene ${sceneIdx + 1} painted with ${modeLabel}! 🎨✨`);
       }
@@ -1825,6 +1958,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       if (!resp.ok) throw new Error("Image upload failed");
 
       this.currentProject = await resp.json();
+      this.saveActiveProjectState();
       const updatedScene = this.currentProject.scenes[sceneIdx];
       const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
       if (imgEl && updatedScene.image_path) {
@@ -1864,6 +1998,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       });
       if (resp.ok) {
         this.currentProject = await resp.json();
+        this.saveActiveProjectState();
         if (notify) this.showToast("Script changes saved! 💾");
       }
     } catch (e) {
@@ -1919,6 +2054,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
 
         const proj = await resp.json();
         this.currentProject = proj;
+        this.saveActiveProjectState();
 
         const pct = proj.progress || 35;
         this.renderProgressBar.style.width = `${pct}%`;
@@ -1979,7 +2115,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     this.activityLogList.innerHTML = logsHtml;
   }
 
-  showCinemaPremiere() {
+  showCinemaPremiere(notify = true) {
+    if (!this.currentProject) return;
     this.cinemaMovieTitle.textContent = this.currentProject.title || "My Animated Film";
     this.cinemaMovieLogline.textContent = this.currentProject.logline || "";
 
@@ -2010,7 +2147,9 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     this.specArtStyle.textContent = styleInfo ? styleInfo.name : this.currentProject.art_style;
 
     this.switchStage(4);
-    this.showToast("🎉 Your animated movie is ready to watch!");
+    if (notify) {
+      this.showToast("🎉 Your animated movie is ready to watch!");
+    }
   }
 
   async openProjectsModal() {
@@ -2040,6 +2179,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         `;
         item.addEventListener("click", () => {
           this.currentProject = p;
+          this.saveActiveProjectState();
           this.modalProjects.classList.remove("active");
           if (p.status === "completed") {
             this.showCinemaPremiere();
