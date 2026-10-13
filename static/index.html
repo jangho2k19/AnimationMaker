@@ -187,20 +187,14 @@ Narration: The detective scanned the horizon for clues..."></textarea>
                   <option value="8">8 Scenes (Epic Adventure)</option>
                   <option value="10">10 Scenes (Mini Episode)</option>
                   <option value="12">12 Scenes (Full Short Film)</option>
+                  <option value="14">14 Scenes (Long Form Story)</option>
+                  <option value="16">16 Scenes (Feature Chapter)</option>
+                  <option value="18">18 Scenes (Extended Feature)</option>
+                  <option value="20">20 Scenes (Full Series Episode)</option>
                 </select>
               </div>
 
-              <div class="form-group" id="groupTargetDuration">
-                <label for="selectTargetDuration" class="input-label">⏱️ Total Video Duration</label>
-                <select id="selectTargetDuration" class="styled-select">
-                  <option value="30">30s — Social Short / Quick Reel</option>
-                  <option value="60" selected>60s — 1 Minute Standard Film</option>
-                  <option value="90">90s — 1.5 Minutes Spotlight</option>
-                  <option value="120">120s — 2 Minutes Mini Film</option>
-                  <option value="180">180s — 3 Minutes Storybook</option>
-                  <option value="300">300s — 5 Minutes Cinematic Feature</option>
-                </select>
-              </div>
+
 
               <div class="form-group" id="groupAspectRatio">
                 <label for="selectAspectRatio" class="input-label">📐 Video Dimensions & Aspect Ratio</label>
@@ -510,7 +504,7 @@ Narration: The detective scanned the horizon for clues..."></textarea>
           <input type="password" id="inputGeminiCookie" class="styled-input" placeholder="Paste __Secure-1PSID or full Cookie string...">
           <div style="margin-top: 8px;">
             <label for="inputGeminiCookieTs" class="input-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">
-              Optional: <code>__Secure-1PSIDTS</code> (if not in string above):
+              Required: <code>__Secure-1PSIDTS</code> (Google rotates this frequently):
             </label>
             <input type="password" id="inputGeminiCookieTs" class="styled-input" placeholder="sidts-01-...">
           </div>

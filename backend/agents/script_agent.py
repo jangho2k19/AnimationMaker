@@ -11,7 +11,7 @@ class ScriptAgent:
         self.api_key = api_key or os.environ.get(f"{self.provider.upper()}_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
         self.model = model
 
-    def generate_storyboard(
+    async def generate_storyboard(
         self,
         idea: str,
         num_scenes: int = 4,
@@ -41,7 +41,7 @@ class ScriptAgent:
                 )
 
                 if is_cookie:
-                    story = self._generate_with_gemini_cookie(prompt, self.api_key)
+                    story = await self._generate_with_gemini_cookie(prompt, self.api_key)
                     print("Generated screenplay using Google Gemini Web Session (Cookies)!")
                     return story
 
@@ -289,45 +289,35 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
 
         return psid, psidts
 
-    def _generate_with_gemini_cookie(self, prompt: str, cookie_input: str) -> Dict[str, Any]:
-        import asyncio
-        import concurrent.futures
-        from gemini_webapi import GeminiClient
-
+    async def _generate_with_gemini_cookie(self, prompt: str, cookie_input: str) -> Dict[str, Any]:
         psid, psidts = self._extract_gemini_cookies(cookie_input)
         if not psid:
             raise ValueError("No valid __Secure-1PSID cookie found. Please provide a valid cookie value.")
         if not psidts:
             print("[Gemini Web Notice] __Secure-1PSIDTS was not provided. Google sessions require both __Secure-1PSID and __Secure-1PSIDTS for full authentication.")
 
-        async def _call_gemini_web():
-            client = GeminiClient(secure_1psid=psid, secure_1psidts=psidts)
-            await client.init(timeout=60, auto_close=True)
-            if client.account_status.name == "UNAUTHENTICATED":
-                print("[Gemini Web Notice] Account status is UNAUTHENTICATED. Please verify both __Secure-1PSID and __Secure-1PSIDTS cookies are active and not expired.")
+        from backend.services.gemini_web_session import GeminiWebSessionManager
+        manager = GeminiWebSessionManager.get_instance()
+        client = await manager.get_client(psid_override=psid, psidts_override=psidts)
 
-            chosen_model = None
-            if self.model and str(self.model).strip():
-                req_model = str(self.model).strip()
-                try:
-                    chosen_model = client.resolve_model(req_model)
-                except Exception:
-                    m_lower = req_model.lower()
-                    for m in client.available_models:
-                        if m_lower in m.model_name.lower() or m_lower in m.display_name.lower() or (m.aliases and any(m_lower in a.lower() for a in m.aliases)):
-                            chosen_model = m
-                            break
+        chosen_model = None
+        if self.model and str(self.model).strip():
+            req_model = str(self.model).strip()
+            try:
+                chosen_model = client.resolve_model(req_model)
+            except Exception:
+                m_lower = req_model.lower()
+                for m in (client.list_models() or []):
+                    if m_lower in m.model_name.lower() or m_lower in m.display_name.lower() or (m.aliases and any(m_lower in a.lower() for a in m.aliases)):
+                        chosen_model = m
+                        break
 
-            if chosen_model:
-                res = await client.generate_content(prompt, model=chosen_model)
-            else:
-                res = await client.generate_content(prompt)
-            return res.text
+        if chosen_model:
+            res = await client.generate_content(prompt, model=chosen_model)
+        else:
+            res = await client.generate_content(prompt)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            response_text = pool.submit(asyncio.run, _call_gemini_web()).result()
-
-        return self._clean_json_response(response_text)
+        return self._clean_json_response(res.text)
 
     def _generate_with_gemini(self, prompt: str, model: str = "gemini-2.0-flash") -> Dict[str, Any]:
         from google import genai

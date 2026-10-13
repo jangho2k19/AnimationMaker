@@ -105,8 +105,7 @@ class AniStoryApp {
     this.btnBackToHomeFromStage3 = document.getElementById("btnBackToHomeFromStage3");
     this.btnCinemaBackToBoard = document.getElementById("btnCinemaBackToBoard");
 
-    // Video Duration, Dimensions & Multi-Provider AI Elements
-    this.selectTargetDuration = document.getElementById("selectTargetDuration");
+    // Video Dimensions & Multi-Provider AI Elements
     this.selectAspectRatio = document.getElementById("selectAspectRatio");
     this.badgeStoryboardAspectRatio = document.getElementById("badgeStoryboardAspectRatio");
     this.specResolution = document.getElementById("specResolution");
@@ -266,7 +265,6 @@ class AniStoryApp {
     };
 
     bindSelectPersistence(this.selectSceneCount, "anistory_cfg_scene_count");
-    bindSelectPersistence(this.selectTargetDuration, "anistory_cfg_target_duration");
     bindSelectPersistence(this.selectAspectRatio, "anistory_cfg_aspect_ratio");
     bindSelectPersistence(this.selectLanguage, "anistory_cfg_language");
     bindSelectPersistence(this.selectAudience, "anistory_cfg_audience");
@@ -543,12 +541,6 @@ class AniStoryApp {
       this.selectSceneCount.value = savedScenes;
     }
 
-    // 2. Video Duration
-    const savedDuration = localStorage.getItem("anistory_cfg_target_duration");
-    if (savedDuration && this.selectTargetDuration) {
-      this.selectTargetDuration.value = savedDuration;
-    }
-
     // 3. Aspect Ratio / Framing
     const savedRatio = localStorage.getItem("anistory_cfg_aspect_ratio");
     if (savedRatio && this.selectAspectRatio) {
@@ -665,13 +657,12 @@ class AniStoryApp {
   buildGeminiPrompt() {
     const idea = this.inputIdeaPrompt?.value?.trim() || "A humble, gentle youth protected by a magical golden carp";
     const numScenes = this.selectSceneCount ? (parseInt(this.selectSceneCount.value, 10) || 4) : 4;
-    const targetDuration = this.selectTargetDuration ? (parseInt(this.selectTargetDuration.value, 10) || 60) : 60;
+    const targetSceneSec = 15;
+    const targetDuration = targetSceneSec * numScenes;
     const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
     const audience = this.selectAudience ? this.selectAudience.value : "General";
     const isVi = this.selectLanguage?.value?.startsWith("vi");
     const langStr = isVi ? "Tiếng Việt" : "English";
-
-    const targetSceneSec = Math.max(5, Math.floor(targetDuration / Math.max(1, numScenes)));
     const targetWords = Math.floor(targetSceneSec * 2.5);
 
     const styleInfo = this.config?.art_styles?.[this.selectedStyleKey];
@@ -1275,14 +1266,13 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         return;
       }
       const numScenes = parseInt(this.selectSceneCount.value, 10);
-      const targetDuration = this.selectTargetDuration ? parseInt(this.selectTargetDuration.value, 10) : 60;
+      const targetDuration = 15 * numScenes;
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
 
       // Persist active configuration choices
       localStorage.setItem("anistory_cfg_art_style", this.selectedStyleKey);
       if (this.selectVoice) localStorage.setItem("anistory_cfg_voice", this.selectVoice.value);
       if (this.selectSceneCount) localStorage.setItem("anistory_cfg_scene_count", this.selectSceneCount.value);
-      if (this.selectTargetDuration) localStorage.setItem("anistory_cfg_target_duration", this.selectTargetDuration.value);
       if (this.selectAspectRatio) localStorage.setItem("anistory_cfg_aspect_ratio", this.selectAspectRatio.value);
       if (this.selectLanguage) localStorage.setItem("anistory_cfg_language", this.selectLanguage.value);
       if (this.selectAudience) localStorage.setItem("anistory_cfg_audience", this.selectAudience.value);

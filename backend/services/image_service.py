@@ -158,25 +158,18 @@ class ImageService:
 
             if psid:
                 try:
-                    import asyncio
-                    import concurrent.futures
-                    from gemini_webapi import GeminiClient
-                    async def _gen_gemini_web_img():
-                        client = GeminiClient(secure_1psid=psid, secure_1psidts=psidts)
-                        await client.init(timeout=60, auto_close=True)
-                        if client.account_status.name == "UNAUTHENTICATED":
-                            raise RuntimeError("Google Gemini Session is UNAUTHENTICATED or cookies have expired. Please copy fresh __Secure-1PSID and __Secure-1PSIDTS from gemini.google.com and save in Settings ⚙️.")
-                        resp = await client.generate_content(f"Generate an image of: {full_prompt[:800]}")
-                        if resp.candidates:
-                            for cand in resp.candidates:
-                                if cand.generated_images:
-                                    temp_dir = Path(output_path).parent / "temp_gemini"
-                                    os.makedirs(temp_dir, exist_ok=True)
-                                    return await cand.generated_images[0].save(path=str(temp_dir))
-                        return None
-
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                        saved_img = pool.submit(asyncio.run, _gen_gemini_web_img()).result()
+                    from backend.services.gemini_web_session import GeminiWebSessionManager
+                    manager = GeminiWebSessionManager.get_instance()
+                    client = await manager.get_client(psid_override=psid, psidts_override=psidts)
+                    resp = await client.generate_content(f"Generate an image of: {full_prompt[:800]}")
+                    saved_img = None
+                    if resp.candidates:
+                        for cand in resp.candidates:
+                            if cand.generated_images:
+                                temp_dir = Path(output_path).parent / "temp_gemini"
+                                os.makedirs(temp_dir, exist_ok=True)
+                                saved_img = await cand.generated_images[0].save(path=str(temp_dir))
+                                break
 
                     if saved_img and os.path.exists(saved_img):
                         img = Image.open(saved_img)

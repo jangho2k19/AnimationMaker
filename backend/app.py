@@ -90,6 +90,12 @@ async def save_credentials(req: SaveCredentialsRequest):
     if req.deepseek_api_key: creds_dict["deepseek_api_key"] = req.deepseek_api_key
     if req.nvidia_api_key: creds_dict["nvidia_api_key"] = req.nvidia_api_key
     save_server_credentials(creds_dict)
+    if "gemini_cookie_psid" in creds_dict or "gemini_cookie_psidts" in creds_dict:
+        try:
+            from backend.services.gemini_web_session import GeminiWebSessionManager
+            await GeminiWebSessionManager.get_instance().invalidate()
+        except Exception:
+            pass
     return {"status": "success", "saved_keys": list(creds_dict.keys())}
 
 @app.get("/api/credentials")

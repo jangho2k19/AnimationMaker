@@ -8,3 +8,5 @@ google-genai>=0.1.0
 pydantic>=2.0.0
 gemini-webapi>=2.1.1
 curl-cffi>=0.16.2
+python-multipart>=0.0.9
+gTTS>=2.5.0

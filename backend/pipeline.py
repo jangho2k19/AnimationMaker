@@ -113,7 +113,7 @@ class AnimationPipeline:
         project["progress"] = 15
         self.save_project(project)
 
-        story_data = self.script_agent.generate_storyboard(
+        story_data = await self.script_agent.generate_storyboard(
             idea=project["idea"],
             num_scenes=num_scenes,
             target_duration=target_duration,
