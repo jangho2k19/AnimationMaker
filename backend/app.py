@@ -811,32 +811,25 @@ async def download_scene_video(project_id: str, scene_idx: int):
     return FileResponse(str(full_path), media_type="video/mp4", filename=filename)
 
 # ====================================================================
-# GOOGLE FLOW & PLAYWRIGHT BROWSER AUTOMATION ENDPOINTS
+# GOOGLE FLOW BROWSER & EXTENSION ENDPOINTS
 # ====================================================================
 
 @app.get("/api/flow/status")
 async def get_flow_status():
-    """Checks Google Flow authentication and Playwright browser status."""
-    try:
-        from backend.services.playwright_service import PlaywrightService
-        svc = PlaywrightService.get_instance(headless=True)
-        res = await svc.check_flow_status()
-        return res
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {"status": "error", "error": f"{type(e).__name__}: {str(e)}", "is_flow_dashboard": False}
+    """Checks Google Flow bridge status via FlowKit."""
+    from backend.services.flowkit_service import FlowKitService
+    return await FlowKitService.get_instance().get_status()
 
 @app.post("/api/flow/open")
 async def open_flow_browser(target_url: Optional[str] = "https://flow.google.com"):
-    """Launches a visible Chromium window with persistent profile so the user can interact with Google Flow."""
+    """Opens Google Flow in the user's default browser."""
+    import webbrowser
+    url = target_url or "https://flow.google.com"
     try:
-        from backend.services.playwright_service import PlaywrightService
-        svc = PlaywrightService.get_instance(headless=False)
-        res = await svc.launch_headed_browser(target_url or "https://flow.google.com")
-        return res
+        webbrowser.open(url)
+        return {"status": "success", "url": url, "message": "Opened Google Flow in browser"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "error", "error": str(e), "url": url}
 
 @app.post("/api/projects/{project_id}/upload-acting-clip/{scene_idx}")
 async def upload_acting_clip(project_id: str, scene_idx: int, file: UploadFile = File(...)):
