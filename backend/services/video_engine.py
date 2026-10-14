@@ -52,6 +52,22 @@ class VideoEngine:
         res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         return "Audio:" in res.stderr
 
+    def get_media_duration(self, file_path: str) -> float:
+        """Extracts precise duration of an audio or video file via FFmpeg."""
+        if not file_path or not os.path.exists(str(file_path)):
+            return 0.0
+        try:
+            import re
+            cmd = [FFMPEG_PATH, "-i", str(file_path)]
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", proc.stderr)
+            if match:
+                h, m, s = match.groups()
+                return round(float(h) * 3600 + float(m) * 60 + float(s), 2)
+        except Exception as e:
+            logger.warning("Error getting media duration for %s: %s", file_path, e)
+        return 0.0
+
     def render_scene_clip(
         self,
         image_path: str = None,
@@ -66,7 +82,8 @@ class VideoEngine:
         """
         Renders a single scene into an MP4 clip:
         - If source_video_path is provided (from Google Flow / I2V acting video):
-          scales/loops the acting video to fit narration duration
+          Uses full acting video duration (typically 8s). Voiceover narration is synchronized
+          and plays within the video clip. Video is NEVER looped to prevent repeated content.
         - Else (static image fallback):
           transforms image with Ken Burns camera motion
         - Burns high-contrast cinematic subtitles
@@ -75,21 +92,39 @@ class VideoEngine:
         output_clip_path = str(output_clip_path)
         os.makedirs(os.path.dirname(output_clip_path), exist_ok=True)
 
-        # Pad duration slightly by 0.4s for natural narrative breathing room
-        clip_duration = max(2.5, duration + 0.4)
-        total_frames = int(clip_duration * self.fps)
-
         has_acting_video = bool(source_video_path and os.path.exists(source_video_path))
         has_audio = bool(audio_path and os.path.exists(audio_path))
 
         vf_filters = []
         if has_acting_video:
+            # Probe exact durations
+            acting_video_dur = self.get_media_duration(source_video_path)
+            audio_dur = self.get_media_duration(audio_path) if has_audio else 0.0
+
             # Scale video to fit project dimensions cleanly
             vf_filters.append(
                 f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,"
                 f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:black"
             )
+
+            # Prevent video repeat:
+            # 1. If voiceover duration <= acting video duration:
+            #    clip_duration = acting_video_dur (e.g. 8.0s). The full acting performance plays once.
+            # 2. If voiceover is slightly longer than acting video:
+            #    Freeze the last frame using tpad rather than looping the action from the start!
+            if acting_video_dur > 0:
+                if audio_dur <= acting_video_dur:
+                    clip_duration = acting_video_dur
+                else:
+                    clip_duration = round(audio_dur + 0.3, 2)
+                    extra_freeze = round(clip_duration - acting_video_dur, 2)
+                    if extra_freeze > 0:
+                        vf_filters.append(f"tpad=stop_mode=clone:stop_duration={extra_freeze}")
+            else:
+                clip_duration = max(2.5, duration + 0.4)
         else:
+            clip_duration = max(2.5, duration + 0.4)
+            total_frames = int(clip_duration * self.fps)
             zoompan_expr = self._get_zoompan_filter(motion_type, total_frames)
             vf_filters.append(zoompan_expr)
 
@@ -116,7 +151,6 @@ class VideoEngine:
         cmd = [FFMPEG_PATH, "-y"]
         if has_acting_video:
             cmd.extend([
-                "-stream_loop", "-1",
                 "-i", str(source_video_path),
             ])
         else:

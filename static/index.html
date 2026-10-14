@@ -34,8 +34,8 @@
         <button id="btnNavHome" class="glass-btn secondary-btn nav-home-btn" title="Back to Homepage / Concept & Style">
           <span class="btn-icon">🏠</span> Home
         </button>
-        <button id="btnOpenProjects" class="glass-btn secondary-btn" title="View previously created animated stories">
-          <span class="btn-icon">📁</span> My Films
+        <button id="btnOpenProjects" class="glass-btn secondary-btn" title="Open or switch between existing projects">
+          <span class="btn-icon">📂</span> Load Project
         </button>
         <button id="btnOpenSettings" class="glass-btn secondary-btn" title="Configure AI keys and preferences">
           <span class="btn-icon">⚙️</span> Settings
@@ -101,6 +101,9 @@
             <button id="tabModePaste" class="mode-tab-btn" type="button">
               📋 Option B: Paste AI Storyboard from Gemini
             </button>
+            <button id="tabModeLoad" class="mode-tab-btn" type="button">
+              📂 Option C: Load Existing Project
+            </button>
           </div>
 
           <!-- Panel A: Story Idea -->
@@ -159,6 +162,27 @@ Title: My Film
 Scene 1:
 Visual: A high-tech neon rooftop in rain...
 Narration: The detective scanned the horizon for clues..."></textarea>
+          </div>
+
+          <!-- Panel C: Load Existing Project -->
+          <div id="panelLoadMode" style="display: none; margin-bottom: 24px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+              <div>
+                <span style="font-size:15px; color:var(--text-main); font-weight:700;">📂 Existing Animated Projects</span>
+                <p style="font-size:12px; color:var(--text-muted); margin:3px 0 0 0;">Select any film to open its Director's Storyboard, generate Veo acting clips, or watch its final render.</p>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input type="file" id="inputImportProjectJsonStage1" accept=".json" style="display:none;">
+                <button id="btnImportProjectJsonStage1" class="glass-btn secondary-btn" type="button" style="border-color:rgba(59,130,246,0.4); color:#93c5fd;" title="Import a project.json file from your computer">
+                  📥 Import project.json
+                </button>
+                <button id="btnRefreshProjectsStage1" class="glass-btn secondary-btn" type="button" title="Refresh projects list">
+                  🔄 Refresh
+                </button>
+              </div>
+            </div>
+            <div id="stage1ProjectsList" class="projects-grid" style="max-height: 520px; overflow-y: auto; padding-right: 4px;">
+              <!-- Rendered dynamically -->
             </div>
           </div>
 
@@ -215,6 +239,17 @@ Narration: The detective scanned the horizon for clues..."></textarea>
                   <option value="18">18 Scenes (Saga Arc)</option>
                   <option value="20">20 Scenes (Complete Short Movie)</option>
                   <option value="24">24 Scenes (Grand Cinematic Masterpiece)</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="groupTargetDuration">
+                <label for="selectTargetDuration" class="input-label">⏱️ Scene Pacing & Target Duration</label>
+                <select id="selectTargetDuration" class="styled-select">
+                  <option value="auto_acting" selected>⚡ Google Flow / Veo Acting Video (Strict 8s per scene)</option>
+                  <option value="30">30s — Social Short (~7.5s / scene)</option>
+                  <option value="60">60s — 1 Minute Standard (~10-15s / scene)</option>
+                  <option value="90">90s — 1.5 Minutes Spotlight</option>
+                  <option value="120">120s — 2 Minutes Mini Film</option>
                 </select>
               </div>
 
@@ -361,6 +396,7 @@ Narration: The detective scanned the horizon for clues..."></textarea>
             <p id="storyboardLogline" class="stage-subtitle">Logline summary</p>
           </div>
           <div class="top-stage-actions">
+            <button id="btnSwitchProject" class="glass-btn secondary-btn" title="Open or switch to another animated project">📂 Switch Project</button>
             <button id="btnOpenGoogleFlow" class="glass-btn secondary-btn" style="border-color: rgba(59, 130, 246, 0.5); background: rgba(59, 130, 246, 0.15); color: #93c5fd;" title="Open signed-in Google Flow Studio (Veo) in Chromium">🌐 Open Google Flow (Veo)</button>
             <button id="btnPaintAllImages" class="glass-btn secondary-btn" title="Paint all scenes sequentially one by one while keeping character consistency">🎨 Paint All (1-by-1)</button>
             <button id="btnAnimateAllScenes" class="glass-btn secondary-btn" style="border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.12); color: #c7d2fe;" title="Render animated video clips for every scene sequentially">🎬 Animate All Scenes</button>
@@ -600,8 +636,12 @@ Narration: The detective scanned the horizon for clues..."></textarea>
   <div id="modalProjects" class="modal-backdrop">
     <div class="modal-card glass-panel wide-modal">
       <div class="modal-header flex-between">
-        <h3 class="modal-title">📁 Past Animated Projects</h3>
+        <h3 class="modal-title">📂 Animated Projects</h3>
         <div style="display:flex; align-items:center; gap:10px;">
+          <input type="file" id="inputImportProjectJsonModal" accept=".json" style="display:none;">
+          <button id="btnImportProjectJsonModal" class="glass-btn secondary-btn" type="button" style="border-color:rgba(59,130,246,0.4); color:#93c5fd; padding:6px 12px; font-size:12px;" title="Import a project.json file from your computer">
+            📥 Import JSON
+          </button>
           <button id="btnNewFilmFromModal" class="hero-action-btn compact-btn" title="Create a new animated story">
             <span class="btn-text">New Film</span> <span class="btn-arrow">➕</span>
           </button>

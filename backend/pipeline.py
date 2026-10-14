@@ -4,6 +4,7 @@ import time
 import uuid
 import re
 import asyncio
+import shutil
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional
 
@@ -136,14 +137,34 @@ class AnimationPipeline:
         for p_dir in PROJECTS_DIR.iterdir():
             if p_dir.is_dir() and (p_dir / "project.json").exists():
                 try:
-                    with open(p_dir / "project.json", "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        data["id"] = p_dir.name
-                        projects.append(data)
+                    p = self.get_project(p_dir.name)
+                    if p:
+                        projects.append(p)
                 except Exception:
                     pass
         projects.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         return projects
+
+    def delete_project(self, project_id: str) -> bool:
+        p_dir = PROJECTS_DIR / project_id
+        if p_dir.exists() and p_dir.is_dir():
+            shutil.rmtree(p_dir, ignore_errors=True)
+            return True
+        return False
+
+    def import_project_json(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        existing_id = raw_data.get("id")
+        if existing_id and (PROJECTS_DIR / existing_id).exists():
+            project_id = existing_id
+        else:
+            title = raw_data.get("title") or raw_data.get("idea") or "Imported Project"
+            clean_id = self.sanitize_title_for_folder(title)
+            project_id = self.get_unique_project_id(clean_id)
+            raw_data["id"] = project_id
+        p_dir = PROJECTS_DIR / project_id
+        p_dir.mkdir(parents=True, exist_ok=True)
+        self.save_project(raw_data)
+        return self.get_project(project_id) or raw_data
 
     async def generate_story(
         self,
@@ -160,7 +181,7 @@ class AnimationPipeline:
             raise ValueError("Project not found")
 
         project_title = (title or project.get("title") or "").strip()
-        calc_duration = target_duration or project.get("target_duration") or (num_scenes * 12)
+        calc_duration = target_duration or project.get("target_duration") or (num_scenes * 8)
 
         project["status"] = "brainstorming"
         project["current_step"] = "Brainstorming storyboard and scenes..."
@@ -289,6 +310,15 @@ class AnimationPipeline:
         audio_path = p_dir / f"scene_{scene_idx + 1}.mp3"
         srt_path = p_dir / f"scene_{scene_idx + 1}.srt"
 
+        # Determine target max duration for voiceover (e.g. 7.8s for Google Flow / Veo 8s video)
+        raw_acting_cand = p_dir / f"scene_{scene_idx + 1}_acting.mp4"
+        max_dur = 7.8
+        if raw_acting_cand.exists():
+            v_eng = VideoEngine()
+            act_dur = v_eng.get_media_duration(str(raw_acting_cand))
+            if act_dur > 0:
+                max_dur = max(3.0, round(act_dur - 0.2, 2))
+
         try:
             res = await self.voice_agent.synthesize(
                 text=scene["narration"],
@@ -296,7 +326,8 @@ class AnimationPipeline:
                 output_srt_path=str(srt_path),
                 voice=project.get("voice", "en-US-ChristopherNeural"),
                 api_key=project.get("api_key"),
-                allow_voice_fallback=False
+                allow_voice_fallback=False,
+                max_duration=max_dur
             )
         except Exception:
             res = await self.voice_agent.synthesize(
@@ -305,7 +336,8 @@ class AnimationPipeline:
                 output_srt_path=str(srt_path),
                 voice=project.get("voice", "en-US-ChristopherNeural"),
                 api_key=project.get("api_key"),
-                allow_voice_fallback=True
+                allow_voice_fallback=True,
+                max_duration=max_dur
             )
 
         scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")

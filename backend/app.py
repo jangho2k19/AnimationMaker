@@ -1,6 +1,7 @@
 import os
 import sys
 import io
+import json
 import uuid
 import re
 from pathlib import Path
@@ -43,6 +44,7 @@ class CreateStoryRequest(BaseModel):
     ai_model: Optional[str] = None
     api_key: Optional[str] = None
     image_mode: str = "server"
+    video_mode: Optional[str] = "acting"
 
 class ImportStoryRequest(BaseModel):
     text: str
@@ -408,6 +410,27 @@ async def get_project(project_id: str):
         raise HTTPException(status_code=404, detail="Project not found")
     return p
 
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: str):
+    success = pipeline.delete_project(project_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"status": "success", "message": f"Project '{project_id}' deleted"}
+
+@app.post("/api/projects/import-json")
+async def import_project_json_file(file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        data = json.loads(content.decode("utf-8"))
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Invalid project JSON structure")
+        imported = pipeline.import_project_json(data)
+        return imported
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="File is not valid JSON")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/create-story")
 async def create_story(req: CreateStoryRequest):
     if not req.idea.strip():
@@ -419,16 +442,18 @@ async def create_story(req: CreateStoryRequest):
         ai_provider=req.ai_provider,
         ai_model=req.ai_model
     )
+    target_dur = req.target_duration if (req.target_duration and req.target_duration > 0) else (req.num_scenes * 8)
     project = custom_pipeline.create_project(
         idea=req.idea,
         title=req.title or "",
         art_style=req.art_style,
         voice=req.voice,
         num_scenes=req.num_scenes,
-        target_duration=req.target_duration,
+        target_duration=target_dur,
         aspect_ratio=req.aspect_ratio,
         image_mode=req.image_mode
     )
+    project["video_mode"] = req.video_mode or "acting"
 
     # Generate story scenes
     updated_project = await custom_pipeline.generate_story(
@@ -883,7 +908,8 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
         scene = project["scenes"][scene_idx]
 
     acting_out = p_dir / f"scene_{scene_idx + 1}_acting.mp4"
-    prompt = scene.get("visual_prompt") or scene.get("title") or "character action animation"
+    # Prioritize specialized acting performance prompt for Google Flow / Veo
+    prompt = scene.get("acting_prompt") or scene.get("visual_prompt") or scene.get("title") or "character action animation"
 
     flowkit = FlowKitService.get_instance()
     status = await flowkit.get_status()
@@ -903,6 +929,9 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
         )
     except Exception as e:
         raise HTTPException(502, f"FlowKit Veo generation error: {str(e)}")
+
+    # Ensure scene voiceover is synchronized and bounded to <= 8s acting video length
+    await pipeline.generate_scene_audio(project_id, scene_idx)
 
     # Composite with voiceover & subtitles
     updated = await pipeline.render_scene_video(project_id, scene_idx)

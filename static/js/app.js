@@ -160,6 +160,7 @@ class AniStoryApp {
     this.styleOptionsGrid = document.getElementById("styleOptionsGrid");
     this.selectVoice = document.getElementById("selectVoice");
     this.selectSceneCount = document.getElementById("selectSceneCount");
+    this.selectTargetDuration = document.getElementById("selectTargetDuration");
     this.selectLanguage = document.getElementById("selectLanguage");
     this.selectAudience = document.getElementById("selectAudience");
     this.btnGenerateStoryboard = document.getElementById("btnGenerateStoryboard");
@@ -218,8 +219,17 @@ class AniStoryApp {
     // Stage 1 Direct Mode Switcher Elements
     this.tabModePrompt = document.getElementById("tabModePrompt");
     this.tabModePaste = document.getElementById("tabModePaste");
+    this.tabModeLoad = document.getElementById("tabModeLoad");
     this.panelPromptMode = document.getElementById("panelPromptMode");
     this.panelPasteMode = document.getElementById("panelPasteMode");
+    this.panelLoadMode = document.getElementById("panelLoadMode");
+    this.stage1ProjectsList = document.getElementById("stage1ProjectsList");
+    this.btnImportProjectJsonStage1 = document.getElementById("btnImportProjectJsonStage1");
+    this.inputImportProjectJsonStage1 = document.getElementById("inputImportProjectJsonStage1");
+    this.btnRefreshProjectsStage1 = document.getElementById("btnRefreshProjectsStage1");
+    this.btnSwitchProject = document.getElementById("btnSwitchProject");
+    this.btnImportProjectJsonModal = document.getElementById("btnImportProjectJsonModal");
+    this.inputImportProjectJsonModal = document.getElementById("inputImportProjectJsonModal");
     this.inputDirectPasteText = document.getElementById("inputDirectPasteText");
     this.btnCopyGeminiPromptDirect = document.getElementById("btnCopyGeminiPromptDirect");
     this.btnDirectLoadStoryboard = document.getElementById("btnDirectLoadStoryboard");
@@ -383,28 +393,85 @@ class AniStoryApp {
       this.switchStage(targetStage, false);
     });
 
-    // Stage 1 Creation Mode Tabs (Prompt vs Direct Paste)
-    if (this.tabModePrompt && this.tabModePaste) {
+    // Stage 1 Creation Mode Tabs (Prompt vs Direct Paste vs Load Existing)
+    const configGrid = document.querySelector(".config-grid");
+    if (this.tabModePrompt) {
       this.tabModePrompt.addEventListener("click", () => {
         this.tabModePrompt.classList.add("active");
-        this.tabModePaste.classList.remove("active");
+        if (this.tabModePaste) this.tabModePaste.classList.remove("active");
+        if (this.tabModeLoad) this.tabModeLoad.classList.remove("active");
         if (this.panelPromptMode) this.panelPromptMode.style.display = "block";
         if (this.panelPasteMode) this.panelPasteMode.style.display = "none";
+        if (this.panelLoadMode) this.panelLoadMode.style.display = "none";
         if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "inline-flex";
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
+        if (configGrid) configGrid.style.display = "";
         localStorage.setItem("anistory_cfg_creation_mode", "prompt");
       });
+    }
 
+    if (this.tabModePaste) {
       this.tabModePaste.addEventListener("click", () => {
         this.tabModePaste.classList.add("active");
-        this.tabModePrompt.classList.remove("active");
+        if (this.tabModePrompt) this.tabModePrompt.classList.remove("active");
+        if (this.tabModeLoad) this.tabModeLoad.classList.remove("active");
         if (this.panelPromptMode) this.panelPromptMode.style.display = "none";
         if (this.panelPasteMode) this.panelPasteMode.style.display = "block";
+        if (this.panelLoadMode) this.panelLoadMode.style.display = "none";
         if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "inline-flex";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
+        if (configGrid) configGrid.style.display = "";
         localStorage.setItem("anistory_cfg_creation_mode", "paste");
+      });
+    }
+
+    if (this.tabModeLoad) {
+      this.tabModeLoad.addEventListener("click", () => {
+        this.tabModeLoad.classList.add("active");
+        if (this.tabModePrompt) this.tabModePrompt.classList.remove("active");
+        if (this.tabModePaste) this.tabModePaste.classList.remove("active");
+        if (this.panelPromptMode) this.panelPromptMode.style.display = "none";
+        if (this.panelPasteMode) this.panelPasteMode.style.display = "none";
+        if (this.panelLoadMode) this.panelLoadMode.style.display = "block";
+        if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
+        if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
+        if (configGrid) configGrid.style.display = "none";
+        localStorage.setItem("anistory_cfg_creation_mode", "load");
+        this.loadProjectsIntoContainer(this.stage1ProjectsList);
+      });
+    }
+
+    // Stage 1 existing projects handlers
+    if (this.btnRefreshProjectsStage1) {
+      this.btnRefreshProjectsStage1.addEventListener("click", () => {
+        this.loadProjectsIntoContainer(this.stage1ProjectsList);
+      });
+    }
+    if (this.btnImportProjectJsonStage1 && this.inputImportProjectJsonStage1) {
+      this.btnImportProjectJsonStage1.addEventListener("click", () => this.inputImportProjectJsonStage1.click());
+      this.inputImportProjectJsonStage1.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.importProjectJsonFile(e.target.files[0]);
+          e.target.value = "";
+        }
+      });
+    }
+
+    // Stage 2 Switch project button
+    if (this.btnSwitchProject) {
+      this.btnSwitchProject.addEventListener("click", () => this.openProjectsModal());
+    }
+
+    // Modal Import project.json handlers
+    if (this.btnImportProjectJsonModal && this.inputImportProjectJsonModal) {
+      this.btnImportProjectJsonModal.addEventListener("click", () => this.inputImportProjectJsonModal.click());
+      this.inputImportProjectJsonModal.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.importProjectJsonFile(e.target.files[0]);
+          e.target.value = "";
+        }
       });
     }
 
@@ -417,6 +484,7 @@ class AniStoryApp {
     };
 
     bindSelectPersistence(this.selectSceneCount, "anistory_cfg_scene_count");
+    bindSelectPersistence(this.selectTargetDuration, "anistory_cfg_target_duration");
     bindSelectPersistence(this.selectAspectRatio, "anistory_cfg_aspect_ratio");
     bindSelectPersistence(this.selectLanguage, "anistory_cfg_language");
     bindSelectPersistence(this.selectAudience, "anistory_cfg_audience");
@@ -865,10 +933,12 @@ class AniStoryApp {
       this.inputIdeaPrompt.value = savedPrompt;
     }
 
-    // 7. Creation Mode (Prompt vs Direct Paste tab)
+    // 7. Creation Mode (Prompt vs Direct Paste vs Load tab)
     const savedMode = localStorage.getItem("anistory_cfg_creation_mode");
     if (savedMode === "paste" && this.tabModePaste) {
       this.tabModePaste.click();
+    } else if (savedMode === "load" && this.tabModeLoad) {
+      this.tabModeLoad.click();
     } else if (savedMode === "prompt" && this.tabModePrompt) {
       this.tabModePrompt.click();
     }
@@ -1567,7 +1637,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         return;
       }
       const numScenes = parseInt(this.selectSceneCount.value, 10);
-      const targetDuration = this.selectTargetDuration ? parseInt(this.selectTargetDuration.value, 10) : (numScenes * 15);
+      const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto_acting";
+      const targetDuration = (durVal === "auto_acting" || !durVal) ? (numScenes * 8) : parseInt(durVal, 10);
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
       const projectTitle = this.inputProjectTitle ? this.inputProjectTitle.value.trim() : "";
 
@@ -1575,6 +1646,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       localStorage.setItem("anistory_cfg_art_style", this.selectedStyleKey);
       if (this.selectVoice) localStorage.setItem("anistory_cfg_voice", this.selectVoice.value);
       if (this.selectSceneCount) localStorage.setItem("anistory_cfg_scene_count", this.selectSceneCount.value);
+      if (this.selectTargetDuration) localStorage.setItem("anistory_cfg_target_duration", this.selectTargetDuration.value);
       if (this.selectAspectRatio) localStorage.setItem("anistory_cfg_aspect_ratio", this.selectAspectRatio.value);
       if (this.selectLanguage) localStorage.setItem("anistory_cfg_language", this.selectLanguage.value);
       if (this.selectAudience) localStorage.setItem("anistory_cfg_audience", this.selectAudience.value);
@@ -1588,6 +1660,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         voice: this.selectVoice.value,
         num_scenes: numScenes,
         target_duration: targetDuration,
+        video_mode: "acting",
         aspect_ratio: aspectRatio,
         language: this.selectLanguage.value,
         audience: this.selectAudience.value,
@@ -1785,8 +1858,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
             <button class="scene-action-pill btn-reroll-img" data-idx="${idx}">🎨 AI Paint</button>
             <button class="scene-action-pill btn-upload-img" data-idx="${idx}">📁 Image</button>
             <button class="scene-action-pill btn-generate-veo" data-idx="${idx}" style="color:#6ee7b7; border-color:rgba(16,185,129,0.4);" title="Auto-render acting video via Google Veo & FlowKit bridge">⚡ Veo Auto</button>
-            <button class="scene-action-pill btn-upload-acting" data-idx="${idx}" style="color:#93c5fd; border-color:rgba(59,130,246,0.4);" title="Upload acting video clip from Google Flow (Veo)">✨ Flow Video</button>
-            <button class="scene-action-pill ${hasVideo ? 'video-ready' : ''} btn-toggle-video" id="btnToggleVideo_${idx}" data-idx="${idx}" style="${hasVideo ? '' : 'display:none;'}">▶️ Play Clip</button>
+            <button class="scene-action-pill btn-upload-acting" data-idx="${idx}" title="Upload local video clip (.mp4) as fallback">📁 Video</button>
             <a class="scene-action-pill btn-download-scene-clip" id="btnDownloadClip_${idx}" href="/api/projects/${this.currentProject.id}/download-scene-video/${idx}" download title="Download Scene MP4" style="${hasVideo ? '' : 'display:none;'}">⬇️ MP4</a>
             <input type="file" accept="image/*" class="scene-file-input" style="display:none;" id="fileInput_${idx}">
             <input type="file" accept="video/mp4,video/*" class="scene-acting-file-input" style="display:none;" id="actingFileInput_${idx}">
@@ -1794,27 +1866,55 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         </div>
         <div class="scene-card-body">
           <div>
-            <label class="field-label">🎙️ Voiceover Narration</label>
-            <textarea class="scene-narration-input" id="narration_${idx}">${scene.narration || ""}</textarea>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <label class="field-label" style="margin-bottom:0;">🎙️ Voiceover Narration</label>
+              <span class="narration-badge" id="badgeNarr_${idx}" style="font-size:11px; padding:2px 7px; border-radius:12px; font-weight:500;"></span>
+            </div>
+            <textarea class="scene-narration-input" id="narration_${idx}" placeholder="Concise voiceover narration (<= 16 words to fit 8s video)...">${scene.narration || ""}</textarea>
           </div>
           <div>
-            <label class="field-label">🖼️ Visual Description (AI Prompt)</label>
-            <input type="text" class="styled-input" id="prompt_${idx}" value="${scene.visual_prompt || ""}">
-          </div>
-          <div class="scene-controls-row">
-            <select class="styled-select camera-motion-select" id="motion_${idx}">
-              <option value="zoom_in" ${scene.camera_motion === "zoom_in" ? "selected" : ""}>🔍 Camera Zoom In</option>
-              <option value="zoom_out" ${scene.camera_motion === "zoom_out" ? "selected" : ""}>🔭 Camera Zoom Out</option>
-              <option value="pan_left" ${scene.camera_motion === "pan_left" ? "selected" : ""}>⬅️ Pan Left</option>
-              <option value="pan_right" ${scene.camera_motion === "pan_right" ? "selected" : ""}>➡️ Pan Right</option>
-              <option value="subtle_drift" ${scene.camera_motion === "subtle_drift" ? "selected" : ""}>✨ Subtle Drift</option>
-            </select>
-            <button class="btn-animate-scene" id="btnAnimateScene_${idx}" data-idx="${idx}" title="Render animation video clip for this scene">
-              🎬 ${hasVideo ? 'Re-animate' : 'Animate Scene'}
-            </button>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <label class="field-label" style="margin-bottom:0;">🎬 Acting & Visual Description (Video Prompt)</label>
+              <span style="font-size:11px; color:var(--text-muted);">8s Veo/Flow prompt</span>
+            </div>
+            <input type="text" class="styled-input" id="prompt_${idx}" value="${scene.acting_prompt || scene.visual_prompt || ""}" placeholder="Character physical action, facial expression, and camera motion...">
           </div>
         </div>
       `;
+
+      // Real-time voiceover duration calculator for 8s acting video fit
+      const narrTextarea = card.querySelector(`#narration_${idx}`);
+      const narrBadge = card.querySelector(`#badgeNarr_${idx}`);
+      const updateNarrBadge = (text) => {
+        if (!narrBadge) return;
+        const words = (text || "").trim().split(/\s+/).filter(Boolean).length;
+        const estSec = (words / 2.2).toFixed(1);
+        if (words === 0) {
+          narrBadge.textContent = "0 words";
+          narrBadge.style.background = "rgba(255,255,255,0.05)";
+          narrBadge.style.color = "var(--text-muted)";
+          narrBadge.style.border = "none";
+        } else if (words <= 16) {
+          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ✅ fits 8s video`;
+          narrBadge.style.background = "rgba(16,185,129,0.15)";
+          narrBadge.style.color = "#34d399";
+          narrBadge.style.border = "1px solid rgba(16,185,129,0.3)";
+        } else if (words <= 18) {
+          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ⚠️ near 8s limit`;
+          narrBadge.style.background = "rgba(245,158,11,0.15)";
+          narrBadge.style.color = "#fbbf24";
+          narrBadge.style.border = "1px solid rgba(245,158,11,0.3)";
+        } else {
+          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ⚠️ >8s may repeat`;
+          narrBadge.style.background = "rgba(239,68,68,0.15)";
+          narrBadge.style.color = "#f87171";
+          narrBadge.style.border = "1px solid rgba(239,68,68,0.3)";
+        }
+      };
+      if (narrTextarea) {
+        updateNarrBadge(narrTextarea.value);
+        narrTextarea.addEventListener("input", (e) => updateNarrBadge(e.target.value));
+      }
 
       // Event listener for re-rolling scene image
       const btnReroll = card.querySelector(".btn-reroll-img");
@@ -1848,20 +1948,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         });
       }
 
-      // Event listener for animating single scene video
-      const btnAnimate = card.querySelector(`#btnAnimateScene_${idx}`);
-      if (btnAnimate) {
-        btnAnimate.addEventListener("click", () => this.animateSingleSceneVideo(idx, btnAnimate));
-      }
-
-      // Event listeners for opening video modal player
+      // Event listeners for opening video modal player via thumbnail play button
       const btnOverlay = card.querySelector(`#btnPlayOverlay_${idx}`);
       if (btnOverlay) {
         btnOverlay.addEventListener("click", () => this.openSceneVideoModal(idx));
-      }
-      const btnToggleVideo = card.querySelector(`#btnToggleVideo_${idx}`);
-      if (btnToggleVideo) {
-        btnToggleVideo.addEventListener("click", () => this.openSceneVideoModal(idx));
       }
 
       this.storyboardScenesGrid.appendChild(card);
@@ -2039,15 +2129,9 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
             vidEl.src = `/media/${upScene.video_path}?t=${Date.now()}`;
           }
 
-          // Show overlay and action buttons
+          // Show overlay and download button
           const overlayBtn = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
           if (overlayBtn) overlayBtn.style.display = "flex";
-
-          const toggleBtn = document.getElementById(`btnToggleVideo_${sceneIdx}`);
-          if (toggleBtn) {
-            toggleBtn.style.display = "";
-            toggleBtn.className = "scene-action-pill video-ready btn-toggle-video";
-          }
 
           const dlBtn = document.getElementById(`btnDownloadClip_${sceneIdx}`);
           if (dlBtn && upScene.video_path) {
@@ -2329,11 +2413,6 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       }
       const btnOverlay = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
       if (btnOverlay) btnOverlay.style.display = "flex";
-      const btnToggle = document.getElementById(`btnToggleVideo_${sceneIdx}`);
-      if (btnToggle) {
-        btnToggle.style.display = "";
-        btnToggle.classList.add("video-ready");
-      }
       const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
       if (btnDownload) btnDownload.style.display = "";
 
@@ -2346,6 +2425,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
 
   async generateVeoSceneVideo(sceneIdx, buttonEl) {
     if (!this.currentProject) return;
+
+    await this.saveStoryboardEdits(false);
 
     buttonEl.disabled = true;
     const oldText = buttonEl.textContent;
@@ -2382,11 +2463,6 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       }
       const btnOverlay = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
       if (btnOverlay) btnOverlay.style.display = "flex";
-      const btnToggle = document.getElementById(`btnToggleVideo_${sceneIdx}`);
-      if (btnToggle) {
-        btnToggle.style.display = "";
-        btnToggle.classList.add("video-ready");
-      }
       const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
       if (btnDownload) btnDownload.style.display = "";
 
@@ -2423,7 +2499,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       const motionEl = document.getElementById(`motion_${idx}`);
 
       if (narEl) scene.narration = narEl.value;
-      if (promptEl) scene.visual_prompt = promptEl.value;
+      if (promptEl) {
+        scene.visual_prompt = promptEl.value;
+        scene.acting_prompt = promptEl.value;
+      }
       if (motionEl) scene.camera_motion = motionEl.value;
     });
 
@@ -2651,48 +2730,234 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     }
   }
 
-  async openProjectsModal() {
-    this.modalProjects.classList.add("active");
-    this.savedProjectsList.innerHTML = "<p>Loading films...</p>";
+  async loadProject(projectOrId, targetStage = 2) {
+    let p = projectOrId;
+    if (typeof projectOrId === "string") {
+      try {
+        const resp = await fetch(`/api/projects/${encodeURIComponent(projectOrId)}`);
+        if (!resp.ok) throw new Error("Could not fetch project details");
+        p = await resp.json();
+      } catch (err) {
+        this.showToast("Error loading project: " + err.message, true);
+        return;
+      }
+    }
+
+    if (!p || !p.id) return;
+    this.currentProject = p;
+    this.saveActiveProjectState();
+
+    if (this.modalProjects) {
+      this.modalProjects.classList.remove("active");
+    }
+
+    if (targetStage === 4 || (p.status === "completed" && targetStage === 4)) {
+      this.showCinemaPremiere();
+    } else {
+      this.renderStoryboardView();
+      this.switchStage(2);
+      this.autoGenerateMissingSceneImages();
+    }
+
+    this.showToast(`Loaded film: "${p.title || p.id}" 🎬✨`);
+  }
+
+  async loadProjectsIntoContainer(containerEl) {
+    if (!containerEl) return;
+    containerEl.innerHTML = "<p style='color:var(--text-muted); padding:20px 0;'>Loading projects... ⏳</p>";
 
     try {
       const resp = await fetch("/api/projects");
+      if (!resp.ok) throw new Error("Failed to load project list");
       const list = await resp.json();
-
-      if (!list || list.length === 0) {
-        this.savedProjectsList.innerHTML = "<p style='color:var(--text-muted)'>No films created yet. Start with your first idea!</p>";
-        return;
-      }
-
-      this.savedProjectsList.innerHTML = "";
-      list.forEach(p => {
-        const item = document.createElement("div");
-        item.className = "project-item-card";
-        const dateStr = new Date(p.created_at * 1000).toLocaleDateString();
-        item.innerHTML = `
-          <div class="project-card-title">${p.title || p.idea.substring(0, 30)}</div>
-          <div class="project-card-date">Created ${dateStr} • ${p.scenes?.length || 0} scenes</div>
-          <div style="font-size:12px; color: ${p.status === 'completed' ? '#34d399' : '#a78bfa'}">
-            ● ${p.status.toUpperCase()}
-          </div>
-        `;
-        item.addEventListener("click", () => {
-          this.currentProject = p;
-          this.saveActiveProjectState();
-          this.modalProjects.classList.remove("active");
-          if (p.status === "completed") {
-            this.showCinemaPremiere();
-          } else {
-            this.renderStoryboardView();
-            this.switchStage(2);
-            this.autoGenerateMissingSceneImages();
-          }
-        });
-        this.savedProjectsList.appendChild(item);
-      });
+      this.renderProjectsCards(list, containerEl);
     } catch (e) {
       console.error(e);
-      this.savedProjectsList.innerHTML = "<p style='color:#ef4444'>Failed to load projects</p>";
+      containerEl.innerHTML = `<p style='color:#ef4444; padding:20px 0;'>Error loading projects: ${e.message}</p>`;
+    }
+  }
+
+  renderProjectsCards(list, containerEl) {
+    if (!containerEl) return;
+    containerEl.innerHTML = "";
+
+    if (!list || list.length === 0) {
+      containerEl.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-muted);">
+          <div style="font-size: 42px; margin-bottom: 8px;">🎬</div>
+          <p style="font-size: 14px; margin-bottom: 4px;">No existing projects found.</p>
+          <span style="font-size: 12px; color: var(--text-dim);">Start a new film from an idea or import a project.json!</span>
+        </div>
+      `;
+      return;
+    }
+
+    list.forEach(p => {
+      const item = document.createElement("div");
+      item.className = "project-item-card";
+
+      const createdTime = p.created_at ? (p.created_at > 1e11 ? p.created_at : p.created_at * 1000) : Date.now();
+      const dateStr = new Date(createdTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const scenesCount = p.scenes ? p.scenes.length : 0;
+      const isCompleted = p.status === "completed" || Boolean(p.video_path);
+
+      // Find first available scene image as thumbnail
+      let thumbSrc = "";
+      if (p.scenes && p.scenes.length > 0) {
+        for (const sc of p.scenes) {
+          if (sc.image_path) {
+            thumbSrc = `/media/${sc.image_path}`;
+            break;
+          }
+        }
+      }
+
+      let statusBadgeClass = "draft";
+      let statusBadgeText = "Draft";
+      if (p.status === "completed") {
+        statusBadgeClass = "completed";
+        statusBadgeText = "✓ Film Ready";
+      } else if (p.status === "rendering") {
+        statusBadgeClass = "in-progress";
+        statusBadgeText = "⚡ Rendering";
+      } else if (scenesCount > 0) {
+        statusBadgeClass = "in-progress";
+        statusBadgeText = "🎬 Storyboard";
+      }
+
+      item.innerHTML = `
+        <div class="project-card-thumb-wrap" title="Click to open Director's Storyboard">
+          ${thumbSrc
+            ? `<img src="${thumbSrc}" class="project-card-thumb" alt="${p.title || 'Scene preview'}" loading="lazy">`
+            : `<div style="font-size: 38px; color: rgba(255,255,255,0.25);">🎬</div>`
+          }
+          <span class="project-card-status-badge ${statusBadgeClass}">${statusBadgeText}</span>
+          <span class="project-card-scenes-badge">${scenesCount} scenes</span>
+        </div>
+        <div class="project-card-info" title="Click to open Director's Storyboard">
+          <div class="project-card-title">${p.title || p.idea || "Untitled Film"}</div>
+          <div class="project-card-meta">
+            <span>📅 ${dateStr}</span>
+            <span>🎨 ${p.art_style || 'Style'}</span>
+          </div>
+        </div>
+        <div class="project-card-actions">
+          <button type="button" class="glass-btn secondary-btn btn-load-storyboard" title="Open Director's Storyboard to edit script & scenes">
+            🎬 Storyboard
+          </button>
+          ${isCompleted ? `
+          <button type="button" class="glass-btn secondary-btn btn-watch-film" style="color: #6ee7b7; border-color: rgba(16,185,129,0.4);" title="Watch film premiere">
+            🍿 Watch
+          </button>` : ''}
+          <button type="button" class="btn-delete-project" title="Delete project">
+            🗑️
+          </button>
+        </div>
+      `;
+
+      // Clicking thumbnail or info opens Storyboard
+      item.querySelector(".project-card-thumb-wrap").addEventListener("click", () => this.loadProject(p, 2));
+      item.querySelector(".project-card-info").addEventListener("click", () => this.loadProject(p, 2));
+
+      // Action buttons
+      const btnStoryboard = item.querySelector(".btn-load-storyboard");
+      if (btnStoryboard) {
+        btnStoryboard.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.loadProject(p, 2);
+        });
+      }
+
+      const btnWatch = item.querySelector(".btn-watch-film");
+      if (btnWatch) {
+        btnWatch.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.loadProject(p, 4);
+        });
+      }
+
+      const btnDelete = item.querySelector(".btn-delete-project");
+      if (btnDelete) {
+        btnDelete.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const pTitle = p.title || p.id;
+          if (!confirm(`Are you sure you want to permanently delete project "${pTitle}"?`)) return;
+
+          try {
+            const dResp = await fetch(`/api/projects/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+            if (dResp.ok) {
+              this.showToast(`Deleted project: "${pTitle}"`);
+              if (this.currentProject && this.currentProject.id === p.id) {
+                this.clearActiveProjectState();
+                this.switchStage(1);
+              }
+              this.refreshAllProjectLists();
+            } else {
+              this.showToast("Failed to delete project", true);
+            }
+          } catch (delErr) {
+            console.error(delErr);
+            this.showToast("Delete error: " + delErr.message, true);
+          }
+        });
+      }
+
+      containerEl.appendChild(item);
+    });
+  }
+
+  async refreshAllProjectLists() {
+    try {
+      const resp = await fetch("/api/projects");
+      if (!resp.ok) return;
+      const list = await resp.json();
+      if (this.stage1ProjectsList) this.renderProjectsCards(list, this.stage1ProjectsList);
+      if (this.savedProjectsList) this.renderProjectsCards(list, this.savedProjectsList);
+    } catch (e) {
+      console.warn("Error refreshing project lists:", e);
+    }
+  }
+
+  async importProjectJsonFile(file) {
+    if (!file) return;
+    if (!file.name.endsWith(".json")) {
+      this.showToast("Please select a valid .json project file.", true);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      this.showToast("Importing project.json... ⏳");
+      const resp = await fetch("/api/projects/import-json", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!resp.ok) {
+        let errDetail = "Import failed";
+        try {
+          const ej = await resp.json();
+          errDetail = ej.detail || errDetail;
+        } catch {}
+        throw new Error(errDetail);
+      }
+
+      const imported = await resp.json();
+      this.showToast(`🎉 Project "${imported.title || imported.id}" imported successfully!`);
+      this.loadProject(imported, 2);
+    } catch (err) {
+      console.error(err);
+      this.showToast("Import error: " + err.message, true);
+    }
+  }
+
+  async openProjectsModal() {
+    if (!this.modalProjects) return;
+    this.modalProjects.classList.add("active");
+    if (this.savedProjectsList) {
+      this.loadProjectsIntoContainer(this.savedProjectsList);
     }
   }
 }

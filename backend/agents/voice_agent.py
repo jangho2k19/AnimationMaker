@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import asyncio
 import subprocess
 from pathlib import Path
@@ -310,12 +311,16 @@ class VoiceAgent:
         rate: str = "+0%",
         pitch: str = "+0Hz",
         api_key: str = None,
-        allow_voice_fallback: bool = False
+        allow_voice_fallback: bool = False,
+        max_duration: Optional[float] = None
     ) -> dict:
         """
         Synthesizes narration speech using ONE consistent voice throughout the clip.
         When allow_voice_fallback is False (default for clip narration), it strictly preserves
         the chosen character voice and will NOT swap to an alternate gender or robotic voice.
+        If max_duration is specified (e.g. 7.8s for Google Flow / Veo 8s acting clips),
+        gently speeds up tempo via FFmpeg atempo if the audio duration exceeds it,
+        guaranteeing the voiceover is equal to or shorter than the video clip.
         """
         clean_text = self._normalize_text_for_tts(text)
         selected_voice = voice or self.default_voice
@@ -450,6 +455,32 @@ class VoiceAgent:
                     raise RuntimeError(f"Voice synthesis failed for voice '{selected_voice}': {e_last}")
 
         duration = self.get_audio_duration(output_audio_path)
+
+        # Enforce maximum duration for acting video (e.g. 7.8s max for 8s Google Flow video)
+        # to ensure spoken narration is equal to or shorter than the video clip.
+        if max_duration and max_duration > 1.0 and duration > max_duration:
+            target_dur = max(1.0, max_duration - 0.2)
+            speedup_ratio = round(duration / target_dur, 3)
+            # Safe speedup range (1.02x up to 1.50x) preserves natural voice timbre
+            if 1.02 <= speedup_ratio <= 1.50:
+                compressed_path = output_audio_path + ".compressed.mp3"
+                tempo_cmd = [
+                    FFMPEG_PATH, "-y",
+                    "-i", str(output_audio_path),
+                    "-filter:a", f"atempo={speedup_ratio:.3f}",
+                    "-b:a", "192k",
+                    str(compressed_path)
+                ]
+                proc = subprocess.run(tempo_cmd, capture_output=True, text=True)
+                if proc.returncode == 0 and os.path.exists(compressed_path) and os.path.getsize(compressed_path) > 0:
+                    shutil.move(compressed_path, output_audio_path)
+                    old_dur = duration
+                    duration = self.get_audio_duration(output_audio_path)
+                    print(f"Compressed narration from {old_dur:.2f}s to {duration:.2f}s (atempo={speedup_ratio:.2f}) to fit within {max_duration:.1f}s video clip.")
+                    if boundaries:
+                        for b in boundaries:
+                            b["start"] = round(b["start"] / speedup_ratio, 2)
+                            b["end"] = round(b["end"] / speedup_ratio, 2)
 
         # Generate SRT if path is provided
         if output_srt_path:

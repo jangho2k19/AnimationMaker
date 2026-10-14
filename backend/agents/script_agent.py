@@ -105,14 +105,19 @@ class ScriptAgent:
         audience: str = "general",
         title: str = None
     ) -> str:
-        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 12)
+        # For Google Flow / Veo acting videos, each video clip is fixed at 8.0s.
+        # Spoken narration MUST be <= 7.2 seconds (strictly 12-16 words, absolute maximum 17 words)
+        # to ensure the narration concludes before the video finishes, completely
+        # avoiding awkward looping or repeating video content.
+        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 8)
         target_scene_sec = max(5, int(calc_duration / max(1, num_scenes)))
-        target_words = int(target_scene_sec * 2.5)
+        target_scene_sec = min(target_scene_sec, 8)  # Google Flow / Veo standard is 8.0s
+        max_words = min(17, max(12, int((target_scene_sec - 1.0) * 2.3)))
 
         title_line = f'Project Title: "{title}" (IMPORTANT: Use this exact title for the film)\n' if title else f'Film Title: Catchy, cinematic, specific to the plot in {language}.\n'
 
-        return f"""You are an award-winning animation director and screenwriter at Pixar and Studio Ghibli.
-Create a rich, completely unique, and captivating animated short film storyboard based on this premise:
+        return f"""You are an award-winning animation director and screenwriter at Pixar, Studio Ghibli, and modern AI video studios.
+Create a rich, completely unique, and captivating animated short film storyboard tailored for ACTING VIDEO GENERATION (Google Flow / Google Veo / I2V) based on this premise:
 Idea: "{idea}"
 {title_line}Target Audience: {audience}
 Number of Scenes: Exactly {num_scenes} scenes
@@ -125,11 +130,18 @@ DIRECTORIAL MANDATE FOR CHARACTER VISUAL CONSISTENCY:
    - Specify: Name, age/species, exact hairstyle & color, skin tone & facial features, and EXACT signature outfit with specific colors (e.g., "wearing an oversized golden-yellow hoodie, blue denim jeans, and red sneakers").
    - This exact visual design must remain consistent throughout the entire film.
 
-2. SCENE VISUAL PROMPTS (MANDATORY CONSISTENCY RULE):
-   - In EVERY scene where the character appears, you MUST repeat their signature visual attributes (e.g., "10-year-old boy Leo with tousled chestnut hair, bright yellow hoodie, and blue jeans").
-   - NEVER use ambiguous references like "the person" or "they" and NEVER change their outfit/hair between scenes.
-   - Repeating the exact same visual character tokens across every scene's prompt guarantees the AI image generator paints the exact same character from start to finish.
-   - Textless Artwork: Visual description ONLY. No dialogue, quotes, speech bubbles, words, letters, or subtitles in the prompt.
+2. ACTING VIDEO DIRECTIVES & PERFORMANCE CHOREOGRAPHY:
+   - For EVERY scene, you must provide:
+     a) `visual_prompt`: Ultra-detailed scene illustration prompt describing environment, lighting, art style, and the character's signature visual tokens.
+     b) `acting_prompt`: Dynamic 8-second acting performance prompt specifically designed for Google Flow / Veo video generation.
+        - Describe physical character performance unfolding across 8 seconds: specific body movements, facial expressions, eye gazes, emotional micro-reactions, gestures, and cinematic camera movement (e.g., "Cinematic medium shot, character looks up in astonishment, gasps with parted lips, slowly reaches a trembling hand forward toward the glowing orb as camera smoothly tracks in").
+     c) Textless Artwork: Visual & acting descriptions ONLY. Absolutely NO dialogue, quotes, speech bubbles, letters, or subtitles in the prompt.
+
+3. MANDATORY VOICEOVER DURATION CONSTRAINT (EQUAL OR SHORTER THAN 8-SECOND VIDEO):
+   - CRITICAL REQUIREMENT: Google Flow / Veo acting video clips have a fixed length of 8.0 seconds.
+   - The spoken voiceover narration for EACH scene MUST take no more than 5.0 to 7.2 seconds to speak (STRICTLY MAXIMUM {max_words} WORDS PER SCENE).
+   - Under NO circumstances should narration exceed {max_words} words! Longer narrations will force the 8-second video to repeat or loop its content, which is strictly prohibited.
+   - Narration must be punchy, rhythmic, emotionally evocative, and concise so it concludes naturally before the 8-second video clip ends.
 
 Requirements:
 - Film Title: {"Use '" + title + "'" if title else "Catchy, cinematic, specific to the plot in " + language}.
@@ -139,8 +151,9 @@ Requirements:
   - Each scene MUST have:
     - scene_number (int, from 1 to {num_scenes})
     - title (creative scene title in {language})
-    - visual_prompt (ultra-detailed visual prompt describing setting, lighting, the character with their full consistent visual appearance, and the scene action, 16:9 cinematic framing)
-    - narration (paced for {target_scene_sec}s, approximately {target_words} words of evocative voiceover story narration in {language})
+    - visual_prompt (setting, lighting, character consistency tokens, 16:9 cinematic framing)
+    - acting_prompt (dynamic 8s character acting, physical performance, facial micro-expressions, camera motion)
+    - narration (paced for <= 7.2s, STRICTLY 12 to {max_words} words of evocative voiceover narration in {language})
     - camera_motion (choose one: "zoom_in", "zoom_out", "pan_left", "pan_right", "subtle_drift")
 
 Return ONLY valid JSON matching this exact structure:
@@ -153,6 +166,7 @@ Return ONLY valid JSON matching this exact structure:
       "scene_number": 1,
       "title": "Scene 1 Title",
       "visual_prompt": "...",
+      "acting_prompt": "...",
       "narration": "...",
       "camera_motion": "zoom_in"
     }}
@@ -203,6 +217,7 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                             "scene_number": sc.get("scene_number", idx + 1),
                             "title": sc.get("title", f"Scene {idx + 1}"),
                             "visual_prompt": sc.get("visual_prompt") or sc.get("visual") or sc.get("prompt") or sc.get("description", ""),
+                            "acting_prompt": sc.get("acting_prompt") or sc.get("acting") or sc.get("motion_prompt") or sc.get("visual_prompt", ""),
                             "narration": sc.get("narration") or sc.get("voiceover") or sc.get("script") or sc.get("text", ""),
                             "camera_motion": sc.get("camera_motion", "zoom_in")
                         })
@@ -230,16 +245,19 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                 sc_num = int(scene_blocks[i]) if scene_blocks[i].isdigit() else len(scenes) + 1
                 sc_body = scene_blocks[i+1].strip()
 
-                vis_match = re.search(r"(?:Visual|Hình ảnh|Miêu tả)[:\s]*(.+?)(?=(?:Narration|Lời thoại|Thuyết minh|$))", sc_body, re.IGNORECASE | re.DOTALL)
+                vis_match = re.search(r"(?:Visual|Hình ảnh|Miêu tả)[:\s]*(.+?)(?=(?:Acting|Hành động|Diễn xuất|Narration|Lời thoại|Thuyết minh|$))", sc_body, re.IGNORECASE | re.DOTALL)
+                act_match = re.search(r"(?:Acting|Hành động|Diễn xuất)[:\s]*(.+?)(?=(?:Narration|Lời thoại|Thuyết minh|$))", sc_body, re.IGNORECASE | re.DOTALL)
                 narr_match = re.search(r"(?:Narration|Lời thoại|Thuyết minh)[:\s]*(.+)", sc_body, re.IGNORECASE | re.DOTALL)
 
                 visual = vis_match.group(1).strip() if vis_match else sc_body[:200]
+                acting = act_match.group(1).strip() if act_match else visual
                 narration = narr_match.group(1).strip() if narr_match else sc_body
 
                 scenes.append({
                     "scene_number": sc_num,
                     "title": f"Scene {sc_num}",
                     "visual_prompt": visual,
+                    "acting_prompt": acting,
                     "narration": narration,
                     "camera_motion": "zoom_in"
                 })
@@ -655,6 +673,7 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                 "scene_number": i + 1,
                 "title": scene_title,
                 "visual_prompt": f"{beat['prompt']}, character consistency: {chosen_char}",
+                "acting_prompt": f"Cinematic acting performance of {chosen_char}, {beat['prompt']}, fluid natural character motion, expressive gestures, emotional reaction, cinematic 8-second continuous shot",
                 "narration": narration,
                 "camera_motion": beat.get("motion", "zoom_in")
             })
