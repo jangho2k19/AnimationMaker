@@ -1,8 +1,12 @@
 import os
+import shutil
+import logging
 import subprocess
 from pathlib import Path
 from typing import List, Dict
 from backend.config import FFMPEG_PATH
+
+logger = logging.getLogger("video_engine")
 
 class VideoEngine:
     def __init__(self, fps: int = 30, width: int = 1280, height: int = 720):
@@ -42,6 +46,12 @@ class VideoEngine:
         else:  # subtle_drift or default
             return f"zoompan=z='min(zoom+0.0006,1.10)':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={self.fps}"
 
+    def _has_audio_stream(self, file_path: str) -> bool:
+        """Checks if a media file contains an audio stream."""
+        cmd = [FFMPEG_PATH, "-i", str(file_path)]
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return "Audio:" in res.stderr
+
     def render_scene_clip(
         self,
         image_path: str = None,
@@ -70,6 +80,7 @@ class VideoEngine:
         total_frames = int(clip_duration * self.fps)
 
         has_acting_video = bool(source_video_path and os.path.exists(source_video_path))
+        has_audio = bool(audio_path and os.path.exists(audio_path))
 
         vf_filters = []
         if has_acting_video:
@@ -102,41 +113,46 @@ class VideoEngine:
 
         vf_chain = ",".join(vf_filters)
 
+        cmd = [FFMPEG_PATH, "-y"]
         if has_acting_video:
-            cmd = [
-                FFMPEG_PATH, "-y",
+            cmd.extend([
                 "-stream_loop", "-1",
                 "-i", str(source_video_path),
-                "-i", str(audio_path),
-                "-t", str(clip_duration),
-                "-vf", vf_chain,
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",
-                output_clip_path
-            ]
+            ])
         else:
-            cmd = [
-                FFMPEG_PATH, "-y",
+            cmd.extend([
                 "-loop", "1",
                 "-t", str(clip_duration),
                 "-i", str(image_path),
-                "-i", str(audio_path),
-                "-vf", vf_chain,
-                "-c:v", "libx264",
-                "-tune", "stillimage",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",
-                output_clip_path
-            ]
+            ])
+
+        if has_audio:
+            cmd.extend(["-i", str(audio_path)])
+        else:
+            cmd.extend(["-f", "lavfi", "-t", str(clip_duration), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"])
+
+        cmd.extend([
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-t", str(clip_duration),
+            "-vf", vf_chain,
+            "-r", "24",
+            "-c:v", "libx264",
+            "-preset", "fast",
+        ])
+        if not has_acting_video:
+            cmd.extend(["-tune", "stillimage"])
+        cmd.extend([
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-ar", "48000",
+            "-b:a", "192k",
+            output_clip_path
+        ])
 
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if result.returncode != 0:
-            print(f"FFmpeg scene render error: {result.stderr}")
+            logger.error("FFmpeg scene render error: %s", result.stderr)
             raise RuntimeError(f"FFmpeg failed to render scene: {result.stderr[:400]}")
 
         return output_clip_path
@@ -149,63 +165,112 @@ class VideoEngine:
         bgm_volume: float = 0.12
     ) -> str:
         """
-        Concatenates scene clips and mixes soft background music.
+        Concatenates all scene clips into a master film and mixes background music.
+        Uses filter_complex to normalize dimensions, framerate (24fps), and audio (48kHz stereo),
+        guaranteeing seamless concatenation without dropped scenes, audio drift, or format errors.
         """
         output_video_path = str(output_video_path)
         out_dir = Path(output_video_path).parent
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        concat_list_file = out_dir / "concat_manifest.txt"
-        with open(concat_list_file, "w", encoding="utf-8") as f:
-            for clip in scene_clip_paths:
-                clean_clip = os.path.abspath(clip).replace("\\", "/")
-                f.write(f"file '{clean_clip}'\n")
+        valid_clips = [str(c) for c in scene_clip_paths if c and os.path.exists(str(c))]
+        if not valid_clips:
+            raise ValueError("No valid scene clips found to concatenate.")
 
-        merged_temp_path = str(out_dir / "scenes_merged_temp.mp4")
+        has_bgm = bool(bgm_path and os.path.exists(str(bgm_path)))
 
-        # Step 1: Concat video scenes
-        concat_cmd = [
-            FFMPEG_PATH, "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(concat_list_file),
-            "-c", "copy",
-            merged_temp_path
-        ]
-        concat_res = subprocess.run(concat_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-        if concat_res.returncode != 0:
-            raise RuntimeError(f"Concat failed: {concat_res.stderr[:400]}")
+        # Case 1: Single scene clip
+        if len(valid_clips) == 1:
+            single_clip = valid_clips[0]
+            if has_bgm:
+                mix_cmd = [
+                    FFMPEG_PATH, "-y",
+                    "-i", str(single_clip),
+                    "-stream_loop", "-1",
+                    "-i", str(bgm_path),
+                    "-filter_complex",
+                    f"[0:v]scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,"
+                    f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=24,format=yuv420p[vout];"
+                    f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo[voice];"
+                    f"[1:a]volume={bgm_volume}[music];"
+                    f"[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+                    "-map", "[vout]",
+                    "-map", "[aout]",
+                    "-c:v", "libx264",
+                    "-preset", "fast",
+                    "-pix_fmt", "yuv420p",
+                    "-r", "24",
+                    "-c:a", "aac",
+                    "-ar", "48000",
+                    "-b:a", "192k",
+                    output_video_path
+                ]
+                mix_res = subprocess.run(mix_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+                if mix_res.returncode == 0:
+                    return output_video_path
+                else:
+                    logger.warning("Single clip BGM mix warning: %s", mix_res.stderr)
 
-        # Step 2: Mix background music if provided
-        if bgm_path and os.path.exists(bgm_path):
-            mix_cmd = [
-                FFMPEG_PATH, "-y",
-                "-i", merged_temp_path,
-                "-stream_loop", "-1",
-                "-i", str(bgm_path),
-                "-filter_complex",
-                f"[0:a]volume=1.0[voice];[1:a]volume={bgm_volume}[music];[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
-                "-map", "0:v",
-                "-map", "[aout]",
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                output_video_path
-            ]
-            mix_res = subprocess.run(mix_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            if mix_res.returncode == 0:
-                if Path(merged_temp_path).exists():
-                    Path(merged_temp_path).unlink()
-                if concat_list_file.exists():
-                    concat_list_file.unlink()
-                return output_video_path
+            # If no BGM or mix failed, copy single clip to output_video_path
+            shutil.copyfile(single_clip, output_video_path)
+            return output_video_path
 
-        # If no bgm or mixing skipped, move merged file to final destination
-        if Path(output_video_path).exists():
-            Path(output_video_path).unlink()
-        Path(merged_temp_path).rename(output_video_path)
+        # Case 2: Multiple scene clips -> Robust filter_complex concat
+        cmd = [FFMPEG_PATH, "-y"]
+        for c in valid_clips:
+            cmd.extend(["-i", str(c)])
 
-        if concat_list_file.exists():
-            concat_list_file.unlink()
+        if has_bgm:
+            cmd.extend(["-stream_loop", "-1", "-i", str(bgm_path)])
+
+        num_scenes = len(valid_clips)
+        filter_chains = []
+        concat_inputs = []
+
+        for i, clip_p in enumerate(valid_clips):
+            filter_chains.append(
+                f"[{i}:v]scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,"
+                f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=24,format=yuv420p[v{i}]"
+            )
+            if self._has_audio_stream(clip_p):
+                filter_chains.append(
+                    f"[{i}:a]aformat=sample_rates=48000:channel_layouts=stereo[a{i}]"
+                )
+            else:
+                filter_chains.append(
+                    f"aevalsrc=0:channel_layout=stereo:sample_rate=48000[a{i}]"
+                )
+            concat_inputs.append(f"[v{i}][a{i}]")
+
+        concat_clause = "".join(concat_inputs) + f"concat=n={num_scenes}:v=1:a=1[vcat][acat_pre]"
+        filter_chains.append(concat_clause)
+
+        if has_bgm:
+            bgm_idx = num_scenes
+            filter_chains.append(f"[{bgm_idx}:a]volume={bgm_volume}[bgm]")
+            filter_chains.append(f"[acat_pre][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]")
+            audio_map = "[aout]"
+        else:
+            audio_map = "[acat_pre]"
+
+        filter_graph = ";".join(filter_chains)
+
+        cmd.extend([
+            "-filter_complex", filter_graph,
+            "-map", "[vcat]",
+            "-map", audio_map,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-ar", "48000",
+            "-b:a", "192k",
+            output_video_path
+        ])
+
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if res.returncode != 0:
+            logger.error("FFmpeg filter_complex concat error: %s", res.stderr)
+            raise RuntimeError(f"Failed to combine scene videos into full film: {res.stderr[:400]}")
 
         return output_video_path

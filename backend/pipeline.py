@@ -565,6 +565,16 @@ class AnimationPipeline:
             img_full = str(PROJECTS_DIR.parent / scene["image_path"])
             audio_full = str(PROJECTS_DIR.parent / scene["audio_path"])
             srt_full = str(PROJECTS_DIR.parent / scene["srt_path"])
+            # Check for acting video source (e.g. from Google Flow / I2V generator)
+            acting_video_full = None
+            raw_acting_cand = project_dir / f"scene_{idx + 1}_acting.mp4"
+            if raw_acting_cand.exists():
+                acting_video_full = str(raw_acting_cand)
+            elif scene.get("raw_video_path"):
+                cand_p = PROJECTS_DIR.parent / scene["raw_video_path"]
+                if cand_p.exists():
+                    acting_video_full = str(cand_p)
+
             motion = scene.get("camera_motion", "zoom_in")
 
             engine.render_scene_clip(
@@ -574,7 +584,8 @@ class AnimationPipeline:
                 output_clip_path=str(clip_file),
                 motion_type=motion,
                 duration=scene.get("duration", 4.0),
-                enable_subtitles=project.get("enable_subtitles", True)
+                enable_subtitles=project.get("enable_subtitles", True),
+                source_video_path=acting_video_full
             )
             scene["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             scene_clips.append(str(clip_file))
