@@ -810,6 +810,116 @@ async def download_scene_video(project_id: str, scene_idx: int):
     filename = f"{project_title}_scene_{scene_idx + 1}.mp4"
     return FileResponse(str(full_path), media_type="video/mp4", filename=filename)
 
+# ====================================================================
+# GOOGLE FLOW & PLAYWRIGHT BROWSER AUTOMATION ENDPOINTS
+# ====================================================================
+
+@app.get("/api/flow/status")
+async def get_flow_status():
+    """Checks Google Flow authentication and Playwright browser status."""
+    try:
+        from backend.services.playwright_service import PlaywrightService
+        svc = PlaywrightService.get_instance(headless=True)
+        res = await svc.check_flow_status()
+        return res
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "error": f"{type(e).__name__}: {str(e)}", "is_flow_dashboard": False}
+
+@app.post("/api/flow/open")
+async def open_flow_browser(target_url: Optional[str] = "https://flow.google.com"):
+    """Launches a visible Chromium window with persistent profile so the user can interact with Google Flow."""
+    try:
+        from backend.services.playwright_service import PlaywrightService
+        svc = PlaywrightService.get_instance(headless=False)
+        res = await svc.launch_headed_browser(target_url or "https://flow.google.com")
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/upload-acting-clip/{scene_idx}")
+async def upload_acting_clip(project_id: str, scene_idx: int, file: UploadFile = File(...)):
+    """Uploads an acting MP4 video clip (e.g. from Google Flow / I2V) and immediately composites it with voiceover and subtitles."""
+    project = pipeline.get_project(project_id)
+    if not project or scene_idx >= len(project.get("scenes", [])):
+        raise HTTPException(status_code=404, detail="Invalid project or scene index")
+
+    p_dir = Path(OUTPUT_DIR) / "projects" / project_id
+    acting_video_path = p_dir / f"scene_{scene_idx + 1}_acting.mp4"
+
+    content = await file.read()
+    with open(acting_video_path, "wb") as f:
+        f.write(content)
+
+    # Immediately render scene clip using this acting video
+    updated = await pipeline.render_scene_video(project_id, scene_idx)
+    return {
+        "status": "success",
+        "scene_idx": scene_idx,
+        "clip_url": f"/media/{updated['scenes'][scene_idx]['video_path']}",
+        "project": updated
+    }
+
+# ====================================================================
+# FLOWKIT (CHROME EXTENSION BRIDGE) AUTOMATED VEO GENERATION
+# ====================================================================
+
+@app.get("/api/flowkit/status")
+async def get_flowkit_status():
+    """Checks if FlowKit bridge server and Chrome Extension are connected."""
+    from backend.services.flowkit_service import FlowKitService
+    return await FlowKitService.get_instance().get_status()
+
+@app.post("/api/projects/{project_id}/generate-flowkit-video/{scene_idx}")
+async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
+    """Automatically triggers Google Veo via FlowKit for the scene, then composites voiceover and subtitles."""
+    from backend.services.flowkit_service import FlowKitService
+    project = pipeline.get_project(project_id)
+    if not project or scene_idx >= len(project.get("scenes", [])):
+        raise HTTPException(status_code=404, detail="Invalid project or scene index")
+
+    scene = project["scenes"][scene_idx]
+    p_dir = Path(OUTPUT_DIR) / "projects" / project_id
+
+    # Ensure scene image exists first
+    img_path = p_dir / f"scene_{scene_idx + 1}.jpg"
+    if not img_path.exists():
+        await pipeline.generate_scene_image(project_id, scene_idx)
+        project = pipeline.get_project(project_id)
+        scene = project["scenes"][scene_idx]
+
+    acting_out = p_dir / f"scene_{scene_idx + 1}_acting.mp4"
+    prompt = scene.get("visual_prompt") or scene.get("title") or "character action animation"
+
+    flowkit = FlowKitService.get_instance()
+    status = await flowkit.get_status()
+    if not status.get("extension_connected"):
+        raise HTTPException(503, "FlowKit Chrome Extension is not connected. Please open flow.google.com in Chrome with FlowKit extension enabled.")
+
+    aspect = project.get("aspect_ratio", "9:16")
+    flow_aspect = "VIDEO_ASPECT_RATIO_PORTRAIT" if "9:16" in aspect or "portrait" in str(aspect).lower() else "VIDEO_ASPECT_RATIO_LANDSCAPE"
+
+    try:
+        await flowkit.generate_acting_video(
+            image_path=str(img_path),
+            prompt=prompt,
+            output_video_path=str(acting_out),
+            aspect_ratio=flow_aspect,
+            duration_s=8
+        )
+    except Exception as e:
+        raise HTTPException(502, f"FlowKit Veo generation error: {str(e)}")
+
+    # Composite with voiceover & subtitles
+    updated = await pipeline.render_scene_video(project_id, scene_idx)
+    return {
+        "status": "success",
+        "scene_idx": scene_idx,
+        "clip_url": f"/media/{updated['scenes'][scene_idx]['video_path']}",
+        "project": updated
+    }
+
 # Mount media directory for images, audio, and videos
 app.mount("/media", StaticFiles(directory=str(OUTPUT_DIR)), name="media")
 

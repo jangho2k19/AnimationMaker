@@ -1,6 +1,24 @@
 import os
 import sys
 import socket
+
+# Auto-switch to virtual environment Python if running outside a venv
+if sys.prefix == sys.base_prefix:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_pythons = [
+        os.path.join(script_dir, ".venv", "Scripts", "python.exe"),
+        os.path.join(script_dir, "venv", "Scripts", "python.exe"),
+        os.path.join(script_dir, ".venv", "bin", "python"),
+        os.path.join(script_dir, "venv", "bin", "python"),
+    ]
+    for venv_py in venv_pythons:
+        if os.path.isfile(venv_py) and os.path.abspath(sys.executable) != os.path.abspath(venv_py):
+            import subprocess
+            try:
+                sys.exit(subprocess.call([venv_py] + sys.argv))
+            except Exception:
+                pass
+
 import uvicorn
 import webbrowser
 from threading import Timer

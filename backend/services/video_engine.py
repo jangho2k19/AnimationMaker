@@ -44,19 +44,23 @@ class VideoEngine:
 
     def render_scene_clip(
         self,
-        image_path: str,
-        audio_path: str,
-        srt_path: str,
-        output_clip_path: str,
+        image_path: str = None,
+        audio_path: str = None,
+        srt_path: str = None,
+        output_clip_path: str = None,
         motion_type: str = "zoom_in",
         duration: float = 4.0,
-        enable_subtitles: bool = True
+        enable_subtitles: bool = True,
+        source_video_path: str = None
     ) -> str:
         """
         Renders a single scene into an MP4 clip:
-        - Image transformed by Ken Burns camera motion
-        - Burnt styled subtitles at bottom center
-        - Synchronized narration audio
+        - If source_video_path is provided (from Google Flow / I2V acting video):
+          scales/loops the acting video to fit narration duration
+        - Else (static image fallback):
+          transforms image with Ken Burns camera motion
+        - Burns high-contrast cinematic subtitles
+        - Synchronizes voiceover narration audio
         """
         output_clip_path = str(output_clip_path)
         os.makedirs(os.path.dirname(output_clip_path), exist_ok=True)
@@ -65,15 +69,21 @@ class VideoEngine:
         clip_duration = max(2.5, duration + 0.4)
         total_frames = int(clip_duration * self.fps)
 
-        zoompan_expr = self._get_zoompan_filter(motion_type, total_frames)
+        has_acting_video = bool(source_video_path and os.path.exists(source_video_path))
 
-        # Build video filter chain
-        vf_filters = [zoompan_expr]
+        vf_filters = []
+        if has_acting_video:
+            # Scale video to fit project dimensions cleanly
+            vf_filters.append(
+                f"scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,"
+                f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:black"
+            )
+        else:
+            zoompan_expr = self._get_zoompan_filter(motion_type, total_frames)
+            vf_filters.append(zoompan_expr)
 
         if enable_subtitles and srt_path and os.path.exists(srt_path):
             escaped_srt = self._escape_path_for_ffmpeg_filter(srt_path)
-            # Modern cinematic subtitle style: crisp white with clean black outline and shadow (BorderStyle=1)
-            # Scaled strictly by width so text never forms tall multi-line walls that cover the video
             font_size = max(16, min(22, int(self.width * 0.026)))
             margin_v = max(24, min(65, int(self.height * 0.065)))
             sub_style = (
@@ -92,21 +102,37 @@ class VideoEngine:
 
         vf_chain = ",".join(vf_filters)
 
-        cmd = [
-            FFMPEG_PATH, "-y",
-            "-loop", "1",
-            "-t", str(clip_duration),
-            "-i", str(image_path),
-            "-i", str(audio_path),
-            "-vf", vf_chain,
-            "-c:v", "libx264",
-            "-tune", "stillimage",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-shortest",
-            output_clip_path
-        ]
+        if has_acting_video:
+            cmd = [
+                FFMPEG_PATH, "-y",
+                "-stream_loop", "-1",
+                "-i", str(source_video_path),
+                "-i", str(audio_path),
+                "-t", str(clip_duration),
+                "-vf", vf_chain,
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+                output_clip_path
+            ]
+        else:
+            cmd = [
+                FFMPEG_PATH, "-y",
+                "-loop", "1",
+                "-t", str(clip_duration),
+                "-i", str(image_path),
+                "-i", str(audio_path),
+                "-vf", vf_chain,
+                "-c:v", "libx264",
+                "-tune", "stillimage",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+                output_clip_path
+            ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if result.returncode != 0:

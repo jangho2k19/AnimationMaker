@@ -172,6 +172,7 @@ class AniStoryApp {
     this.btnProceedToRender = document.getElementById("btnProceedToRender");
     this.btnPaintAllImages = document.getElementById("btnPaintAllImages");
     this.btnAnimateAllScenes = document.getElementById("btnAnimateAllScenes");
+    this.btnOpenGoogleFlow = document.getElementById("btnOpenGoogleFlow");
     this.inputCharacterConsistency = document.getElementById("inputCharacterConsistency");
     this.btnLockCharacter = document.getElementById("btnLockCharacter");
 
@@ -470,6 +471,9 @@ class AniStoryApp {
     }
     if (this.btnAnimateAllScenes) {
       this.btnAnimateAllScenes.addEventListener("click", () => this.animateAllSceneVideos());
+    }
+    if (this.btnOpenGoogleFlow) {
+      this.btnOpenGoogleFlow.addEventListener("click", () => this.openGoogleFlowBrowser());
     }
     if (this.btnLockCharacter) {
       this.btnLockCharacter.addEventListener("click", () => this.saveCharacterConsistency());
@@ -1779,10 +1783,13 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           <button class="scene-play-overlay-btn" id="btnPlayOverlay_${idx}" data-idx="${idx}" title="Play scene animation video" style="${hasVideo ? 'display:flex;' : 'display:none;'}">▶️</button>
           <div class="scene-img-actions">
             <button class="scene-action-pill btn-reroll-img" data-idx="${idx}">🎨 AI Paint</button>
-            <button class="scene-action-pill btn-upload-img" data-idx="${idx}">📁 Upload</button>
+            <button class="scene-action-pill btn-upload-img" data-idx="${idx}">📁 Image</button>
+            <button class="scene-action-pill btn-generate-veo" data-idx="${idx}" style="color:#6ee7b7; border-color:rgba(16,185,129,0.4);" title="Auto-render acting video via Google Veo & FlowKit bridge">⚡ Veo Auto</button>
+            <button class="scene-action-pill btn-upload-acting" data-idx="${idx}" style="color:#93c5fd; border-color:rgba(59,130,246,0.4);" title="Upload acting video clip from Google Flow (Veo)">✨ Flow Video</button>
             <button class="scene-action-pill ${hasVideo ? 'video-ready' : ''} btn-toggle-video" id="btnToggleVideo_${idx}" data-idx="${idx}" style="${hasVideo ? '' : 'display:none;'}">▶️ Play Clip</button>
             <a class="scene-action-pill btn-download-scene-clip" id="btnDownloadClip_${idx}" href="/api/projects/${this.currentProject.id}/download-scene-video/${idx}" download title="Download Scene MP4" style="${hasVideo ? '' : 'display:none;'}">⬇️ MP4</a>
             <input type="file" accept="image/*" class="scene-file-input" style="display:none;" id="fileInput_${idx}">
+            <input type="file" accept="video/mp4,video/*" class="scene-acting-file-input" style="display:none;" id="actingFileInput_${idx}">
           </div>
         </div>
         <div class="scene-card-body">
@@ -1813,6 +1820,12 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       const btnReroll = card.querySelector(".btn-reroll-img");
       btnReroll.addEventListener("click", () => this.rerollSceneImage(idx, btnReroll));
 
+      // Event listener for Veo Auto generation via FlowKit
+      const btnVeo = card.querySelector(".btn-generate-veo");
+      if (btnVeo) {
+        btnVeo.addEventListener("click", () => this.generateVeoSceneVideo(idx, btnVeo));
+      }
+
       // Event listener for uploading custom scene image
       const btnUpload = card.querySelector(".btn-upload-img");
       const fileInput = card.querySelector(".scene-file-input");
@@ -1822,6 +1835,18 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           await this.uploadCustomSceneImage(idx, e.target.files[0]);
         }
       });
+
+      // Event listener for uploading custom acting video (from Google Flow)
+      const btnUploadActing = card.querySelector(".btn-upload-acting");
+      const actingFileInput = card.querySelector(".scene-acting-file-input");
+      if (btnUploadActing && actingFileInput) {
+        btnUploadActing.addEventListener("click", () => actingFileInput.click());
+        actingFileInput.addEventListener("change", async (e) => {
+          if (e.target.files && e.target.files[0]) {
+            await this.uploadCustomActingVideo(idx, e.target.files[0]);
+          }
+        });
+      }
 
       // Event listener for animating single scene video
       const btnAnimate = card.querySelector(`#btnAnimateScene_${idx}`);
@@ -2254,6 +2279,124 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     } catch (e) {
       console.error(e);
       this.showToast("Upload failed: " + e.message, true);
+    }
+  }
+
+  async openGoogleFlowBrowser() {
+    this.showToast("Opening signed-in Google Flow in Chromium... 🎬");
+    try {
+      const resp = await fetch("/api/flow/open", { method: "POST" });
+      const data = await resp.json();
+      if (resp.ok) {
+        this.showToast("Google Flow opened! Create your Veo clips and download them. 🚀");
+      } else {
+        this.showToast("Could not launch browser: " + (data.detail || "Error"), true);
+      }
+    } catch (err) {
+      console.error(err);
+      this.showToast("Error opening Flow browser: " + err.message, true);
+    }
+  }
+
+  async uploadCustomActingVideo(sceneIdx, file) {
+    if (!this.currentProject) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      this.showToast(`Importing Flow acting video for Scene ${sceneIdx + 1} & syncing subtitles... ⏳`);
+      const resp = await fetch(`/api/projects/${this.currentProject.id}/upload-acting-clip/${sceneIdx}`, {
+        method: "POST",
+        body: formData
+      });
+
+      if (!resp.ok) throw new Error("Acting video upload failed");
+
+      const data = await resp.json();
+      this.currentProject = data.project;
+      this.saveActiveProjectState();
+
+      // Refresh scene card video
+      const videoEl = document.getElementById(`sceneVideo_${sceneIdx}`);
+      if (videoEl && data.clip_url) {
+        videoEl.src = `${data.clip_url}?t=${Date.now()}`;
+      }
+      const videoPill = document.getElementById(`sceneVideoPill_${sceneIdx}`);
+      if (videoPill) {
+        videoPill.style.display = "";
+        videoPill.textContent = "🎬 Flow Video Ready";
+      }
+      const btnOverlay = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
+      if (btnOverlay) btnOverlay.style.display = "flex";
+      const btnToggle = document.getElementById(`btnToggleVideo_${sceneIdx}`);
+      if (btnToggle) {
+        btnToggle.style.display = "";
+        btnToggle.classList.add("video-ready");
+      }
+      const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
+      if (btnDownload) btnDownload.style.display = "";
+
+      this.showToast(`🎉 Scene ${sceneIdx + 1} acting video synced with speech & subtitles!`);
+    } catch (e) {
+      console.error(e);
+      this.showToast("Upload failed: " + e.message, true);
+    }
+  }
+
+  async generateVeoSceneVideo(sceneIdx, buttonEl) {
+    if (!this.currentProject) return;
+
+    buttonEl.disabled = true;
+    const oldText = buttonEl.textContent;
+    buttonEl.textContent = "⚡ Rendering...";
+
+    try {
+      this.showToast(`Submitting Scene ${sceneIdx + 1} to Google Veo via FlowKit... 🎬`);
+      const resp = await fetch(`/api/projects/${this.currentProject.id}/generate-flowkit-video/${sceneIdx}`, {
+        method: "POST"
+      });
+
+      if (!resp.ok) {
+        let errMessage = "Veo generation failed";
+        try {
+          const errData = await resp.json();
+          errMessage = errData.detail || errMessage;
+        } catch {}
+        throw new Error(errMessage);
+      }
+
+      const data = await resp.json();
+      this.currentProject = data.project;
+      this.saveActiveProjectState();
+
+      // Refresh scene card video
+      const videoEl = document.getElementById(`sceneVideo_${sceneIdx}`);
+      if (videoEl && data.clip_url) {
+        videoEl.src = `${data.clip_url}?t=${Date.now()}`;
+      }
+      const videoPill = document.getElementById(`sceneVideoPill_${sceneIdx}`);
+      if (videoPill) {
+        videoPill.style.display = "";
+        videoPill.textContent = "⚡ Veo Video Ready";
+      }
+      const btnOverlay = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
+      if (btnOverlay) btnOverlay.style.display = "flex";
+      const btnToggle = document.getElementById(`btnToggleVideo_${sceneIdx}`);
+      if (btnToggle) {
+        btnToggle.style.display = "";
+        btnToggle.classList.add("video-ready");
+      }
+      const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
+      if (btnDownload) btnDownload.style.display = "";
+
+      this.showToast(`🎉 Scene ${sceneIdx + 1} rendered with Google Veo acting motion!`);
+    } catch (e) {
+      console.error(e);
+      this.showToast(e.message, true);
+    } finally {
+      buttonEl.disabled = false;
+      buttonEl.textContent = oldText;
     }
   }
 

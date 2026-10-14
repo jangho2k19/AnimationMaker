@@ -27,3 +27,18 @@ ENV/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Flowkit local databases & runtime state
+flowkit/flow_agent.db*
+flowkit/flow_session_project.json
+flowkit/output/
+flowkit/scratch/
+flowkit/youtube/channels/
+flowkit/.claude/
+flowkit/.omc/
+flowkit/.agent/
+flowkit/.agents/
+flowkit/.ds-sync/
+flowkit/ds-bundle/
+flowkit/extension/_metadata/
+flowkit/*.db*
