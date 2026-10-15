@@ -1932,6 +1932,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         <div class="scene-card-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
+            ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.25); color:#c4b5fd; font-weight:600; border:1px solid rgba(139,92,246,0.4);">🎭 ${scene.archetype}</span>` : ''}
             <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" id="sceneStatusPill_${idx}">
               ${hasSavedImage ? '✓ Ready' : '🎨 AI Painting...'}
             </span>
@@ -1968,10 +1969,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           </div>
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <label class="field-label" style="margin-bottom:0;">🎬 Acting & Visual Description (Video Prompt)</label>
+              <label class="field-label" style="margin-bottom:0;">🎬 Acting & Character Dialogue (3-Beat Video Prompt)</label>
               <span style="font-size:11px; color:var(--text-muted);">8s Veo/Flow prompt</span>
             </div>
-            <input type="text" class="styled-input" id="prompt_${idx}" value="${scene.acting_prompt || scene.visual_prompt || ""}" placeholder="Character physical action, facial expression, and camera motion...">
+            <textarea class="styled-input scene-acting-input" id="prompt_${idx}" rows="3" style="resize:vertical; min-height:65px; font-size:12px; line-height:1.45; font-family:inherit;" placeholder="0-3s: Initial action... 3-6s: Core activity or character says: &quot;...&quot; (no subtitles)... 6-8s: Reaction...">${scene.acting_prompt || scene.visual_prompt || ""}</textarea>
           </div>
         </div>
       `;

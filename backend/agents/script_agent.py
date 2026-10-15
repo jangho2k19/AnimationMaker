@@ -31,6 +31,15 @@ class ScriptAgent:
         - NVIDIA NIM (meta/llama-3.1-70b-instruct, deepseek-r1, etc.)
         - Built-in Genre-Aware Creative Story Architect (offline/zero-key fallback)
         """
+        # 1. If user supplied an existing multi-scene screenplay/script, parse it directly
+        # so their original story, characters, and scenes are 100% preserved.
+        imported = self.parse_imported_storyboard(idea)
+        if imported and imported.get("scenes") and len(imported["scenes"]) >= 2:
+            print(f"🎬 Detected pre-existing screenplay with {len(imported['scenes'])} scenes in user idea! Importing directly...")
+            if title and (not imported.get("title") or imported.get("title") == "Imported Film"):
+                imported["title"] = title
+            return imported
+
         prompt = self._build_story_prompt(idea, num_scenes, target_duration, art_style, language, audience, title=title)
 
         if self.api_key:
@@ -117,7 +126,7 @@ class ScriptAgent:
         title_line = f'Project Title: "{title}" (IMPORTANT: Use this exact title for the film)\n' if title else f'Film Title: Catchy, cinematic, specific to the plot in {language}.\n'
 
         return f"""You are an award-winning animation director and screenwriter at Pixar, Studio Ghibli, and modern AI video studios.
-Create a rich, completely unique, and captivating animated short film storyboard tailored for ACTING VIDEO GENERATION (Google Flow / Google Veo / I2V) based on this premise:
+Create a rich, completely unique, and captivating animated short film storyboard tailored for ACTING VIDEO GENERATION (Google Flow / Google Veo 3 / I2V) based on this premise:
 Idea: "{idea}"
 {title_line}Target Audience: {audience}
 Number of Scenes: Exactly {num_scenes} scenes
@@ -126,16 +135,38 @@ Language for Narration & Titles: {language}
 
 DIRECTORIAL MANDATE FOR CHARACTER VISUAL CONSISTENCY:
 1. CHARACTERS SPECIFICATION:
-   - Create a specific, detailed visual design for the main protagonist(s).
-   - Specify: Name, age/species, exact hairstyle & color, skin tone & facial features, and EXACT signature outfit with specific colors (e.g., "wearing an oversized golden-yellow hoodie, blue denim jeans, and red sneakers").
-   - This exact visual design must remain consistent throughout the entire film.
+   - Create a specific, detailed visual design for the main protagonist(s) and any key secondary character / companion / antagonist.
+   - Specify: Name, age/species, exact hairstyle & color, skin tone & facial features, and EXACT signature outfit with specific colors (e.g., "General Tien: 35yo male with sharp jawline, high topknot, wearing dark bronze-studded leather armor and crimson sash. Doctor Thuy: 28yo female with neat braid, wearing emerald-green linen tunic and leather medical satchel").
+   - These exact visual design tokens must remain consistent throughout the entire film.
 
-2. ACTING VIDEO DIRECTIVES & PERFORMANCE CHOREOGRAPHY:
+2. ACTING VIDEO DIRECTIVES & PERFORMANCE CHOREOGRAPHY (GOOGLE FLOW & VEO 3):
    - For EVERY scene, you must provide:
-     a) `visual_prompt`: Ultra-detailed scene illustration prompt describing environment, lighting, art style, and the character's signature visual tokens.
-     b) `acting_prompt`: Dynamic 8-second acting performance prompt specifically designed for Google Flow / Veo video generation.
-        - Describe physical character performance unfolding across 8 seconds: specific body movements, facial expressions, eye gazes, emotional micro-reactions, gestures, and cinematic camera movement (e.g., "Cinematic medium shot, character looks up in astonishment, gasps with parted lips, slowly reaches a trembling hand forward toward the glowing orb as camera smoothly tracks in").
-     c) Textless Artwork: Visual & acting descriptions ONLY. Absolutely NO dialogue, quotes, speech bubbles, letters, or subtitles in the prompt.
+     a) `visual_prompt`: Ultra-detailed scene illustration prompt describing environment, lighting, art style, framing, and the character's signature visual tokens.
+     b) `acting_prompt`: Exhaustive 8-second acting performance prompt formatted specifically for Google Flow / Veo video generation.
+        CRITICAL RULES FOR `acting_prompt`:
+        - 3-BEAT TEMPORAL PACING (MANDATORY): Structure every 8-second clip into sequential physical beats:
+          `0-3s: [Initial physical action, movement, gesture, or establishing character state]`
+          `3-6s: [Core physical activity, interaction with props/objects, or spoken dialogue/conflict]`
+          `6-8s: [Emotional reaction, physiological response, resolution, and camera settle]`
+          `Camera: [Cinematic camera movement]. Lighting: [Atmospheric lighting]. Negative: subtitles, watermark, text overlay.`
+        - CHARACTER ACTIVITIES & PHYSICAL ACTIONS:
+          Direct concrete, observable physical tasks: examining clues, welding or hammering, climbing, handing over props, drawing weapons, bandaging wounds, turning dials, or fleeing pursuit. Describe physical symptoms of emotion (bead of sweat, pupils dilating, chest heaving, tight jaw).
+        - CHARACTER COMMUNICATION & SPOKEN DIALOGUE (MANDATORY in at least 2 scenes):
+          Characters MUST communicate, converse, or argue! In dialogue scenes (Two-Shot, Over-The-Shoulder, or Speaking/Reaction), embed their spoken words directly inside the clip using this exact syntax:
+          `[Character Name] says: "[Short dialogue line]" (no subtitles) — [tone of voice]`
+          (If language is Vietnamese, use: `(không phụ đề) — [giọng nói]`)
+          * Dialogue length: STRICTLY 5 to 12 words per character per 8s clip for realistic, crisp lip-sync.
+          * Always include the `(no subtitles)` suffix to prevent AI from burning distorted text onto video frames.
+        - CINEMATIC SCENE ARCHETYPE VARIETY:
+          Blend diverse archetypes across the {num_scenes} scenes:
+          - Establishing Shot (world scale, geography, atmospheric lighting, zero or distant character)
+          - Action Beat (physical labor, athletic motion, combat, mechanics, escape)
+          - Dialogue Two-Shot (two characters in frame, exchanging dialogue, tension, decision)
+          - Reaction Focus (close-up on listener's internal shift while dialogue or shock is absorbed)
+          - Climax / Resolution (climactic action and poignant closing)
+     c) Separation of Narration and In-Scene Dialogue:
+        - `narration` field: Voiceover narration spoken by the narrator (TTS). Provides macroscopic lore, emotional depth, and stakes. STRICTLY <= 7.2 seconds ({max_words} words max).
+        - `acting_prompt` field: Contains the visual acting, physical performance, and microscopic character dialogue (`Character says: "..."`).
 
 3. MANDATORY VOICEOVER DURATION CONSTRAINT (EQUAL OR SHORTER THAN 8-SECOND VIDEO):
    - CRITICAL REQUIREMENT: Google Flow / Veo acting video clips have a fixed length of 8.0 seconds.
@@ -151,8 +182,9 @@ Requirements:
   - Each scene MUST have:
     - scene_number (int, from 1 to {num_scenes})
     - title (creative scene title in {language})
+    - archetype (e.g., "Establishing Shot", "Action Beat", "Dialogue Two-Shot", "Reaction Focus", "Climax")
     - visual_prompt (setting, lighting, character consistency tokens, 16:9 cinematic framing)
-    - acting_prompt (dynamic 8s character acting, physical performance, facial micro-expressions, camera motion)
+    - acting_prompt (3-beat temporal action breakdown: 0-3s, 3-6s, 6-8s with character activities, physical performance, and spoken dialogue if applicable)
     - narration (paced for <= 7.2s, STRICTLY 12 to {max_words} words of evocative voiceover narration in {language})
     - camera_motion (choose one: "zoom_in", "zoom_out", "pan_left", "pan_right", "subtle_drift")
 
@@ -160,13 +192,14 @@ Return ONLY valid JSON matching this exact structure:
 {{
   "title": "Title",
   "logline": "Logline",
-  "characters": "Protagonist: [Name], [Age/Gender], [Hair & Eyes], [Signature Outfit & Colors], [Key visual features]",
+  "characters": "Protagonist: [Name], [Visual description] | Secondary: [Name], [Visual description]",
   "scenes": [
     {{
       "scene_number": 1,
       "title": "Scene 1 Title",
+      "archetype": "Action Beat",
       "visual_prompt": "...",
-      "acting_prompt": "...",
+      "acting_prompt": "0-3s: ... 3-6s: ... 6-8s: ... Camera: ... Lighting: ... Negative: subtitles, watermark, text overlay.",
       "narration": "...",
       "camera_motion": "zoom_in"
     }}
@@ -213,11 +246,19 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     for idx, sc in enumerate(parsed["scenes"]):
                         if not isinstance(sc, dict):
                             continue
+                        acting = (
+                            sc.get("acting_prompt") or
+                            sc.get("video_prompt") or
+                            sc.get("acting") or
+                            sc.get("motion_prompt") or
+                            sc.get("visual_prompt", "")
+                        )
                         normalized_scenes.append({
                             "scene_number": sc.get("scene_number", idx + 1),
                             "title": sc.get("title", f"Scene {idx + 1}"),
+                            "archetype": sc.get("archetype", "Cinematic Scene"),
                             "visual_prompt": sc.get("visual_prompt") or sc.get("visual") or sc.get("prompt") or sc.get("description", ""),
-                            "acting_prompt": sc.get("acting_prompt") or sc.get("acting") or sc.get("motion_prompt") or sc.get("visual_prompt", ""),
+                            "acting_prompt": acting,
                             "narration": sc.get("narration") or sc.get("voiceover") or sc.get("script") or sc.get("text", ""),
                             "camera_motion": sc.get("camera_motion", "zoom_in")
                         })
@@ -236,26 +277,87 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
 
         if len(scene_blocks) > 2:
             title_match = re.search(r"(?:Title|Tiêu đề|Tên phim)[:\s]*(.+)", scene_blocks[0], re.IGNORECASE)
+            quote_title = re.search(r'["“]([^"”\n]+)["”]', scene_blocks[0])
+            title = None
+            if title_match:
+                title = title_match.group(1).strip()
+            elif quote_title:
+                title = quote_title.group(1).strip()
+            else:
+                lines = [l.strip() for l in scene_blocks[0].splitlines() if l.strip() and not any(w in l.lower() for w in ["kịch bản", "script", "thể loại", "thời lượng"])]
+                if lines:
+                    title = lines[0]
+            title = title or "Imported Film"
+
+            # Extract message or logline
+            msg_match = re.search(r'(?:Thông điệp|Message|Logline|Tóm tắt)[:\s]*(.+)', scene_blocks[0], re.IGNORECASE)
             logline_match = re.search(r"(?:Logline|Tóm tắt)[:\s]*(.+)", scene_blocks[0], re.IGNORECASE)
-            title = title_match.group(1).strip() if title_match else "Imported Film"
-            logline = logline_match.group(1).strip() if logline_match else ""
+            logline = msg_match.group(1).strip() if msg_match else (logline_match.group(1).strip() if logline_match else "")
+
+            # Extract characters specification
+            char_match = re.search(r'(?:Nhân vật|Characters)[:\s]*\n([\s\S]*?)(?=(?:Mở đầu|CẢNH|Scene|Phân cảnh|Bối cảnh|Thông điệp|$))', scene_blocks[0], re.IGNORECASE)
+            characters = ""
+            if char_match:
+                raw_c = char_match.group(1).strip()
+                c_lines = [l.strip() for l in raw_c.splitlines() if l.strip()]
+                characters = " | ".join(c_lines[:4])
 
             scenes = []
             for i in range(1, len(scene_blocks), 2):
                 sc_num = int(scene_blocks[i]) if scene_blocks[i].isdigit() else len(scenes) + 1
                 sc_body = scene_blocks[i+1].strip()
 
-                vis_match = re.search(r"(?:Visual|Hình ảnh|Miêu tả)[:\s]*(.+?)(?=(?:Acting|Hành động|Diễn xuất|Narration|Lời thoại|Thuyết minh|$))", sc_body, re.IGNORECASE | re.DOTALL)
-                act_match = re.search(r"(?:Acting|Hành động|Diễn xuất)[:\s]*(.+?)(?=(?:Narration|Lời thoại|Thuyết minh|$))", sc_body, re.IGNORECASE | re.DOTALL)
-                narr_match = re.search(r"(?:Narration|Lời thoại|Thuyết minh)[:\s]*(.+)", sc_body, re.IGNORECASE | re.DOTALL)
+                lines = [l.strip() for l in sc_body.splitlines() if l.strip()]
+                first_line = lines[0] if lines else ""
+                clean_title = re.sub(r'^[–\-—:\s]+', '', first_line).strip()
+                clean_title = re.sub(r'^(?:NGOẠI|NỘI|EXT|INT)[\.\s]*', '', clean_title, flags=re.IGNORECASE).strip()
+                sc_title = clean_title if clean_title and len(clean_title) < 60 else f"Scene {sc_num}"
 
-                visual = vis_match.group(1).strip() if vis_match else sc_body[:200]
-                acting = act_match.group(1).strip() if act_match else visual
-                narration = narr_match.group(1).strip() if narr_match else sc_body
+                body_without_title = "\n".join(lines[1:]) if len(lines) > 1 else sc_body
+                vis_match = re.search(r'(?:Visual|Hình ảnh|Miêu tả)[:\s]*(.+?)(?=(?:Âm thanh|Audio|Lời thoại|Dialogue|\n[A-ZÀ-Ỹ\s]{3,}\s*(?:\([^\)]*\))?|\n\n[A-ZÀ-Ỹ]|$))', body_without_title, re.IGNORECASE | re.DOTALL)
+                visual = vis_match.group(1).strip() if vis_match else body_without_title[:250]
+                visual = re.sub(r'\s+', ' ', visual)
+
+                # Look for dialogues: CHARACTER NAME (tone) \n "line"
+                dials = re.findall(r'(?:^|\n)([A-ZÀ-Ỹ]{2,}(?:\s+[A-ZÀ-Ỹ]+)*)\s*(?:\(([^\)]*)\))?\n([^\n]+)', sc_body)
+                dial_str = ""
+                if dials:
+                    spk, tone, line = dials[0]
+                    clean_spk = spk.strip().title()
+                    clean_tone = f" — {tone.strip()}" if tone else ""
+                    dial_str = f'{clean_spk} nói: "{line.strip()}" (không phụ đề){clean_tone}'
+
+                arch_match = re.search(r"(?:Archetype|Thể loại cảnh)[:\s]*(.+?)(?=(?:Visual|Acting|Narration|$))", sc_body, re.IGNORECASE | re.DOTALL)
+                if arch_match:
+                    archetype = arch_match.group(1).strip()
+                elif dial_str:
+                    archetype = "Dialogue Scene"
+                elif i == 1:
+                    archetype = "Establishing Shot"
+                else:
+                    archetype = "Action Beat"
+
+                acting = (
+                    f"0-3s: {visual[:130]}. "
+                    f"3-6s: {dial_str if dial_str else 'Diễn xuất và chuyển động tự nhiên của nhân vật trong bối cảnh.'} "
+                    f"6-8s: Cảm xúc chuyển biến tự nhiên, ánh mắt kết nối nhịp nhàng sang cảnh tiếp theo. "
+                    f"Camera: zoom_in. Lighting: ánh sáng điện ảnh ấm áp. Negative: subtitles, watermark, text overlay."
+                )
+
+                # Narration: extract voiceover or summarize visual
+                narr_match = re.search(r'(?:Narration|Thuyết minh|Lời dẫn)[:\s]*(.+)', sc_body, re.IGNORECASE | re.DOTALL)
+                if narr_match:
+                    narration = narr_match.group(1).strip()
+                else:
+                    sentences = re.split(r'[.!?\n]', visual)
+                    narration = sentences[0].strip() if sentences and sentences[0].strip() else visual[:80]
+                    if len(narration.split()) > 18:
+                        narration = " ".join(narration.split()[:16]) + "..."
 
                 scenes.append({
                     "scene_number": sc_num,
-                    "title": f"Scene {sc_num}",
+                    "title": sc_title,
+                    "archetype": archetype,
                     "visual_prompt": visual,
                     "acting_prompt": acting,
                     "narration": narration,
@@ -266,7 +368,7 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                 return {
                     "title": title,
                     "logline": logline,
-                    "characters": "",
+                    "characters": characters,
                     "scenes": scenes
                 }
 
@@ -330,7 +432,7 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
             prompt=prompt,
             model=self.model,
             cookie_override=cookie_input,
-            extended_thinking=True
+            extended_thinking=False
         )
         return self._clean_json_response(res.text)
 
@@ -395,7 +497,11 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         lower = text.lower()
         if any(w in lower for w in ["cyberpunk", "detective", "robot", "neon", "hologram", "city", "future", "tech", "cyborg"]):
             return "cyberpunk"
-        elif any(w in lower for w in ["tam cam", "tấm cám", "cổ tích", "vua", "hoàng tử", "công chúa", "fairy tale", "fable", "folklore"]):
+        elif any(w in lower for w in [
+            "tam cam", "tấm cám", "cổ tích", "vua", "hoàng tử", "công chúa", 
+            "fairy tale", "fable", "folklore", "đồng lúa", "làng quê", "cánh đồng", 
+            "nông thôn", "cào cào", "ruộng", "bác nông dân", "con trâu", "cây đa"
+        ]):
             return "folklore"
         elif any(w in lower for w in ["space", "star", "planet", "saturn", "galaxy", "astronaut", "universe", "vũ trụ"]):
             return "space"
@@ -421,16 +527,36 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         genre = self._detect_genre(clean_idea_raw)
         is_vi = language.startswith("vi")
 
-        # Strip quotes, dialogue, and multi-line paragraphs to extract a concise subject
-        no_dialogue = re.sub(r'["“][^"”]*["”]', '', clean_idea_raw)
-        no_dialogue = re.sub(r"['‘][^'’]*['’]", '', no_dialogue)
-        first_line = no_dialogue.strip().splitlines()[0] if no_dialogue.strip() else clean_idea_raw
-        first_sentence = re.split(r'[.!?\n]', first_line)[0].strip()
-        words = [w for w in first_sentence.split() if w]
-        clean_idea = " ".join(words[:6]) if words else "the story"
-        short_title = " ".join([w.capitalize() for w in words[:4]]) if words else "Animation Story" 
+        # 1. Extract quoted title or user-defined title
+        quote_title = re.search(r'["“]([^"”\n]+)["”]', clean_idea_raw)
+        extracted_title = quote_title.group(1).strip() if quote_title else None
 
-        # Genre narrative templates with distinct story beats
+        # 2. Extract character roster from input if specified
+        char_match = re.search(r'(?:Nhân vật|Characters)[:\s]*\n([\s\S]*?)(?=(?:Mở đầu|CẢNH|Scene|Phân cảnh|Bối cảnh|Thông điệp|$))', clean_idea_raw, re.IGNORECASE)
+        custom_char = ""
+        if char_match:
+            raw_c = char_match.group(1).strip()
+            c_lines = [l.strip() for l in raw_c.splitlines() if l.strip()]
+            custom_char = " | ".join(c_lines[:3])
+
+        # 3. Clean topic / subject without generic script boilerplates
+        lines = [
+            l.strip() for l in clean_idea_raw.splitlines()
+            if l.strip() and not any(meta in l.lower() for meta in ["kịch bản", "script", "thể loại", "thời lượng", "bối cảnh", "thông điệp"])
+        ]
+        if extracted_title:
+            short_title = extracted_title
+            clean_idea = extracted_title
+        elif lines:
+            first_sentence = re.split(r'[.!?\n]', lines[0])[0].strip()
+            words = [w for w in first_sentence.split() if w]
+            short_title = " ".join([w.capitalize() for w in words[:4]]) if words else "Animation Story"
+            clean_idea = " ".join(words[:6]) if words else "the story"
+        else:
+            short_title = "Animation Story"
+            clean_idea = "the story"
+
+        # Genre narrative templates with distinct story beats, 3-beat acting choreography, and character communication
         genre_beats = {
             "cyberpunk": {
                 "title_en": f"{short_title}: Shadows of Neon",
@@ -441,7 +567,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Neon Shadows & Digital Rain",
                         "title_vi": "Bóng Đêm Neon & Cơn Mưa Kỹ Thuật Số",
+                        "archetype": "Establishing Shot",
                         "prompt": f"Moody cyberpunk detective scene featuring {clean_idea}, towering holographic neon skyscrapers, rain-drenched pavement reflecting cyan and magenta lights, atmospheric volumetric fog, cinematic framing",
+                        "acting_en": f"0-3s: Aerial camera descends over rain-slicked pavement as Cyra steps out under a flickering neon billboard. 3-6s: She pulls up her high trench collar against the rain, tapping her glowing holo-lens. 6-8s: Her glowing cyan eye implant flares as she detects an anomalous digital signature. Camera: slow crane-down. Lighting: neon cyan and magenta reflections on wet asphalt. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Máy quay từ trên cao hạ dần xuống góc phố neon ướt mưa khi Cyra bước qua biển quảng cáo chập chờn. 3-6s: Cô kéo cao cổ áo dạ quang che mưa, tay chạm vào kính điện tử quét dữ liệu. 6-8s: Mắt công nghệ phát sáng xanh khi phát hiện tín hiệu bất thường. Camera: hạ góc mượt mà. Ánh sáng: phản chiếu ánh neon xanh hồng trên mặt đường ướt. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Beneath the flickering neon billboards of the sprawling metropolis, the investigation begins. Rain slicks the pavement as holographic echoes whisper long-forgotten secrets.",
                         "narration_vi": f"Dưới những biển quảng cáo neon rực rỡ của thành phố tương lai, cuộc điều tra bắt đầu. Cơn mưa đêm phản chiếu ánh đèn rực rỡ, che giấu những bí mật chìm sâu trong dòng dữ liệu.",
                         "motion": "zoom_in"
@@ -449,7 +578,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Deciphering The Glitch",
                         "title_vi": "Giải Mã Mảnh Vỡ Ký Ức",
+                        "archetype": "Dialogue Two-Shot",
                         "prompt": f"High-tech investigation scene in {clean_idea}, glowing blue holographic data streams, cybernetic interface, dark futuristic laboratory room, intense concentration, cinematic depth",
+                        "acting_en": f"0-3s: Medium two-shot inside dim server bunker. Cyra leans over the glowing blue terminal across from her informant. 3-6s: Cyra points at the corrupted data core. Cyra says: \"This code was erased from inside the network.\" (no subtitles) — low urgent whisper. 6-8s: The informant widens his eyes in shock and nods slowly. Camera: intimate push-in. Lighting: cold blue holographic glow in shadows. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Trung cảnh hai nhân vật trong phòng máy chủ tối. Cyra ghé sát màn hình dữ liệu xanh đối diện người cung cấp tin. 3-6s: Cyra chỉ vào khối mã nguồn bị hỏng. Cyra nói: \"Mã này bị xóa từ bên trong mạng lưới.\" (không phụ đề) — giọng thì thầm khẩn trương. 6-8s: Người đối diện kinh ngạc mở to mắt rồi khẽ gật đầu. Camera: đẩy cận chậm. Ánh sáng: ánh sáng xanh holographic chập chờn. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Every clue pulses with electric urgency. A hidden fragment in the network reveals a trail of forgotten memories that the city attempted to erase.",
                         "narration_vi": f"Từng manh mối ánh lên nhịp đập điện tử dồn dập. Một mảnh dữ liệu ẩn giấu dần hé lộ sự thật mà thành phố này đã cố gắng chôn vùi suốt nhiều năm qua.",
                         "motion": "pan_left"
@@ -457,7 +589,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Rooftop Confrontation",
                         "title_vi": "Đối Đầu Trên Đỉnh Tòa Tháp",
+                        "archetype": "Action Beat",
                         "prompt": f"Dramatic climactic confrontation on a futuristic skyscraper rooftop, {clean_idea}, intense lighting, crackling energy discharge, dark stormy clouds above towering skyline",
+                        "acting_en": f"0-3s: Low tracking shot along wind-swept metal grates as Cyra sprints through heavy rain. 3-6s: She slides across wet steel, draws an EMP scrambler, and locks onto the rooftop antenna. 6-8s: Brilliant electrical discharge arcs through the air, illuminating her determined face as the signal shatters. Camera: dynamic lateral track. Lighting: strobing electrical sparks against storm clouds. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Góc quay thấp bám theo bước chạy gấp gáp của Cyra trên sàn kim loại lộng gió giữa cơn mưa tầm tã. 3-6s: Cô trượt người trên sàn ướt, rút súng xung điện khóa mục tiêu trạm phát sóng. 6-8s: Luồng điện chớp sáng rực rỡ xé tan màn đêm, soi rõ ánh mắt kiên cường. Camera: lia bám theo hành động. Ánh sáng: tia lửa điện chớp sáng giữa mây dông. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"High above the clouds atop a towering spire, the truth is finally confronted. Sparks ignite the night air as the final piece of the digital puzzle locks into place.",
                         "narration_vi": f"Trên đỉnh tòa tháp chọc trời mờ mịt gió mưa, khoảnh khắc quyết định đã đến. Ánh sáng năng lượng bùng nổ khi bức tranh sự thật cuối cùng được ghép lại trọn vẹn.",
                         "motion": "pan_right"
@@ -465,7 +600,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Dawn Over The Cyber City",
                         "title_vi": "Bình Minh Trên Đô Thị Mới",
+                        "archetype": "Resolution",
                         "prompt": f"Breathtaking dawn rising over a futuristic metropolis, {clean_idea}, warm sunrise light piercing through neon fog, peaceful cinematic wide final shot",
+                        "acting_en": f"0-3s: Wide shot on the rain-clearing helipad as Cyra rests against the railing. 3-6s: Golden sunlight breaks through the neon haze. She lowers her collar, exhales softly, and looks toward the horizon. Cyra says: \"The city is finally awake.\" (no subtitles) — calm resolute tone. 6-8s: Camera pulls back into wide panoramic skyline. Camera: majestic crane pull-back. Lighting: warm golden morning sun mixed with fading neon. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Toàn cảnh sân thượng khi cơn mưa vừa tạnh, Cyra đứng tựa lan can nhìn ra xa. 3-6s: Nắng sớm xuyên qua sương neon. Cô hạ cổ áo, thở phào nhẹ nhõm và ngắm nhìn chân trời. Cyra nói: \"Thành phố cuối cùng đã thức giấc.\" (không phụ đề) — giọng điềm tĩnh, nhẹ nhõm. 6-8s: Máy quay lùi xa mở ra toàn cảnh thành phố rạng rỡ. Camera: lùi cao toàn cảnh. Ánh sáng: ánh bình minh vàng ấm áp. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"As the first rays of morning sunlight pierce the neon haze, clarity returns to the city. The memory is saved, and a new legend takes flight.",
                         "narration_vi": f"Khi những tia nắng ban mai đầu tiên xuyên qua làn sương neon, sự yên bình trở lại với đô thị. Ký ức đã được giải thoát, mở ra hy vọng cho một ngày mai tươi sáng.",
                         "motion": "zoom_out"
@@ -481,7 +619,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Quiet Village Hearth",
                         "title_vi": "Mái Nhà Tranh & Lòng Chăm Chỉ",
+                        "archetype": "Action Beat",
                         "prompt": f"Peaceful ancient Vietnamese village setting featuring {clean_idea}, rustic thatched roofs, bamboo grove, warm morning sunlight, serene countryside landscape",
+                        "acting_en": f"0-3s: Medium shot of Tam carrying a woven bamboo basket by the village pond, morning mist curling over the water. 3-6s: She gently scatters grains to fish, hands moving with practiced care. Tam says: \"Eat well, little ones, tomorrow will be better.\" (no subtitles) — gentle affectionate voice. 6-8s: She pauses, gazing warmly at the golden ripples. Camera: slow tracking push-in. Lighting: soft golden sunrise through green bamboo. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Trung cảnh Tấm bưng thúng tre bên bờ ao làng, sương mai lượn lờ trên mặt nước. 3-6s: Nàng nhẹ nhàng vốc từng nắm thóc thả xuống ao. Tấm nói: \"Các em ăn ngoan, ngày mai trời lại sáng.\" (không phụ đề) — giọng dịu dàng trìu mến. 6-8s: Nàng mỉm cười hiền từ nhìn đàn cá bơi lội. Camera: tiến lại gần chậm rãi. Ánh sáng: nắng sớm xuyên qua rặng tre xanh. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"In a peaceful village bordered by green bamboo groves, our story unfolds with {clean_idea}. Through hardship and silence, a gentle spirit remained pure.",
                         "narration_vi": f"Bên rặng tre xanh rì rào của làng quê thanh bình, câu chuyện bắt đầu với {clean_idea}. Dù gặp muôn vàn gian nan, tấm lòng hiền hậu vẫn luôn ngát hương thơm.",
                         "motion": "zoom_in"
@@ -489,7 +630,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Gentle Miracle",
                         "title_vi": "Phép Màu Bụt Ban",
+                        "archetype": "Dialogue Two-Shot",
                         "prompt": f"Mystical fairy tale scene featuring {clean_idea}, glowing golden lotus or magical bird, sparkling divine starlight, lush tropical trees, gentle aura",
+                        "acting_en": f"0-3s: Close-up on Tam wiping a tear from her cheek under a weeping willow. 3-6s: A celestial glowing presence descends, radiating soft warmth. The benevolent elder speaks with kindness. Elder says: \"Good heart, wipe your tears; justice is near.\" (no subtitles) — deep soothing voice. 6-8s: Tam gasps in awe, hands folding over her heart with glowing hope. Camera: smooth tilt-up to celestial light. Lighting: magical volumetric golden sparkles. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Cận cảnh Tấm khẽ gạt giọt nước mắt dưới bóng liễu rủ. 3-6s: Một vầng hào quang ấm áp bất ngờ tỏa sáng. Ông Bụt hiện ra hiền từ cất tiếng. Bụt nói: \"Con gái ngoan, đừng khóc nữa, phúc lành đã đến.\" (không phụ đề) — giọng ấm áp từ bi. 6-8s: Tấm ngỡ ngàng chắp tay trước ngực, đôi mắt ánh lên niềm hy vọng. Camera: lia ngước lên vầng sáng diệu kỳ. Ánh sáng: bụi sao vàng lung linh huyền ảo. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"When sorrow seemed heaviest, a miraculous presence appeared. From a simple blessing, extraordinary magic began to blossom.",
                         "narration_vi": f"Khi nỗi buồn tưởng chừng sâu nặng nhất, một phép màu dịu hiền đã xuất hiện. Từng giọt hy vọng biến thành những điều kỳ diệu sưởi ấm tâm hồn.",
                         "motion": "subtle_drift"
@@ -497,7 +641,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Royal Festival & Triumph",
                         "title_vi": "Ngày Hội & Niềm Vui Trở Về",
+                        "archetype": "Action Beat",
                         "prompt": f"Grand ancient royal palace courtyard, festive lanterns, colorful silk banners, joyful celebration of {clean_idea}, radiant golden lighting",
+                        "acting_en": f"0-3s: Medium tracking shot through a vibrant royal pavilion crowded with festive banners. 3-6s: Tam steps forward in exquisite embroidered silk robes, fitting the lost golden shoe onto her foot with perfect grace. 6-8s: The young King beams with immense joy and steps forward to welcome her. Camera: fluid arc motion. Lighting: bright festive lantern glow and royal gold. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Máy quay bám theo nhịp bước qua sảnh cung điện tưng bừng cờ hoa. 3-6s: Tấm thanh tú trong bộ áo lụa gấm thêu hoa, nhẹ nhàng xỏ chân vào chiếc hài thêu vừa như in. 6-8s: Nhà vua trẻ mừng rỡ bước tới đỡ lấy tay nàng trong tiếng reo vui của muôn người. Camera: quay vòng cung nhịp nhàng. Ánh sáng: rực rỡ đèn lồng hoàng gia. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Truth could not remain hidden in shadows. Before the royal court and the cheering crowd, virtue triumphed over all deception.",
                         "narration_vi": f"Sự thật và lòng nhân ái không bao giờ bị khuất phục. Giữa ngày hội tưng bừng, người hiền đã nhận được hạnh phúc xứng đáng mà trời ban tặng.",
                         "motion": "pan_right"
@@ -505,7 +652,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Everlasting Harmony",
                         "title_vi": "Khúc Ca Hạnh Phúc",
+                        "archetype": "Resolution",
                         "prompt": f"Harmonious ending scene of {clean_idea}, blooming golden marigolds, golden hour sunlight, royal happiness and peace, warm fairy tale ending",
+                        "acting_en": f"0-3s: Wide static shot of the tranquil palace garden blooming with fragrant lotus flowers. 3-6s: Tam and the King stand side by side under a flowering apricot tree, smiling serenely. Tam says: \"Peace has returned to our kingdom.\" (no subtitles) — sweet heartfelt delivery. 6-8s: Camera pulls back gently as white doves take flight into the sunset. Camera: slow cinematic pull-back. Lighting: warm golden hour twilight. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Toàn cảnh hoa sen khoe sắc rực rỡ trong ngự uyển thanh bình. 3-6s: Tấm cùng nhà vua sánh bước dưới tán mai vàng, mỉm cười rạng rỡ. Tấm nói: \"Đất nước ta nay đã thanh bình.\" (không phụ đề) — giọng trong trẻo xúc động. 6-8s: Máy quay lùi xa khi đàn bồ câu trắng tung cánh bay vút lên bầu trời hoàng hôn. Camera: lùi xa êm đềm. Ánh sáng: ráng chiều vàng óng ả. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Kindness had weathered every storm. Across the kingdom, songs of justice and everlasting joy echoed through the ages.",
                         "narration_vi": f"Lòng nhân hậu đã vượt qua mọi sóng gió. Khắp đất trời rộn vang tiếng cười hạnh phúc, để lại bài học ý nghĩa lưu truyền mãi ngàn sau.",
                         "motion": "zoom_out"
@@ -521,7 +671,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Launch Towards The Stars",
                         "title_vi": "Khởi Hành Vào Vũ Trụ",
+                        "archetype": "Establishing Shot",
                         "prompt": f"Cosmic establishing shot of {clean_idea}, retro-futuristic cockpit overlooking a sea of glittering nebulae, purple and cyan starlight, awe-inspiring scale",
+                        "acting_en": f"0-3s: Cockpit interior looking past Captain Orion's shoulder out toward a swirling magenta nebula. 3-6s: Orion flips heavy mechanical switches on the console, checking telemetry monitors. Orion says: \"All engines nominal. Engaging warp drive.\" (no subtitles) — steady confident baritone. 6-8s: The starfield outside stretches into brilliant hyper-light streaks. Camera: smooth push-in to windshield. Lighting: pulsing dashboard instruments and starlight glow. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Góc nhìn từ khoang lái qua vai Cơ trưởng Orion hướng về tinh vân ánh tím huyền ảo. 3-6s: Orion bật dãy công tắc cơ khí trên bàn điều khiển, kiểm tra thông số. Orion nói: \"Động cơ đã sẵn sàng. Kích hoạt bước nhảy không gian.\" (không phụ đề) — giọng trầm ấm tự tin. 6-8s: Muôn vì sao ngoài cửa sổ kéo dài thành những vệt sáng lộng lẫy. Camera: tiến chậm về kính lái. Ánh sáng: bảng điện tử phát quang phản chiếu mũ bảo hiểm. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Drifting beyond the edge of gravity, the great cosmic expedition begins. Distant stars twinkle like diamonds against the velvet night.",
                         "narration_vi": f"Rời khỏi lực hút của mặt đất, chuyến hải trình giữa các vì sao chính thức bắt đầu. Từng tinh vân lấp lánh như những dải lụa phát sáng giữa màn đêm vô tận.",
                         "motion": "zoom_in"
@@ -529,7 +682,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Navigating The Celestial Rings",
                         "title_vi": "Xuyên Qua Vành Đai Thiên Thạch",
+                        "archetype": "Action Beat",
                         "prompt": f"Dynamic space flight of {clean_idea}, gliding over glowing icy rings of a giant planet, sparkling cosmic dust particles, vibrant aurora reflections",
+                        "acting_en": f"0-3s: Medium shot inside the shaking cockpit as icy asteroids tumble past outside. 3-6s: Orion grips the dual flight yokes firmly, executing a sharp evasive roll with focused precision. 6-8s: Sweat glints on his brow, then relaxes into a proud smile as the ship clears the orbital ring. Camera: dynamic handheld vibration settling into smooth glide. Lighting: azure planet shine through side windows. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Trung cảnh khoang lái rung chuyển nhẹ khi tàu bay sát qua những khối thiên thạch băng khổng lồ. 3-6s: Orion ghì chặt cần lái, điều khiển con tàu nghiêng người lướt qua khoảng hẹp một cách điêu luyện. 6-8s: Vẻ mặt căng thẳng giãn ra thành nụ cười tự tin khi con tàu vượt qua vùng nguy hiểm. Camera: rung lắc nhẹ rồi lướt êm. Ánh sáng: hào quang hành tinh xanh ngọc chiếu qua mạn tàu. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Gliding gracefully through shimmering asteroid rings, every turn reveals wonders no mortal eyes have ever witnessed.",
                         "narration_vi": f"Lướt nhẹ qua những vành đai băng lấp lánh của hành tinh khổng lồ, mỗi chuyển động mở ra một kỳ quan tráng lệ chưa từng được biết đến.",
                         "motion": "pan_left"
@@ -537,7 +693,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Heart of The Supernova",
                         "title_vi": "Trái Tim Của Tinh Cầu Kỳ Diệu",
+                        "archetype": "Dialogue Two-Shot",
                         "prompt": f"Magnificent celestial discovery scene featuring {clean_idea}, radiant glowing core of light, colorful cosmic waves, dramatic starlight illumination",
+                        "acting_en": f"0-3s: Two astronauts stand before the observation dome, mesmerized by a pulsating cosmic energy sphere. 3-6s: Orion extends a gloved hand toward the transparent dome. Orion says: \"It's alive... it's singing across the frequencies.\" (no subtitles) — hushed awe. 6-8s: Waves of warm harmonic light illuminate both faces in radiant wonder. Camera: slow circular orbit. Lighting: golden cosmic light waves in deep indigo space. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Hai phi hành gia đứng trước vòm kính quan sát ngắm nhìn khối năng lượng vũ trụ lơ lửng phát sáng. 3-6s: Orion đưa bàn tay bọc găng chạm nhẹ vào mặt kính trong suốt. Orion nói: \"Nguồn năng lượng này đang giao thoa cùng chúng ta.\" (không phụ đề) — giọng ngỡ ngàng thì thầm. 6-8s: Từng làn sóng ánh sáng ấm áp phản chiếu trên gương mặt hai người. Camera: lượn vòng cung chậm. Ánh sáng: sóng sáng hoàng kim giữa nền vũ trụ huyền bí. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"At the center of the deep expanse, a magnificent celestial core awakens, showering the cosmos with ancient brilliant light.",
                         "narration_vi": f"Tại trung tâm của dải ngân hà, một nguồn năng lượng kỳ diệu bừng sáng, tỏa ra những luồng ánh sáng ấm áp nuôi dưỡng muôn vì sao.",
                         "motion": "pan_right"
@@ -545,7 +704,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Safe Harbor in Orbit",
                         "title_vi": "Bến Đỗ Bình Yên",
+                        "archetype": "Resolution",
                         "prompt": f"Peaceful closing space scene, {clean_idea} peacefully floating against a glowing blue crescent planet, warm tranquil starlight",
+                        "acting_en": f"0-3s: Wide exterior shot of the exploration vessel coasting into quiet planetary orbit. 3-6s: Orion stands in the observation cupola, helmet off, sipping warm coffee as the blue planet rises below. 6-8s: He offers a gentle salute toward the distant Earth starlight. Camera: graceful crane-out into deep starfield. Lighting: tranquil crescent planetary earthlight. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Toàn cảnh bên ngoài con tàu thám hiểm nhẹ nhàng tiến vào quỹ đạo hành tinh xanh biếc. 3-6s: Orion đứng trong vòm kính ngắm cảnh, cởi mũ bảo hiểm, nhìn ngắm hành tinh quê hương dần hiện ra. 6-8s: Anh mỉm cười giơ tay chào vì sao xa xôi. Camera: lùi xa êm ái vào biển sao. Ánh sáng: ánh xanh dịu dàng từ bề mặt hành tinh. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"With stardust in its wake and a heart full of wonder, our traveler rests in the quiet embrace of the universe.",
                         "narration_vi": f"Mang theo bụi sao lấp lánh và những ký ức tuyệt diệu, người du hành nhẹ nhàng dừng chân trong vòng tay êm dịu của vũ trụ bao la.",
                         "motion": "zoom_out"
@@ -561,7 +723,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Morning in The Sunlit Glade",
                         "title_vi": "Buổi Sáng Trong Khu Rừng Nắng Ấm",
+                        "archetype": "Establishing Shot",
                         "prompt": f"Charming storybook forest scene featuring {clean_idea}, golden morning sunbeams filtering through lush canopy, dewdrops on wild strawberries, cute stylized aesthetic",
+                        "acting_en": f"0-3s: Close-up on a cozy hollow tree trunk as little red panda Pip pokes his furry head out and yawns adorably. 3-6s: Pip rubs his emerald eyes, hops onto a mossy root, and straps on his leaf satchel. Pip says: \"Time for a big adventure!\" (no subtitles) — playful cheerful chirp. 6-8s: He sniffs a dewy strawberry and scurries forward happily. Camera: low-angle macro push. Lighting: warm dappled morning sunbeams. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Cận cảnh hốc cây ấm áp khi chú gấu trúc đỏ Pip thò đầu ra ngáp dài đáng yêu. 3-6s: Pip dụi mắt tròn xoe, nhảy tót xuống rễ cây phủ rêu và đeo chiếc túi lá nhỏ xinh. Pip nói: \"Hôm nay sẽ là một chuyến phiêu lưu tuyệt vời!\" (không phụ đề) — giọng trong trẻo nhí nhảnh. 6-8s: Chú hít hà quả dâu rừng rồi nhanh nhảu chạy về phía trước. Camera: góc thấp bám sát mặt đất. Ánh sáng: vạt nắng sớm lung linh qua tán lá. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"As dawn paints the forest in warm amber light, an adventurous soul wakes up ready to discover the world.",
                         "narration_vi": f"Khi ánh bình minh rọi những vạt nắng vàng óng ả qua kẽ lá, một ngày mới tràn ngập niềm vui và sự háo hức bắt đầu.",
                         "motion": "zoom_in"
@@ -569,7 +734,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "A Playful Mishap",
                         "title_vi": "Thử Thách Bất Ngờ",
+                        "archetype": "Action Beat",
                         "prompt": f"Playful animated forest scene with {clean_idea}, tumbling across a mossy brook, funny expressive reaction, colorful butterflies fluttering around",
+                        "acting_en": f"0-3s: Medium tracking shot as Pip balances precariously across slippery river stones. 3-6s: A shimmering blue butterfly lands on his nose; Pip sneezes, wobbles, and tumbles into soft green ferns with a funny splash. 6-8s: Pip sits up with ferns on his head, blinking in surprise before giggling joyfully. Camera: playful tracking follow. Lighting: sparkling water reflections and sunlight glints. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Trung cảnh Pip nhón chân giữ thăng bằng bước qua những tảng đá rêu trơn trượt bên bờ suối. 3-6s: Một chú bướm xanh đậu lên chóp mũi; Pip hắt xì một cái rồi ngã lăn vào bụi dương xỉ mềm mại. 6-8s: Pip ngồi dậy với chiếc lá trên đầu, chớp mắt ngơ ngác rồi bật cười khúc khích. Camera: chuyển động vui nhộn bám theo. Ánh sáng: ánh nước lấp lánh phản chiếu rực rỡ. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Curiosity leads down uncharted paths! A playful tumble brings an unexpected surprise by the gurgling brook.",
                         "narration_vi": f"Tính tò mò dẫn lối qua con suối róc rách. Dù gặp một chút vấp váp nhỏ, nụ cười vẫn nở rộ giữa bầy bướm rực rỡ sắc màu.",
                         "motion": "pan_right"
@@ -577,7 +745,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Power of Teamwork",
                         "title_vi": "Sức Mạnh Của Tình Bạn",
+                        "archetype": "Dialogue Two-Shot",
                         "prompt": f"Heartwarming animal collaboration scene with {clean_idea}, forest friends helping each other reach a golden glowing prize, joy and unity",
+                        "acting_en": f"0-3s: Two forest friends—Pip and a friendly badger—stand under a high branch holding a juicy golden peach. 3-6s: Pip climbs onto badger's strong shoulders, reaching his paws upward. Pip says: \"Just a little higher, we got it!\" (no subtitles) — excited joyful squeak. 6-8s: They pluck the fruit together and high-five with cheerful hops. Camera: upward tilt to medium shot. Lighting: warm radiant golden canopy light. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Hai người bạn nhỏ—Pip và chú lửng rừng tốt bụng—đứng dưới cành cây cao có quả đào vàng mọng nước. 3-6s: Pip trèo lên vai bạn, kiễng chân với tay lên cành cây. Pip nói: \"Cố thêm chút nữa, tớ với tới rồi!\" (không phụ đề) — giọng hào hứng reo vang. 6-8s: Hai bạn cùng hái được quả đào và đập tay ăn mừng vui sướng. Camera: hướng chếch lên cao. Ánh sáng: ánh nắng chan hòa ấm áp qua kẽ lá. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"When a challenge seems too tall to conquer alone, good friends join hands. Together, nothing is impossible.",
                         "narration_vi": f"Khi thử thách dường như quá lớn, những người bạn tốt đã cùng nhau kề vai sát cánh. Sự sẻ chia biến mọi khó khăn thành niềm vui.",
                         "motion": "pan_left"
@@ -585,7 +756,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Sunset Celebration",
                         "title_vi": "Lửa Trại & Khúc Ca Hoàng Hôn",
+                        "archetype": "Resolution",
                         "prompt": f"Cozy evening forest clearing, {clean_idea} resting with friends under fireflies and lantern glow, warm heartfelt ending",
+                        "acting_en": f"0-3s: Wide shot of a cozy forest clearing at dusk as glowing fireflies awaken in the tall grass. 3-6s: Pip and his friends share forest berries around a carved wooden stump, laughing together. 6-8s: Pip curls up happily in his mossy bed, waving goodnight toward the viewer. Camera: gentle pull-back into tree branches. Lighting: magical glowing fireflies and amber dusk. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Toàn cảnh khoảng rừng ấm cúng lúc chạng vạng khi đàn đom đóm thắp sáng bãi cỏ. 3-6s: Pip cùng các bạn chia nhau những quả mọng rừng quanh gốc cây cổ thụ, tiếng cười rộn rã. 6-8s: Pip cuộn tròn êm ái trong tổ rêu, vẫy tay chúc ngủ ngon. Camera: lùi nhẹ ra sau tán lá. Ánh sáng: đom đóm vàng lung linh giữa hoàng hôn tím dịu. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Under the gentle glow of dancing fireflies, the friends celebrate their triumph, grateful for each other's warmth.",
                         "narration_vi": f"Dưới ánh đom đóm lập lòe của buổi chiều tà, bữa tiệc vui khép lại trong sự ấm áp và tình bạn bền chặt mãi mãi.",
                         "motion": "zoom_out"
@@ -601,7 +775,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Call To Adventure",
                         "title_vi": "Lời Kêu Gọi Phiêu Lưu",
+                        "archetype": "Establishing Shot",
                         "prompt": f"Epic establishing shot of {clean_idea}, heroic pose looking out towards distant misty peaks, golden atmospheric rays, cinematic depth",
+                        "acting_en": f"0-3s: Low angle tracking behind Kael as he reaches the crest of a rugged mountain ridge. 3-6s: Wind whips his hair as he unrolls an ancient leather map, checking the brass compass on his belt. Kael says: \"The lost sanctuary is right past these ridges.\" (no subtitles) — brave determined tone. 6-8s: He folds the map firmly and steps toward the descent. Camera: sweeping crane-up over the mountain ridge. Lighting: golden morning sun piercing mountain fog. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Góc quay thấp bám theo Kael khi cậu bước lên đỉnh vách đá dựng đứng. 3-6s: Gió thổi tung mái tóc khi cậu mở tấm bản đồ da cổ, nhìn la bàn đồng trên thắt lưng. Kael nói: \"Thánh địa thất lạc nằm ngay sau rặng núi này.\" (không phụ đề) — giọng kiên định quả cảm. 6-8s: Cậu gấp gọn bản đồ và vững bước tiến về phía trước. Camera: vút lên cao mở ra toàn cảnh núi non hùng vĩ. Ánh sáng: nắng sớm xuyên qua sương mờ. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"The wind carries a whisper of distant horizons. With courage in every breath, the great adventure begins.",
                         "narration_vi": f"Cơn gió mang theo lời mời gọi từ những chân trời xa xôi. Với lòng dũng cảm và niềm tin, chuyến phiêu lưu chính thức bắt đầu.",
                         "motion": "zoom_in"
@@ -609,7 +786,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "Crossing The Frontier",
                         "title_vi": "Vượt Qua Vùng Đất Thử Thách",
+                        "archetype": "Action Beat",
                         "prompt": f"Adventurous journey scene featuring {clean_idea}, traversing a canyon bridge or ancient ruins, dramatic lighting, sweeping dynamic angle",
+                        "acting_en": f"0-3s: High angle looking down a precarious rope suspension bridge swaying over a misty chasm. 3-6s: Kael tests the weathered ropes, balances carefully, and dashes across as loose planks tumble into the void. 6-8s: He dives onto solid stone on the opposite cliff, turning to catch his breath with a defiant grin. Camera: dramatic plunging perspective. Lighting: dramatic shafts of sunlight cutting through deep canyon shadows. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Góc quay từ trên cao nhìn xuống cây cầu treo đung đưa qua hẻm vực sâu thăm thẳm. 3-6s: Kael kiểm tra dây thừng, giữ thăng bằng rồi chạy nhanh qua cầu khi vài thanh gỗ mục rơi xuống vực. 6-8s: Cậu nhảy bổ lên bờ đá an toàn phía đối diện, thở dốc rồi nở nụ cười kiêu hãnh. Camera: góc nhìn sâu thẳm đầy kịch tính. Ánh sáng: vệt nắng cắt ngang hẻm núi sương mù. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Across steep valleys and forgotten trails, every step tests resolve and awakens hidden strength.",
                         "narration_vi": f"Băng qua những thung lũng hiểm trở và di tích cổ xưa, mỗi bước đi là một bài học tôi luyện lòng kiên định.",
                         "motion": "pan_right"
@@ -617,7 +797,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Revelation",
                         "title_vi": "Khoảnh Khắc Giác Ngộ",
+                        "archetype": "Dialogue Two-Shot",
                         "prompt": f"Dramatic discovery scene of {clean_idea}, uncovering a glowing magical artifact or breathtaking vista, burst of celestial light, epic scale",
+                        "acting_en": f"0-3s: Two companions enter an ancient stone chamber lined with glowing crystal runes. 3-6s: Kael brushes away moss from a carved celestial altar as radiant amber light pulses forth. Kael says: \"Look at this... it was here all along.\" (no subtitles) — reverent hushed tone. 6-8s: His companion gasps with joy, eyes reflecting the warm golden aura. Camera: slow circular track. Lighting: mystical golden inner glow illuminating ancient ruins. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Hai người bạn đồng hành bước vào căn phòng đá cổ với những ký tự pha lê phát sáng. 3-6s: Kael gạt lớp rêu phong trên bàn thờ đá thiêng khi luồng sáng hoàng kim bừng thức. Kael nói: \"Nhìn này... bí mật bấy lâu vẫn luôn ở đây.\" (không phụ đề) — giọng thì thầm xúc động. 6-8s: Người bạn reo lên mừng rỡ, ánh mắt rực sáng niềm hạnh phúc. Camera: xoay vòng tròn chậm. Ánh sáng: luồng hào quang huyền bí tỏa sáng khắp di tích. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"At the heart of the journey, the true secret is revealed: greatness was never about the destination, but the spirit forged along the way.",
                         "narration_vi": f"Giữa đỉnh cao của hành trình, bí mật lớn nhất đã bừng sáng: sức mạnh diệu kỳ nhất chính là niềm tin và trái tim kiên cường.",
                         "motion": "pan_left"
@@ -625,7 +808,10 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                     {
                         "title_en": "The Hero's Return",
                         "title_vi": "Vinh Quang & Bình Yên",
+                        "archetype": "Resolution",
                         "prompt": f"Tranquil triumphant ending scene with {clean_idea}, warm golden sunset, peaceful horizon, cinematic final masterpiece frame",
+                        "acting_en": f"0-3s: Wide shot on the cliff edge as sunset paints clouds in crimson and gold. 3-6s: Kael raises his carved staff toward the sky, wind billowing his traveler cloak in heroic silhouette. 6-8s: He turns back toward the path home with a serene, triumphant smile. Camera: slow cinematic pull-back. Lighting: breathtaking crimson and amber sunset. Negative: subtitles, watermark, text overlay.",
+                        "acting_vi": f"0-3s: Toàn cảnh vách núi khi ráng chiều nhuộm thắm những tầng mây sắc đỏ vàng rực rỡ. 3-6s: Kael giơ cao cây trượng gỗ hướng về phía chân trời, áo choàng bay lộng gió trong tư thế người chiến thắng. 6-8s: Cậu quay nhìn về nẻo đường trở về với nụ cười thanh thản, tự hào. Camera: lùi xa dần vào hoàng hôn. Ánh sáng: ráng chiều lộng lẫy và bình yên. Negative: subtitles, watermark, text overlay.",
                         "narration_en": f"Standing tall against the setting sun, our hero smiles at the journey completed and the peaceful dawn that lies ahead.",
                         "narration_vi": f"Đứng trước ánh hoàng hôn rực rỡ, người anh hùng mỉm cười thanh thản, đón chào một tương lai tươi sáng và bình yên.",
                         "motion": "zoom_out"
@@ -635,7 +821,7 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         }
 
         genre_pack = genre_beats.get(genre, genre_beats["adventure"])
-        title = genre_pack["title_vi"] if is_vi else genre_pack["title_en"]
+        title = extracted_title or (genre_pack["title_vi"] if is_vi else genre_pack["title_en"])
         logline = genre_pack["logline_vi"] if is_vi else genre_pack["logline_en"]
         beats_pool = genre_pack["beats"]
 
@@ -661,19 +847,28 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                 "vi": f"Nhân vật chính: Kael, nhà thám hiểm 16 tuổi với mái tóc hạt dẻ bồng bềnh, mắt hổ phách, mặc áo vải lanh màu be, thắt lưng da nâu gắn la bàn đồng."
             }
         }
-        chosen_char = genre_characters.get(genre, genre_characters["adventure"])["vi" if is_vi else "en"]
+        chosen_char = custom_char or genre_characters.get(genre, genre_characters["adventure"])["vi" if is_vi else "en"]
 
         scenes = []
         for i in range(num_scenes):
             beat = beats_pool[i % len(beats_pool)]
             scene_title = beat["title_vi"] if is_vi else beat["title_en"]
             narration = beat["narration_vi"] if is_vi else beat["narration_en"]
+            archetype = beat.get("archetype", "Cinematic Scene")
+            acting_prompt = (
+                beat.get("acting_vi" if is_vi else "acting_en") or
+                f"0-3s: {chosen_char} arrives at the scene, assessing the environment with alert eyes. "
+                f"3-6s: Engages in focused physical activity, handling equipment or tools with precision. "
+                f"6-8s: Reacts with strong emotional resolve, locking gaze forward as camera stabilizes. "
+                f"Camera: {beat.get('motion', 'zoom_in')}. Lighting: cinematic volumetric. Negative: subtitles, watermark, text overlay."
+            )
 
             scenes.append({
                 "scene_number": i + 1,
                 "title": scene_title,
+                "archetype": archetype,
                 "visual_prompt": f"{beat['prompt']}, character consistency: {chosen_char}",
-                "acting_prompt": f"Cinematic acting performance of {chosen_char}, {beat['prompt']}, fluid natural character motion, expressive gestures, emotional reaction, cinematic 8-second continuous shot",
+                "acting_prompt": acting_prompt,
                 "narration": narration,
                 "camera_motion": beat.get("motion", "zoom_in")
             })

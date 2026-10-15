@@ -734,7 +734,10 @@ async def _build_video_prompt(base_prompt: str, scene: dict, project_id: str | N
     parts = [base_prompt.strip()]
 
     # Only append voice context when video_prompt contains dialogue (verb-based detection)
-    dialogue_verbs = ("says", "whispers", "shouts", "asks", "replies", "murmurs", "exclaims", "gasps", "laughs", "mutters")
+    dialogue_verbs = (
+        "says", "whispers", "shouts", "asks", "replies", "murmurs", "exclaims", "gasps", "laughs", "mutters",
+        "nói", "thì thầm", "hỏi", "đáp", "hét lên", "thốt lên", "cười"
+    )
     prompt_lower = base_prompt.lower()
     has_dialogue = any(verb in prompt_lower for verb in dialogue_verbs)
     if project_id and has_dialogue:
