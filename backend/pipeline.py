@@ -63,7 +63,9 @@ class AnimationPipeline:
         num_scenes: int = 4,
         target_duration: int = None,
         aspect_ratio: str = "16:9",
-        image_mode: str = "server"
+        image_mode: str = "server",
+        enable_voiceover: bool = True,
+        enable_subtitles: bool = True
     ) -> Dict[str, Any]:
         """Initialize a new project record with folder name matching the title."""
         chosen_title = (title or "").strip()
@@ -90,7 +92,8 @@ class AnimationPipeline:
             "video_width": dim["width"],
             "video_height": dim["height"],
             "image_mode": image_mode,
-            "enable_subtitles": True,
+            "enable_subtitles": enable_subtitles,
+            "enable_voiceover": enable_voiceover,
             "title": (title or "").strip(),
             "logline": "",
             "characters": "",
@@ -393,6 +396,7 @@ class AnimationPipeline:
         motion = scene.get("camera_motion", "zoom_in")
         duration = scene.get("duration", 4.0)
         enable_subtitles = project.get("enable_subtitles", True)
+        enable_voiceover = project.get("enable_voiceover", True)
 
         # Check for acting video source (e.g. from Google Flow / I2V generator)
         acting_video_full = None
@@ -412,6 +416,7 @@ class AnimationPipeline:
             motion_type=motion,
             duration=duration,
             enable_subtitles=enable_subtitles,
+            enable_voiceover=enable_voiceover,
             source_video_path=acting_video_full
         )
 
@@ -617,6 +622,7 @@ class AnimationPipeline:
                 motion_type=motion,
                 duration=scene.get("duration", 4.0),
                 enable_subtitles=project.get("enable_subtitles", True),
+                enable_voiceover=project.get("enable_voiceover", True),
                 source_video_path=acting_video_full
             )
             scene["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")

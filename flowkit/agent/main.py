@@ -1,4 +1,13 @@
 """Flow Kit — FastAPI + WebSocket server entry point."""
+import sys
+import os
+
+# Safeguard for windowless background execution (pythonw.exe)
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8", errors="replace")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8", errors="replace")
+
 import asyncio
 import json
 import logging

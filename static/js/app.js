@@ -7,9 +7,11 @@ class AniStoryApp {
     this.currentProject = null;
     this.config = null;
     this.selectedStyleKey = localStorage.getItem("anistory_cfg_art_style") || "ghibli";
+    this.enableVoiceover = localStorage.getItem("anistory_cfg_enable_voiceover") !== "false";
     this.pollInterval = null;
 
     this.initElements();
+    this.updateVoiceoverUI(this.enableVoiceover);
     this.restoreCachedProjectSync();
     this.attachEvents();
     this.loadConfig();
@@ -277,6 +279,12 @@ class AniStoryApp {
     this.btnToggleImageModeStage2 = document.getElementById("btnToggleImageModeStage2");
     this.iconImageModeStage2 = document.getElementById("iconImageModeStage2");
     this.textImageModeStage2 = document.getElementById("textImageModeStage2");
+    this.btnToggleVoiceoverStage1 = document.getElementById("btnToggleVoiceoverStage1");
+    this.iconVoiceoverStage1 = document.getElementById("iconVoiceoverStage1");
+    this.textVoiceoverStage1 = document.getElementById("textVoiceoverStage1");
+    this.btnToggleVoiceoverStage2 = document.getElementById("btnToggleVoiceoverStage2");
+    this.iconVoiceoverStage2 = document.getElementById("iconVoiceoverStage2");
+    this.textVoiceoverStage2 = document.getElementById("textVoiceoverStage2");
     this.btnToggleSubtitlesStage2 = document.getElementById("btnToggleSubtitlesStage2");
     this.iconSubtitlesStage2 = document.getElementById("iconSubtitlesStage2");
     this.textSubtitlesStage2 = document.getElementById("textSubtitlesStage2");
@@ -395,6 +403,8 @@ class AniStoryApp {
 
     // Stage 1 Creation Mode Tabs (Prompt vs Direct Paste vs Load Existing)
     const configGrid = document.querySelector(".config-grid");
+    const aiProviderPanel = document.querySelector(".ai-provider-panel");
+    const actionFooter = document.querySelector(".action-footer");
     if (this.tabModePrompt) {
       this.tabModePrompt.addEventListener("click", () => {
         this.tabModePrompt.classList.add("active");
@@ -407,6 +417,8 @@ class AniStoryApp {
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
         if (configGrid) configGrid.style.display = "";
+        if (aiProviderPanel) aiProviderPanel.style.display = "";
+        if (actionFooter) actionFooter.style.display = "";
         localStorage.setItem("anistory_cfg_creation_mode", "prompt");
       });
     }
@@ -423,6 +435,8 @@ class AniStoryApp {
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "inline-flex";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
         if (configGrid) configGrid.style.display = "";
+        if (aiProviderPanel) aiProviderPanel.style.display = "";
+        if (actionFooter) actionFooter.style.display = "";
         localStorage.setItem("anistory_cfg_creation_mode", "paste");
       });
     }
@@ -438,6 +452,8 @@ class AniStoryApp {
         if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
         if (configGrid) configGrid.style.display = "none";
+        if (aiProviderPanel) aiProviderPanel.style.display = "none";
+        if (actionFooter) actionFooter.style.display = "none";
         localStorage.setItem("anistory_cfg_creation_mode", "load");
         this.loadProjectsIntoContainer(this.stage1ProjectsList);
       });
@@ -674,6 +690,36 @@ class AniStoryApp {
     }
     if (this.btnToggleImageModeStage2) {
       this.btnToggleImageModeStage2.addEventListener("click", toggleImageModeHandler);
+    }
+
+    // Toggle Voiceover in Stage 1
+    if (this.btnToggleVoiceoverStage1) {
+      this.btnToggleVoiceoverStage1.addEventListener("click", () => {
+        this.enableVoiceover = !this.enableVoiceover;
+        localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
+        this.updateVoiceoverUI(this.enableVoiceover);
+        this.showToast(this.enableVoiceover ? "🎙️ Voiceover narration enabled" : "🔇 Voiceover narration disabled (instrumental only)");
+      });
+    }
+
+    // Toggle Voiceover in Stage 2
+    if (this.btnToggleVoiceoverStage2) {
+      this.btnToggleVoiceoverStage2.addEventListener("click", async () => {
+        if (!this.currentProject) return;
+        try {
+          const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-voiceover`, { method: "POST" });
+          if (resp.ok) {
+            const data = await resp.json();
+            this.currentProject.enable_voiceover = data.enable_voiceover;
+            this.enableVoiceover = data.enable_voiceover;
+            localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
+            this.updateVoiceoverUI(this.currentProject.enable_voiceover);
+            this.showToast(data.enable_voiceover ? "🎙️ Voiceover enabled" : "🔇 Voiceover disabled (re-render scenes for clean audio)");
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      });
     }
 
     // Toggle Subtitles in Stage 2
@@ -1021,6 +1067,46 @@ class AniStoryApp {
     if (this.textSubtitlesStage2 && this.iconSubtitlesStage2) {
       this.iconSubtitlesStage2.textContent = enabled ? "💬" : "🔇";
       this.textSubtitlesStage2.textContent = enabled ? "Captions: ON" : "Captions: OFF";
+    }
+  }
+
+  updateVoiceoverUI(enabled) {
+    // Stage 1 Button
+    if (this.btnToggleVoiceoverStage1 && this.iconVoiceoverStage1 && this.textVoiceoverStage1) {
+      this.iconVoiceoverStage1.textContent = enabled ? "🎙️" : "🔇";
+      this.textVoiceoverStage1.textContent = enabled ? "Voiceover: ON" : "Voiceover: OFF";
+      if (enabled) {
+        this.btnToggleVoiceoverStage1.style.background = "rgba(16,185,129,0.15)";
+        this.btnToggleVoiceoverStage1.style.color = "#34d399";
+        this.btnToggleVoiceoverStage1.style.borderColor = "rgba(16,185,129,0.3)";
+      } else {
+        this.btnToggleVoiceoverStage1.style.background = "rgba(239,68,68,0.15)";
+        this.btnToggleVoiceoverStage1.style.color = "#f87171";
+        this.btnToggleVoiceoverStage1.style.borderColor = "rgba(239,68,68,0.3)";
+      }
+    }
+
+    // Dim or enable Stage 1 Voice select
+    if (this.selectVoice) {
+      this.selectVoice.style.opacity = enabled ? "1" : "0.5";
+    }
+    if (this.btnAuditionSampleVoice) {
+      this.btnAuditionSampleVoice.style.opacity = enabled ? "1" : "0.5";
+    }
+
+    // Stage 2 Button
+    if (this.textVoiceoverStage2 && this.iconVoiceoverStage2) {
+      this.iconVoiceoverStage2.textContent = enabled ? "🎙️" : "🔇";
+      this.textVoiceoverStage2.textContent = enabled ? "Voiceover: ON" : "Voiceover: OFF";
+      if (this.btnToggleVoiceoverStage2) {
+        if (enabled) {
+          this.btnToggleVoiceoverStage2.style.borderColor = "rgba(16,185,129,0.4)";
+          this.btnToggleVoiceoverStage2.style.color = "#34d399";
+        } else {
+          this.btnToggleVoiceoverStage2.style.borderColor = "rgba(239,68,68,0.4)";
+          this.btnToggleVoiceoverStage2.style.color = "#f87171";
+        }
+      }
     }
   }
 
@@ -1667,7 +1753,9 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         ai_provider: provider,
         ai_model: model,
         api_key: apiKey,
-        image_mode: this.imageMode || "server"
+        image_mode: this.imageMode || "server",
+        enable_voiceover: this.enableVoiceover !== false,
+        enable_subtitles: true
       };
 
       const resp = await fetch("/api/create-story", {
@@ -1739,7 +1827,9 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           voice: this.selectVoice.value,
           aspect_ratio: aspectRatio,
           api_key: apiKey,
-          image_mode: this.imageMode || "server"
+          image_mode: this.imageMode || "server",
+          enable_voiceover: this.enableVoiceover !== false,
+          enable_subtitles: true
         })
       });
 
@@ -1823,6 +1913,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     }
 
     this.updateSubtitlesUI(this.currentProject.enable_subtitles !== false);
+    this.updateVoiceoverUI(this.currentProject.enable_voiceover !== false);
 
     const scenes = this.currentProject.scenes || [];
     scenes.forEach((scene, idx) => {
@@ -1867,7 +1958,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         <div class="scene-card-body">
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <label class="field-label" style="margin-bottom:0;">🎙️ Voiceover Narration</label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label class="field-label" style="margin-bottom:0;">🎙️ Voiceover Narration</label>
+                ${this.currentProject.enable_voiceover === false ? '<span class="tag-badge" style="background:rgba(239,68,68,0.15); color:#f87171; font-size:10px; padding:1px 6px;">🔇 Muted</span>' : ''}
+              </div>
               <span class="narration-badge" id="badgeNarr_${idx}" style="font-size:11px; padding:2px 7px; border-radius:12px; font-weight:500;"></span>
             </div>
             <textarea class="scene-narration-input" id="narration_${idx}" placeholder="Concise voiceover narration (<= 16 words to fit 8s video)...">${scene.narration || ""}</textarea>
@@ -2221,7 +2315,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     if (this.modalSceneVideoMeta) {
       const motionName = (scene.camera_motion || "zoom_in").replace("_", " ").toUpperCase();
       const dur = scene.duration ? `${scene.duration.toFixed(1)}s` : "Dynamic";
-      this.modalSceneVideoMeta.textContent = `Motion: ${motionName} • Duration: ${dur} • Burnt Captions: ${this.currentProject.enable_subtitles !== false ? 'ON' : 'OFF'}`;
+      this.modalSceneVideoMeta.textContent = `Motion: ${motionName} • Duration: ${dur} • Voiceover: ${this.currentProject.enable_voiceover !== false ? 'ON' : 'OFF'} • Burnt Captions: ${this.currentProject.enable_subtitles !== false ? 'ON' : 'OFF'}`;
     }
     if (this.modalSceneVideoDownloadBtn) {
       this.modalSceneVideoDownloadBtn.href = `/api/projects/${this.currentProject.id}/download-scene-video/${sceneIdx}`;

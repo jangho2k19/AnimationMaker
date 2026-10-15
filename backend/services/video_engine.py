@@ -77,23 +77,24 @@ class VideoEngine:
         motion_type: str = "zoom_in",
         duration: float = 4.0,
         enable_subtitles: bool = True,
+        enable_voiceover: bool = True,
         source_video_path: str = None
     ) -> str:
         """
         Renders a single scene into an MP4 clip:
         - If source_video_path is provided (from Google Flow / I2V acting video):
           Uses full acting video duration (typically 8s). Voiceover narration is synchronized
-          and plays within the video clip. Video is NEVER looped to prevent repeated content.
+          and plays within the video clip if enabled. Video is NEVER looped to prevent repeated content.
         - Else (static image fallback):
           transforms image with Ken Burns camera motion
-        - Burns high-contrast cinematic subtitles
-        - Synchronizes voiceover narration audio
+        - Burns high-contrast cinematic subtitles (if enabled)
+        - Synchronizes voiceover narration audio (if enabled)
         """
         output_clip_path = str(output_clip_path)
         os.makedirs(os.path.dirname(output_clip_path), exist_ok=True)
 
         has_acting_video = bool(source_video_path and os.path.exists(source_video_path))
-        has_audio = bool(audio_path and os.path.exists(audio_path))
+        has_audio = bool(enable_voiceover and audio_path and os.path.exists(audio_path))
 
         vf_filters = []
         if has_acting_video:

@@ -42,3 +42,5 @@ flowkit/.ds-sync/
 flowkit/ds-bundle/
 flowkit/extension/_metadata/
 flowkit/*.db*
+*.log
+flowkit/*.log

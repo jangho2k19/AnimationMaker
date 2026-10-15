@@ -45,6 +45,8 @@ class CreateStoryRequest(BaseModel):
     api_key: Optional[str] = None
     image_mode: str = "server"
     video_mode: Optional[str] = "acting"
+    enable_voiceover: bool = True
+    enable_subtitles: bool = True
 
 class ImportStoryRequest(BaseModel):
     text: str
@@ -55,6 +57,8 @@ class ImportStoryRequest(BaseModel):
     ai_provider: str = "gemini"
     api_key: Optional[str] = None
     image_mode: str = "server"
+    enable_voiceover: bool = True
+    enable_subtitles: bool = True
 
 class UpdateScenesRequest(BaseModel):
     title: Optional[str] = None
@@ -451,7 +455,9 @@ async def create_story(req: CreateStoryRequest):
         num_scenes=req.num_scenes,
         target_duration=target_dur,
         aspect_ratio=req.aspect_ratio,
-        image_mode=req.image_mode
+        image_mode=req.image_mode,
+        enable_voiceover=req.enable_voiceover,
+        enable_subtitles=req.enable_subtitles
     )
     project["video_mode"] = req.video_mode or "acting"
 
@@ -488,7 +494,9 @@ async def import_story(req: ImportStoryRequest):
             art_style=req.art_style,
             voice=req.voice,
             aspect_ratio=req.aspect_ratio,
-            image_mode=req.image_mode
+            image_mode=req.image_mode,
+            enable_voiceover=req.enable_voiceover,
+            enable_subtitles=req.enable_subtitles
         )
         project["title"] = req.title or story_data.get("title", "Imported Animated Story")
         project["logline"] = story_data.get("logline", "")
@@ -548,6 +556,15 @@ async def toggle_subtitles(project_id: str):
     project["enable_subtitles"] = not project.get("enable_subtitles", True)
     pipeline.save_project(project)
     return {"enable_subtitles": project["enable_subtitles"]}
+
+@app.post("/api/projects/{project_id}/toggle-voiceover")
+async def toggle_voiceover(project_id: str):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project["enable_voiceover"] = not project.get("enable_voiceover", True)
+    pipeline.save_project(project)
+    return {"enable_voiceover": project["enable_voiceover"]}
 
 @app.post("/api/projects/{project_id}/upload-image/{scene_idx}")
 async def upload_scene_image(project_id: str, scene_idx: int, file: UploadFile = File(...)):
