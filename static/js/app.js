@@ -12,6 +12,7 @@ class AniStoryApp {
 
     this.initElements();
     this.updateVoiceoverUI(this.enableVoiceover);
+    this.updateAutoPaintUI(localStorage.getItem("anistory_autopaint") === "true");
     this.restoreCachedProjectSync();
     this.attachEvents();
     this.loadConfig();
@@ -130,7 +131,6 @@ class AniStoryApp {
       } else if (targetStage === 2) {
         this.renderStoryboardView();
         this.switchStage(2, false);
-        this.autoGenerateMissingSceneImages();
       } else {
         this.switchStage(1, false);
       }
@@ -176,6 +176,8 @@ class AniStoryApp {
     this.btnPaintAllImages = document.getElementById("btnPaintAllImages");
     this.btnAnimateAllScenes = document.getElementById("btnAnimateAllScenes");
     this.btnOpenGoogleFlow = document.getElementById("btnOpenGoogleFlow");
+    this.btnExportStoryboard = document.getElementById("btnExportStoryboard");
+    this.btnExportScript = document.getElementById("btnExportScript");
     this.inputCharacterConsistency = document.getElementById("inputCharacterConsistency");
     this.btnLockCharacter = document.getElementById("btnLockCharacter");
 
@@ -288,6 +290,10 @@ class AniStoryApp {
     this.btnToggleSubtitlesStage2 = document.getElementById("btnToggleSubtitlesStage2");
     this.iconSubtitlesStage2 = document.getElementById("iconSubtitlesStage2");
     this.textSubtitlesStage2 = document.getElementById("textSubtitlesStage2");
+    this.btnToggleAutoPaint = document.getElementById("btnToggleAutoPaint");
+    this.iconAutoPaint = document.getElementById("iconAutoPaint");
+    this.textAutoPaint = document.getElementById("textAutoPaint");
+    this.checkSettingsAutoPaint = document.getElementById("checkSettingsAutoPaint");
 
     // Modal Settings Extra Keys
     this.selectSettingsImageMode = document.getElementById("selectSettingsImageMode");
@@ -550,6 +556,12 @@ class AniStoryApp {
     // Storyboard Actions
     this.btnSaveStoryboardEdits.addEventListener("click", () => this.saveStoryboardEdits(true));
     this.btnProceedToRender.addEventListener("click", () => this.startRenderingProcess());
+    if (this.btnExportStoryboard) {
+      this.btnExportStoryboard.addEventListener("click", () => this.exportAllPrompts());
+    }
+    if (this.btnExportScript) {
+      this.btnExportScript.addEventListener("click", () => this.exportFullScript());
+    }
     if (this.btnPaintAllImages) {
       this.btnPaintAllImages.addEventListener("click", () => this.paintAllSceneImages(true));
     }
@@ -595,10 +607,17 @@ class AniStoryApp {
       if (this.inputDeepSeekApiKey) this.inputDeepSeekApiKey.value = localStorage.getItem("anistory_key_deepseek") || "";
       if (this.inputNvidiaApiKey) this.inputNvidiaApiKey.value = localStorage.getItem("anistory_key_nvidia") || "";
       if (this.selectSettingsImageMode) this.selectSettingsImageMode.value = this.imageMode || "server";
+      if (this.checkSettingsAutoPaint) {
+        this.checkSettingsAutoPaint.checked = localStorage.getItem("anistory_autopaint") === "true";
+      }
       this.modalSettings.classList.add("active");
     });
     this.btnCloseSettings.addEventListener("click", () => this.modalSettings.classList.remove("active"));
     this.btnSaveSettings.addEventListener("click", () => {
+      if (this.checkSettingsAutoPaint) {
+        localStorage.setItem("anistory_autopaint", this.checkSettingsAutoPaint.checked ? "true" : "false");
+        this.updateAutoPaintUI(this.checkSettingsAutoPaint.checked);
+      }
       const geminiVal = this.inputGeminiApiKey.value.trim();
       localStorage.setItem("anistory_key_gemini", geminiVal);
       localStorage.setItem("anistory_gemini_key", geminiVal);
@@ -653,13 +672,13 @@ class AniStoryApp {
       }
     });
 
-    // Image Painting Mode Toggles (Server API vs Neural.love vs Gemini Imagen 3 vs Puter.js In-Browser)
+    // Image Painting Mode Toggles (Storyboard Only vs Server API vs Neural.love vs Gemini Imagen 3 vs Puter.js)
     const toggleImageModeHandler = () => {
-      const modes = ["server", "neural_love", "gemini", "puter"];
+      const modes = ["manual", "server", "neural_love", "gemini", "puter"];
       const currentIdx = Math.max(0, modes.indexOf(this.imageMode));
       const nextMode = modes[(currentIdx + 1) % modes.length];
       this.setImageMode(nextMode);
-      const label = nextMode === "gemini" ? "✨ Google Gemini / Imagen 3" : (nextMode === "neural_love" ? "💖 Neural.love AI Art" : (nextMode === "puter" ? "🖌️ In-Browser Puter.js" : "🌐 Free Neural AI"));
+      const label = nextMode === "manual" ? "📝 Storyboard Only (No AI Paint)" : (nextMode === "gemini" ? "✨ Google Gemini / Imagen 3" : (nextMode === "neural_love" ? "💖 Neural.love AI Art" : (nextMode === "puter" ? "🖌️ In-Browser Puter.js" : "🌐 Free Neural AI")));
       this.showToast(`Switched Image Mode to: ${label}`);
     };
 
@@ -737,6 +756,25 @@ class AniStoryApp {
         } catch (e) {
           console.error(e);
         }
+      });
+    }
+
+    // Toggle Auto-Paint in Stage 2 & Settings
+    const toggleAutoPaintHandler = () => {
+      const current = localStorage.getItem("anistory_autopaint") === "true";
+      const next = !current;
+      localStorage.setItem("anistory_autopaint", next ? "true" : "false");
+      this.updateAutoPaintUI(next);
+      this.showToast(next ? "✨ Auto-Paint enabled (Scenes will paint automatically)" : "🚫 Auto-Paint disabled (Manual review mode)");
+    };
+
+    if (this.btnToggleAutoPaint) {
+      this.btnToggleAutoPaint.addEventListener("click", toggleAutoPaintHandler);
+    }
+    if (this.checkSettingsAutoPaint) {
+      this.checkSettingsAutoPaint.addEventListener("change", (e) => {
+        localStorage.setItem("anistory_autopaint", e.target.checked ? "true" : "false");
+        this.updateAutoPaintUI(e.target.checked);
       });
     }
 
@@ -991,7 +1029,7 @@ class AniStoryApp {
   }
 
   initImageMode() {
-    this.imageMode = localStorage.getItem("anistory_image_mode") || "server";
+    this.imageMode = localStorage.getItem("anistory_image_mode") || "manual";
     this.applyImageModeUI(this.imageMode);
   }
 
@@ -1003,7 +1041,11 @@ class AniStoryApp {
 
   applyImageModeUI(mode) {
     if (this.badgeImageMode) {
-      if (mode === "gemini") {
+      if (mode === "manual") {
+        this.badgeImageMode.textContent = "📝 Storyboard Only (No AI Painting)";
+        this.badgeImageMode.style.background = "rgba(16, 185, 129, 0.2)";
+        this.badgeImageMode.style.color = "#6ee7b7";
+      } else if (mode === "gemini") {
         this.badgeImageMode.textContent = "✨ Google Gemini / Imagen 3";
         this.badgeImageMode.style.background = "rgba(245, 158, 11, 0.2)";
         this.badgeImageMode.style.color = "#fbbf24";
@@ -1022,7 +1064,9 @@ class AniStoryApp {
       }
     }
     if (this.descImageMode) {
-      if (mode === "gemini") {
+      if (mode === "manual") {
+        this.descImageMode.textContent = "AI is dedicated exclusively to the storyboard. Scenes use SVG placeholders and user-uploaded media.";
+      } else if (mode === "gemini") {
         this.descImageMode.textContent = "High-fidelity Google Imagen 3 visuals powered by your Gemini API Key or Web Cookie";
       } else if (mode === "neural_love") {
         this.descImageMode.textContent = "High-fidelity artistic anime & fantasy illustrations via your Neural.love API Key";
@@ -1033,21 +1077,26 @@ class AniStoryApp {
       }
     }
     if (this.btnToggleImageMode) {
-      if (mode === "server") {
+      if (mode === "manual") {
+        this.btnToggleImageMode.innerHTML = `<span>🌐</span> Switch to Free Neural AI (Flux)`;
+      } else if (mode === "server") {
         this.btnToggleImageMode.innerHTML = `<span>💖</span> Switch to Neural.love AI Art`;
       } else if (mode === "neural_love") {
         this.btnToggleImageMode.innerHTML = `<span>✨</span> Switch to Google Gemini Imagen 3`;
       } else if (mode === "gemini") {
         this.btnToggleImageMode.innerHTML = `<span>🖌️</span> Switch to In-Browser Puter.js`;
       } else {
-        this.btnToggleImageMode.innerHTML = `<span>🌐</span> Switch to Free Neural AI (Flux)`;
+        this.btnToggleImageMode.innerHTML = `<span>📝</span> Switch to Storyboard Only`;
       }
     }
     if (this.selectSettingsImageMode) {
       this.selectSettingsImageMode.value = mode;
     }
     if (this.textImageModeStage2 && this.iconImageModeStage2) {
-      if (mode === "gemini") {
+      if (mode === "manual") {
+        this.iconImageModeStage2.textContent = "📝";
+        this.textImageModeStage2.textContent = "Paint: Storyboard Only";
+      } else if (mode === "gemini") {
         this.iconImageModeStage2.textContent = "✨";
         this.textImageModeStage2.textContent = "Paint: Gemini Imagen 3";
       } else if (mode === "neural_love") {
@@ -1107,6 +1156,18 @@ class AniStoryApp {
           this.btnToggleVoiceoverStage2.style.color = "#f87171";
         }
       }
+    }
+  }
+
+  updateAutoPaintUI(enabled) {
+    if (this.iconAutoPaint) this.iconAutoPaint.textContent = enabled ? "🎨" : "🚫";
+    if (this.textAutoPaint) this.textAutoPaint.textContent = enabled ? "Auto-Paint: ON" : "Auto-Paint: OFF";
+    if (this.btnToggleAutoPaint) {
+      this.btnToggleAutoPaint.style.borderColor = enabled ? "rgba(16, 185, 129, 0.4)" : "rgba(239, 68, 68, 0.3)";
+      this.btnToggleAutoPaint.style.color = enabled ? "#34d399" : "var(--text-muted)";
+    }
+    if (this.checkSettingsAutoPaint) {
+      this.checkSettingsAutoPaint.checked = enabled;
     }
   }
 
@@ -1781,9 +1842,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       this.renderStoryboardView();
       this.switchStage(2);
       const titleDisplay = this.currentProject.title ? `"${this.currentProject.title}"` : `${this.currentProject.scenes.length} scenes`;
-      this.showToast(`✨ Generated ${titleDisplay} (${this.currentProject.scenes.length} scenes) with ${provider.toUpperCase()}!`);
-      // Display and generate scene artwork immediately after response
-      this.autoGenerateMissingSceneImages();
+      this.showToast(`✨ Generated ${titleDisplay} (${this.currentProject.scenes.length} scenes)! Review your script, then click '🎨 Paint All' to paint. 🎬`);
+      if (localStorage.getItem("anistory_autopaint") === "true") {
+        this.autoGenerateMissingSceneImages();
+      }
     } catch (e) {
       console.error(e);
       this.showToast(e.message, true);
@@ -1852,9 +1914,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       if (this.inputDirectPasteText) this.inputDirectPasteText.value = "";
       this.renderStoryboardView();
       this.switchStage(2);
-      this.showToast("AI Storyboard loaded! Review your scenes and render. 🎬");
-      // Display and generate scene artwork immediately after response
-      this.autoGenerateMissingSceneImages();
+      this.showToast("AI Storyboard loaded! Review your scenes, then click '🎨 Paint All' to paint. 🎬");
+      if (localStorage.getItem("anistory_autopaint") === "true") {
+        this.autoGenerateMissingSceneImages();
+      }
     } catch (e) {
       console.error(e);
       this.showToast(e.message, true);
@@ -1923,8 +1986,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
 
       // Image & Video source
       const hasSavedImage = Boolean(scene.image_path);
-      const instantSrc = this.getInstantPreviewUrl(scene, idx);
-      const imgSrc = hasSavedImage ? `/media/${scene.image_path}?t=${Date.now()}` : instantSrc;
+      const placeholderSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><rect width="100%" height="100%" fill="%23131722"/><circle cx="640" cy="300" r="60" fill="%231e293b" stroke="%23334155" stroke-width="2"/><text x="640" y="315" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="40" text-anchor="middle">🎨</text><text x="640" y="415" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="22" fill="%23f1f5f9" text-anchor="middle" font-weight="600">Scene ${scene.scene_number || idx + 1}</text><text x="640" y="455" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="16" fill="%2394a3b8" text-anchor="middle">Ready for Painting • Click &apos;🎨 AI Paint&apos; or &apos;🎨 Paint All&apos;</text></svg>`;
+      const imgSrc = hasSavedImage ? `/media/${scene.image_path}?t=${Date.now()}` : placeholderSvg;
       const hasVideo = Boolean(scene.video_path);
       const videoSrc = hasVideo ? `/media/${scene.video_path}?t=${Date.now()}` : "";
 
@@ -1934,7 +1997,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
             <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
             ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.25); color:#c4b5fd; font-weight:600; border:1px solid rgba(139,92,246,0.4);">🎭 ${scene.archetype}</span>` : ''}
             <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" id="sceneStatusPill_${idx}">
-              ${hasSavedImage ? '✓ Ready' : '🎨 AI Painting...'}
+              ${hasSavedImage ? '✓ Ready' : '⏳ Ready to Paint'}
             </span>
             <span class="scene-status-pill ready" id="sceneVideoPill_${idx}" style="${hasVideo ? '' : 'display:none;'}">
               🎬 Video Ready
@@ -1947,6 +2010,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           <video class="scene-preview-video" id="sceneVideo_${idx}" src="${videoSrc}" controls playsinline preload="metadata" style="display:none;"></video>
           <button class="scene-play-overlay-btn" id="btnPlayOverlay_${idx}" data-idx="${idx}" title="Play scene animation video" style="${hasVideo ? 'display:flex;' : 'display:none;'}">▶️</button>
           <div class="scene-img-actions">
+            <button class="scene-action-pill btn-copy-scene-prompt" data-idx="${idx}" title="1-Click copy this scene's 3-beat acting prompt for Veo / Google Flow / Kling">📋 Copy Prompt</button>
             <button class="scene-action-pill btn-reroll-img" data-idx="${idx}">🎨 AI Paint</button>
             <button class="scene-action-pill btn-upload-img" data-idx="${idx}">📁 Image</button>
             <button class="scene-action-pill btn-generate-veo" data-idx="${idx}" style="color:#6ee7b7; border-color:rgba(16,185,129,0.4);" title="Auto-render acting video via Google Veo & FlowKit bridge">⚡ Veo Auto</button>
@@ -1969,7 +2033,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           </div>
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <label class="field-label" style="margin-bottom:0;">🎬 Acting & Character Dialogue (3-Beat Video Prompt)</label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label class="field-label" style="margin-bottom:0;">🎬 Acting & Character Dialogue (3-Beat Video Prompt)</label>
+                <button class="scene-action-pill btn-copy-scene-prompt" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1;" title="Copy this prompt to clipboard">📋 Copy</button>
+              </div>
               <span style="font-size:11px; color:var(--text-muted);">8s Veo/Flow prompt</span>
             </div>
             <textarea class="styled-input scene-acting-input" id="prompt_${idx}" rows="3" style="resize:vertical; min-height:65px; font-size:12px; line-height:1.45; font-family:inherit;" placeholder="0-3s: Initial action... 3-6s: Core activity or character says: &quot;...&quot; (no subtitles)... 6-8s: Reaction...">${scene.acting_prompt || scene.visual_prompt || ""}</textarea>
@@ -2049,12 +2116,93 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         btnOverlay.addEventListener("click", () => this.openSceneVideoModal(idx));
       }
 
+      // Event listener for copying scene prompt
+      card.querySelectorAll(".btn-copy-scene-prompt").forEach(btn => {
+        btn.addEventListener("click", () => this.copyScenePrompt(idx));
+      });
+
       this.storyboardScenesGrid.appendChild(card);
     });
   }
 
+  copyScenePrompt(idx) {
+    if (!this.currentProject || !this.currentProject.scenes || !this.currentProject.scenes[idx]) return;
+    const scene = this.currentProject.scenes[idx];
+    const promptText = scene.acting_prompt || scene.visual_prompt || "";
+    if (!promptText) {
+      this.showToast("Scene prompt is empty!", true);
+      return;
+    }
+    navigator.clipboard.writeText(promptText).then(() => {
+      this.showToast(`📋 Copied Scene ${idx + 1} Prompt to clipboard! ✨`);
+    }).catch(() => {
+      this.showToast("Failed to copy to clipboard", true);
+    });
+  }
+
+  exportAllPrompts() {
+    if (!this.currentProject || !this.currentProject.scenes || !this.currentProject.scenes.length) {
+      this.showToast("No storyboard scenes available to export!", true);
+      return;
+    }
+    const p = this.currentProject;
+    let text = `=================================================================\n`;
+    text += `🎬 STORYBOARD: ${p.title || "Animated Story"}\n`;
+    if (p.logline) text += `📖 Logline: ${p.logline}\n`;
+    if (p.characters) text += `👥 Characters: ${p.characters}\n`;
+    text += `=================================================================\n\n`;
+
+    p.scenes.forEach((sc, i) => {
+      text += `--- SCENE ${sc.scene_number || (i + 1)}: ${sc.title || "Scene " + (i + 1)} ---\n`;
+      text += `🎭 Archetype: ${sc.archetype || "Standard"}\n`;
+      text += `🎥 Camera Motion: ${sc.camera_motion || "zoom_in"}\n`;
+      text += `🎙️ Voiceover: "${sc.narration || ""}"\n`;
+      text += `\n🎬 Acting Video Prompt (Google Flow / Veo 3 / Kling):\n${sc.acting_prompt || sc.visual_prompt || ""}\n`;
+      if (sc.visual_prompt && sc.visual_prompt !== sc.acting_prompt) {
+        text += `\n🎨 Visual Illustration Prompt (Midjourney / Imagen 3):\n${sc.visual_prompt}\n`;
+      }
+      text += `\n\n`;
+    });
+
+    navigator.clipboard.writeText(text).then(() => {
+      this.showToast("📋 All scene video prompts copied to clipboard! Ready for Google Flow (Veo 3), Kling, or Midjourney. 🚀");
+    }).catch(() => {
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${(p.title || "storyboard").replace(/[^a-zA-Z0-9_-]/g, "_")}_prompts.txt`;
+      a.click();
+      this.showToast("📄 Exported video prompts to text file!");
+    });
+  }
+
+  exportFullScript() {
+    if (!this.currentProject) return;
+    const p = this.currentProject;
+    let script = `# ${p.title || "Animated Short Film"}\n\n`;
+    if (p.logline) script += `**Logline:** ${p.logline}\n\n`;
+    if (p.characters) script += `**Characters & Visual Consistency:**\n${p.characters}\n\n`;
+    script += `## Storyboard Breakdown (${p.scenes ? p.scenes.length : 0} Scenes)\n\n`;
+
+    (p.scenes || []).forEach((sc, i) => {
+      script += `### Scene ${sc.scene_number || (i + 1)}: ${sc.title || "Scene " + (i + 1)}\n`;
+      script += `- **Archetype:** ${sc.archetype || "Beat"}\n`;
+      script += `- **Narration:** "${sc.narration || ""}"\n`;
+      script += `- **Action & Acting Prompt:** ${sc.acting_prompt || sc.visual_prompt || ""}\n\n`;
+    });
+
+    const blob = new Blob([script], { type: "text/markdown;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(p.title || "script").replace(/[^a-zA-Z0-9_-]/g, "_")}_screenplay.md`;
+    a.click();
+    this.showToast("📄 Screenplay exported as Markdown! 🎬");
+  }
+
   async autoGenerateMissingSceneImages() {
-    await this.paintAllSceneImages(false);
+    if (localStorage.getItem("anistory_autopaint") === "true") {
+      await this.paintAllSceneImages(false);
+    }
   }
 
   async paintAllSceneImages(forceAll = false) {
@@ -2851,7 +2999,6 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     } else {
       this.renderStoryboardView();
       this.switchStage(2);
-      this.autoGenerateMissingSceneImages();
     }
 
     this.showToast(`Loaded film: "${p.title || p.id}" 🎬✨`);

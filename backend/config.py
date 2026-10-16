@@ -171,6 +171,12 @@ AI_PROVIDERS = {
 
 # Image Painting Engine Modes
 IMAGE_MODES = {
+    "manual": {
+        "id": "manual",
+        "name": "Storyboard Only (No AI Painting)",
+        "description": "Zero image AI tokens consumed — uses clean SVG storyboard placeholders and manual user image uploads",
+        "icon": "📝"
+    },
     "server": {
         "id": "server",
         "name": "Free Neural AI (Flux / SDXL)",

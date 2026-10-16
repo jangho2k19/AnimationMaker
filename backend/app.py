@@ -887,8 +887,16 @@ async def upload_acting_clip(project_id: str, scene_idx: int, file: UploadFile =
     with open(acting_video_path, "wb") as f:
         f.write(content)
 
-    # Immediately render scene clip using this acting video
-    updated = await pipeline.render_scene_video(project_id, scene_idx)
+    # Ensure voiceover is enabled so character dialogue and narration are synthesized and mixed
+    if not project.get("enable_voiceover", True):
+        project["enable_voiceover"] = True
+        pipeline.save_project(project)
+
+    # Ensure voiceover narration / dialogue audio exists
+    await pipeline.generate_scene_audio(project_id, scene_idx)
+
+    # Immediately render scene clip using this acting video and mixed audio
+    updated = await pipeline.render_scene_video(project_id, scene_idx, force_revoice=False)
     return {
         "status": "success",
         "scene_idx": scene_idx,
@@ -947,11 +955,16 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
     except Exception as e:
         raise HTTPException(502, f"FlowKit Veo generation error: {str(e)}")
 
+    # Ensure voiceover is enabled so character dialogue and narration are synthesized and mixed
+    if not project.get("enable_voiceover", True):
+        project["enable_voiceover"] = True
+        pipeline.save_project(project)
+
     # Ensure scene voiceover is synchronized and bounded to <= 8s acting video length
     await pipeline.generate_scene_audio(project_id, scene_idx)
 
     # Composite with voiceover & subtitles
-    updated = await pipeline.render_scene_video(project_id, scene_idx)
+    updated = await pipeline.render_scene_video(project_id, scene_idx, force_revoice=False)
     return {
         "status": "success",
         "scene_idx": scene_idx,

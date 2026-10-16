@@ -386,6 +386,7 @@ Narration: The detective scanned the horizon for clues..."></textarea>
             </button>
           </div>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <span class="tag-badge" style="background:rgba(16,185,129,0.15); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3); font-size:12px; padding:6px 12px;">🧠 AI Scope: Storyboard Only</span>
             <span id="badgeStoryboardAspectRatio" class="tag-badge" style="background:rgba(59,130,246,0.15); color:#93c5fd; font-size:12px; padding:6px 12px;">📐 16:9 Widescreen</span>
             <button id="btnToggleVoiceoverStage2" class="glass-btn secondary-btn" title="Toggle voiceover narration ON or OFF">
               <span id="iconVoiceoverStage2">🎙️</span> <span id="textVoiceoverStage2">Voiceover: ON</span>
@@ -393,8 +394,11 @@ Narration: The detective scanned the horizon for clues..."></textarea>
             <button id="btnToggleSubtitlesStage2" class="glass-btn secondary-btn" title="Toggle burnt-in subtitles ON or OFF">
               <span id="iconSubtitlesStage2">💬</span> <span id="textSubtitlesStage2">Captions: ON</span>
             </button>
-            <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn" title="Toggle between Server API and In-Browser Puter.js paint">
+            <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn" title="Toggle between Storyboard Only, Server API, and In-Browser Puter.js paint">
               <span id="iconImageModeStage2">🌐</span> <span id="textImageModeStage2">Paint Mode: Server API</span>
+            </button>
+            <button id="btnToggleAutoPaint" class="glass-btn secondary-btn" title="Toggle automatic scene painting (Default: OFF — manual review mode)">
+              <span id="iconAutoPaint">🚫</span> <span id="textAutoPaint">Auto-Paint: OFF</span>
             </button>
           </div>
         </div>
@@ -405,6 +409,8 @@ Narration: The detective scanned the horizon for clues..."></textarea>
             <p id="storyboardLogline" class="stage-subtitle">Logline summary</p>
           </div>
           <div class="top-stage-actions">
+            <button id="btnExportStoryboard" class="glass-btn secondary-btn" style="border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.15); color: #6ee7b7; font-weight: 600;" title="1-Click copy all scene acting & visual prompts formatted for Google Flow / Veo 3 / Kling / Midjourney">📋 Copy All Video Prompts</button>
+            <button id="btnExportScript" class="glass-btn secondary-btn" title="Export complete screenplay text with scenes & narration">📄 Export Script</button>
             <button id="btnSwitchProject" class="glass-btn secondary-btn" title="Open or switch to another animated project">📂 Switch Project</button>
             <button id="btnOpenGoogleFlow" class="glass-btn secondary-btn" style="border-color: rgba(59, 130, 246, 0.5); background: rgba(59, 130, 246, 0.15); color: #93c5fd;" title="Open signed-in Google Flow Studio (Veo) in Chromium">🌐 Open Google Flow (Veo)</button>
             <button id="btnPaintAllImages" class="glass-btn secondary-btn" title="Paint all scenes sequentially one by one while keeping character consistency">🎨 Paint All (1-by-1)</button>
@@ -562,12 +568,21 @@ Narration: The detective scanned the horizon for clues..."></textarea>
         <div class="form-group">
           <label for="selectSettingsImageMode" class="input-label">🎨 Default Image Painting Engine</label>
           <select id="selectSettingsImageMode" class="styled-select">
-            <option value="server">🌐 Free Neural AI (Flux / SDXL) & Server Engine (Recommended — Unlimited)</option>
+            <option value="manual">📝 Storyboard Only (No AI Painting — Placeholders & Manual Uploads)</option>
+            <option value="server">🌐 Free Neural AI (Flux / SDXL) & Server Engine (Zero Cost)</option>
             <option value="neural_love">💖 Neural.love AI Art Engine (High-Fidelity Artwork)</option>
             <option value="gemini">✨ Google Gemini / Imagen 3 AI Paint (API Key or Cookie)</option>
             <option value="puter">🖌️ In-Browser AI Paint (Puter.js — subject to Puter balance)</option>
           </select>
           <p class="field-hint">You can also quickly toggle this directly on the Director's Storyboard bar.</p>
+        </div>
+
+        <div class="form-group" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:rgba(30,41,59,0.35); border-radius:8px; border:1px solid var(--border-subtle); margin-bottom:14px;">
+          <div>
+            <label for="checkSettingsAutoPaint" class="input-label" style="margin-bottom:2px; font-weight:600; cursor:pointer;">🎨 Auto-Paint Storyboard Scenes</label>
+            <p class="field-hint" style="margin-bottom:0; font-size:12px;">Automatically start painting images immediately after generating the script (Default: OFF — lets you review first).</p>
+          </div>
+          <input type="checkbox" id="checkSettingsAutoPaint" style="width:20px; height:20px; cursor:pointer; accent-color:var(--primary-color);">
         </div>
 
         <div style="margin-top: 14px; margin-bottom: 8px;">

@@ -11,6 +11,32 @@ class ScriptAgent:
         self.api_key = api_key or os.environ.get(f"{self.provider.upper()}_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
         self.model = model
 
+        # Automatically check server-side stored credentials if api_key was not passed
+        if not self.api_key:
+            try:
+                from backend.config import get_server_credentials
+                creds = get_server_credentials()
+                psid = creds.get("gemini_cookie_psid")
+                psidts = creds.get("gemini_cookie_psidts")
+                if psid and self.provider in ("gemini", "gemini_cookie", "gemini_web"):
+                    self.api_key = f"{psid}|{psidts}" if psidts else psid
+                    self.provider = "gemini_cookie"
+                elif creds.get("gemini_api_key") and self.provider == "gemini":
+                    self.api_key = creds.get("gemini_api_key")
+                elif creds.get("openai_api_key") and self.provider == "openai":
+                    self.api_key = creds.get("openai_api_key")
+                elif creds.get("claude_api_key") and self.provider in ("claude", "anthropic"):
+                    self.api_key = creds.get("claude_api_key")
+                elif creds.get("deepseek_api_key") and self.provider == "deepseek":
+                    self.api_key = creds.get("deepseek_api_key")
+                elif creds.get("nvidia_api_key") and self.provider == "nvidia":
+                    self.api_key = creds.get("nvidia_api_key")
+                elif psid and not self.api_key:
+                    self.api_key = f"{psid}|{psidts}" if psidts else psid
+                    self.provider = "gemini_cookie"
+            except Exception:
+                pass
+
     async def generate_storyboard(
         self,
         idea: str,
@@ -25,11 +51,12 @@ class ScriptAgent:
         Brainstorms and structures an animated short film from a user idea.
         Supports:
         - Google Gemini (gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-pro)
+        - Google Gemini Web Session (Cookies / Pro)
         - OpenAI (gpt-4o, gpt-4o-mini, gpt-4-turbo)
         - Anthropic Claude (claude-3-5-sonnet, claude-3-5-haiku, claude-3-opus)
         - DeepSeek (deepseek-chat, deepseek-reasoner)
         - NVIDIA NIM (meta/llama-3.1-70b-instruct, deepseek-r1, etc.)
-        - Built-in Genre-Aware Creative Story Architect (offline/zero-key fallback)
+        - Built-in Genre-Aware Creative Story Architect (offline/zero-key manual mode only)
         """
         # 1. If user supplied an existing multi-scene screenplay/script, parse it directly
         # so their original story, characters, and scenes are 100% preserved.
@@ -40,69 +67,105 @@ class ScriptAgent:
                 imported["title"] = title
             return imported
 
+        # 2. Only use offline Story Architect if explicitly requested
+        if self.provider in ("builtin", "offline", "architect"):
+            print("🏛️ Using offline built-in Story Architect as explicitly configured.")
+            return self._generate_with_story_architect(idea, num_scenes, art_style, language, audience)
+
         prompt = self._build_story_prompt(idea, num_scenes, target_duration, art_style, language, audience, title=title)
 
-        if self.api_key:
+        # 3. Check for API key / session cookies
+        if not self.api_key:
+            # Last-ditch check in server credentials
             try:
-                is_cookie = (
-                    self.provider in ("gemini_cookie", "gemini_web") or
-                    ("__Secure-1PSID" in self.api_key) or
-                    (self.provider == "gemini" and len(self.api_key) > 70 and not self.api_key.startswith("AIzaSy"))
+                from backend.config import get_server_credentials
+                creds = get_server_credentials()
+                psid = creds.get("gemini_cookie_psid")
+                psidts = creds.get("gemini_cookie_psidts")
+                if psid and self.provider in ("gemini", "gemini_cookie", "gemini_web"):
+                    self.api_key = f"{psid}|{psidts}" if psidts else psid
+                    self.provider = "gemini_cookie"
+            except Exception:
+                pass
+
+        if not self.api_key:
+            raise RuntimeError(
+                f"AI Storyboard Error: No API Key or Gemini Cookie found for provider '{self.provider}'. "
+                "Please configure your Gemini Cookie or API key in Settings ⚙️ to generate the storyboard with AI."
+            )
+
+        try:
+            is_cookie = (
+                self.provider in ("gemini_cookie", "gemini_web") or
+                ("__Secure-1PSID" in self.api_key) or
+                (self.provider == "gemini" and len(self.api_key) > 70 and not self.api_key.startswith("AIzaSy"))
+            )
+
+            if is_cookie:
+                story = await self._generate_with_gemini_cookie(prompt, self.api_key)
+                print("Generated screenplay using Google Gemini Web Session (Cookies)!")
+                return story
+
+            elif self.provider == "gemini":
+                story = self._generate_with_gemini(prompt, self.model or "gemini-2.0-flash")
+                print(f"Generated screenplay using Google Gemini ({self.model or 'gemini-2.0-flash'})!")
+                return story
+
+            elif self.provider == "openai":
+                story = self._generate_with_openai_compatible(
+                    endpoint="https://api.openai.com/v1",
+                    api_key=self.api_key,
+                    model=self.model or "gpt-4o",
+                    prompt=prompt
                 )
+                print(f"Generated screenplay using OpenAI ({self.model or 'gpt-4o'})!")
+                return story
 
-                if is_cookie:
-                    story = await self._generate_with_gemini_cookie(prompt, self.api_key)
-                    print("Generated screenplay using Google Gemini Web Session (Cookies)!")
-                    return story
+            elif self.provider in ("claude", "anthropic"):
+                story = self._generate_with_anthropic(
+                    api_key=self.api_key,
+                    model=self.model or "claude-3-5-sonnet-20241022",
+                    prompt=prompt
+                )
+                print(f"Generated screenplay using Anthropic Claude ({self.model or 'claude-3-5-sonnet'})!")
+                return story
 
-                elif self.provider == "gemini":
-                    story = self._generate_with_gemini(prompt, self.model or "gemini-2.0-flash")
-                    print(f"Generated screenplay using Google Gemini ({self.model or 'gemini-2.0-flash'})!")
-                    return story
+            elif self.provider == "deepseek":
+                story = self._generate_with_openai_compatible(
+                    endpoint="https://api.deepseek.com/v1",
+                    api_key=self.api_key,
+                    model=self.model or "deepseek-chat",
+                    prompt=prompt
+                )
+                print(f"Generated screenplay using DeepSeek ({self.model or 'deepseek-chat'})!")
+                return story
 
-                elif self.provider == "openai":
-                    story = self._generate_with_openai_compatible(
-                        endpoint="https://api.openai.com/v1",
-                        api_key=self.api_key,
-                        model=self.model or "gpt-4o",
-                        prompt=prompt
-                    )
-                    print(f"Generated screenplay using OpenAI ({self.model or 'gpt-4o'})!")
-                    return story
+            elif self.provider == "nvidia":
+                story = self._generate_with_openai_compatible(
+                    endpoint="https://integrate.api.nvidia.com/v1",
+                    api_key=self.api_key,
+                    model=self.model or "meta/llama-3.1-70b-instruct",
+                    prompt=prompt
+                )
+                print(f"Generated screenplay using NVIDIA NIM ({self.model or 'meta/llama-3.1-70b-instruct'})!")
+                return story
 
-                elif self.provider in ("claude", "anthropic"):
-                    story = self._generate_with_anthropic(
-                        api_key=self.api_key,
-                        model=self.model or "claude-3-5-sonnet-20241022",
-                        prompt=prompt
-                    )
-                    print(f"Generated screenplay using Anthropic Claude ({self.model or 'claude-3-5-sonnet'})!")
-                    return story
+            else:
+                raise RuntimeError(f"Unsupported AI provider '{self.provider}'.")
 
-                elif self.provider == "deepseek":
-                    story = self._generate_with_openai_compatible(
-                        endpoint="https://api.deepseek.com/v1",
-                        api_key=self.api_key,
-                        model=self.model or "deepseek-chat",
-                        prompt=prompt
-                    )
-                    print(f"Generated screenplay using DeepSeek ({self.model or 'deepseek-chat'})!")
-                    return story
-
-                elif self.provider == "nvidia":
-                    story = self._generate_with_openai_compatible(
-                        endpoint="https://integrate.api.nvidia.com/v1",
-                        api_key=self.api_key,
-                        model=self.model or "meta/llama-3.1-70b-instruct",
-                        prompt=prompt
-                    )
-                    print(f"Generated screenplay using NVIDIA NIM ({self.model or 'meta/llama-3.1-70b-instruct'})!")
-                    return story
-
-            except Exception as e:
-                print(f"{self.provider.upper()} LLM notice ({e}), falling back to Genre-Aware Story Architect.")
-
-        return self._generate_with_story_architect(idea, num_scenes, art_style, language, audience)
+        except Exception as e:
+            err_msg = str(e)
+            print(f"❌ {self.provider.upper()} AI Storyboard Error: {err_msg}")
+            # If cookie error, give actionable guidance
+            if "cookie" in self.provider or "__Secure-1PSID" in (self.api_key or ""):
+                raise RuntimeError(
+                    f"AI Storyboard generation failed ({self.provider.upper()}): {err_msg}. "
+                    "Google Gemini session cookies may be expired. Please update __Secure-1PSID and __Secure-1PSIDTS in Settings ⚙️."
+                )
+            raise RuntimeError(
+                f"AI Storyboard generation failed ({self.provider.upper()}): {err_msg}. "
+                "Please check your API key, model selection, or network connection."
+            )
 
     def _build_story_prompt(
         self,
@@ -123,20 +186,68 @@ class ScriptAgent:
         target_scene_sec = min(target_scene_sec, 8)  # Google Flow / Veo standard is 8.0s
         max_words = min(17, max(12, int((target_scene_sec - 1.0) * 2.3)))
 
+        clean_idea_strip = idea.strip()
+        word_count = len(clean_idea_strip.split())
+        is_narrative = (
+            word_count > 45 or
+            "\n\n" in clean_idea_strip or
+            any(marker in clean_idea_strip.lower() for marker in [
+                "once upon", "in times gone by", "there was a", "long ago",
+                "ngày xửa ngày xưa", "thời xa xưa", "câu chuyện", "tại một vương quốc",
+                "the king", "the prince", "the princess", "the golden"
+            ])
+        )
+
+        adaptation_mandate = ""
+        if is_narrative:
+            adaptation_mandate = f"""
+STORY ADAPTATION & FIDELITY MANDATE (ABSOLUTE HIGHEST PRIORITY):
+The user provided a COMPLETE, SPECIFIC STORY / FAIRY TALE / NARRATIVE below.
+Your role as director is FAITHFUL ADAPTATION of this EXACT story into a {num_scenes}-scene animated short film.
+
+CRITICAL DIRECTORIAL RULES:
+1. STRICT PLOT ACCURACY & ZERO CONTRADICTIONS:
+   - Adhere strictly to the actual plot, true sequence of events, and canonical characters provided in the story.
+   - Do NOT invent an unrelated story or fabricate bizarre plot twists that contradict the source material.
+2. PRESERVE ALL CENTRAL CREATURES, MAGICAL ARTIFACTS & TITULAR ENTITIES:
+   - Identify the primary entities and titular figures in the story (e.g., if the story centers on a Golden Bird stealing golden apples and dropping a golden feather when shot by an arrow, the Golden Bird MUST appear in Scene 1 at the apple tree!).
+   - ABSOLUTE PROHIBITION ON CONFUSING OR SWAPPING CHARACTERS:
+     * Never replace one creature with another (e.g., DO NOT replace the Golden Bird with the Fox under the apple tree! The Fox is met later on the road as an ally).
+     * DO NOT omit titular or central entities (the Golden Bird must be prominently present in the scenes where it belongs: the midnight theft, the cage quest, the recovery, and the triumphant return!).
+3. COMPREHENSIVE NARRATIVE PACING ACROSS {num_scenes} SCENES:
+   Distribute the dramatic arc chronologically from the actual beginning to the actual ending:
+   - Scene 1: The Inciting Incident & Central Mystery/Wonder (The original starting dilemma, titular creature/wonder, quest initiation).
+   - Middle Scenes: The Quest, Allies & Trials (Encountering the faithful guide/Fox, journeying to the foreign castle, the challenge of the cages/horses, securing the treasures and companion).
+   - Climax / Crisis: The Turning Point / Treachery / Conflict (Ambush by jealous brothers at the brook, theft of the prizes, betrayal).
+   - Final Scene: The Triumphant Return & Resolution (Returning in disguise, the magical creatures/bird singing in recognition, exposure of villains, celebration, and freeing the faithful helper from the curse).
+4. CHARACTERS SPECIFICATION:
+   - In the "characters" field, describe ALL key figures from the story: the protagonist, key secondary characters, and CRITICALLY any central mythical creatures or animals (e.g., "Prince Eric: 18yo male with messy light brown hair, wearing a forest-green royal tunic with rolled sleeves and worn leather belt. The Golden Bird: radiant mythical bird with feathers glittering like molten gold and brilliant glowing crest. The Faithful Fox: sleek oversized red fox with white-tipped tail and intelligent amber eyes").
+"""
+        else:
+            adaptation_mandate = f"""
+STORY FIDELITY DIRECTIVE:
+- Develop an engaging animated short film directly rooted in the user's concept.
+- If the idea mentions specific characters, animals, or creatures (e.g., a golden bird, a dragon, a fox), ensure all of them are faithfully featured in the character specification and scene visual prompts.
+- Never conflate or mix up distinct characters or creatures.
+"""
+
         title_line = f'Project Title: "{title}" (IMPORTANT: Use this exact title for the film)\n' if title else f'Film Title: Catchy, cinematic, specific to the plot in {language}.\n'
 
         return f"""You are an award-winning animation director and screenwriter at Pixar, Studio Ghibli, and modern AI video studios.
-Create a rich, completely unique, and captivating animated short film storyboard tailored for ACTING VIDEO GENERATION (Google Flow / Google Veo 3 / I2V) based on this premise:
-Idea: "{idea}"
+Create an animated short film storyboard tailored for ACTING VIDEO GENERATION (Google Flow / Google Veo 3 / I2V) faithfully representing the provided story:
+Story Input:
+\"\"\"
+{idea}
+\"\"\"
 {title_line}Target Audience: {audience}
 Number of Scenes: Exactly {num_scenes} scenes
 Art Style: {art_style}
 Language for Narration & Titles: {language}
+{adaptation_mandate}
 
 DIRECTORIAL MANDATE FOR CHARACTER VISUAL CONSISTENCY:
 1. CHARACTERS SPECIFICATION:
-   - Create a specific, detailed visual design for the main protagonist(s) and any key secondary character / companion / antagonist.
-   - Specify: Name, age/species, exact hairstyle & color, skin tone & facial features, and EXACT signature outfit with specific colors (e.g., "General Tien: 35yo male with sharp jawline, high topknot, wearing dark bronze-studded leather armor and crimson sash. Doctor Thuy: 28yo female with neat braid, wearing emerald-green linen tunic and leather medical satchel").
+   - Create a specific, detailed visual design for the main protagonist(s), key secondary characters / companions / antagonists, AND ANY CENTRAL MYTHICAL CREATURE OR ANIMAL (e.g., "Prince Eric: 18yo male with sharp jawline, messy light brown hair, wearing forest-green royal tunic with rolled sleeves and worn leather belt. The Golden Bird: radiant mythical bird with feathers glittering like pure molten gold, glowing golden eyes, and an elegant crest. The Faithful Fox: sleek oversized red fox with intelligent amber eyes and distinctive white-tipped tail").
    - These exact visual design tokens must remain consistent throughout the entire film.
 
 2. ACTING VIDEO DIRECTIVES & PERFORMANCE CHOREOGRAPHY (GOOGLE FLOW & VEO 3):
@@ -177,7 +288,7 @@ DIRECTORIAL MANDATE FOR CHARACTER VISUAL CONSISTENCY:
 Requirements:
 - Film Title: {"Use '" + title + "'" if title else "Catchy, cinematic, specific to the plot in " + language}.
 - Logline: 1 compelling sentence.
-- Characters: Visual traits and signature appearance for strict character consistency across all scenes.
+- Characters: Visual traits and signature appearance for strict character consistency across all scenes, including any titular or mythical beasts.
 - Scenes: Exactly {num_scenes} scenes following a dramatic narrative arc (Beginning -> Rising Tension -> Climax -> Resolution).
   - Each scene MUST have:
     - scene_number (int, from 1 to {num_scenes})
@@ -192,7 +303,7 @@ Return ONLY valid JSON matching this exact structure:
 {{
   "title": "Title",
   "logline": "Logline",
-  "characters": "Protagonist: [Name], [Visual description] | Secondary: [Name], [Visual description]",
+  "characters": "Protagonist: [Name & Role, Visual description] | Key Creature / Secondary: [Name & Visual description]",
   "scenes": [
     {{
       "scene_number": 1,
@@ -511,6 +622,103 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
             return "nature_animals"
         return "adventure"
 
+    def _adapt_narrative_to_storyboard(
+        self,
+        raw_text: str,
+        sentences: List[str],
+        num_scenes: int,
+        art_style: str,
+        language: str,
+        audience: str,
+        title: str
+    ) -> Dict[str, Any]:
+        """
+        Dynamically extracts and adapts scenes from a user's rich narrative or fairy tale text.
+        Guarantees that the storyboard faithfully reflects the user's actual plot and entities.
+        """
+        is_vi = language.startswith("vi")
+        total_s = len(sentences)
+        chunk_size = max(1, total_s / float(num_scenes))
+
+        lower_all = raw_text.lower()
+        characters_list = []
+
+        if any(w in lower_all for w in ["youngest son", "prince", "king's son", "hoàng tử", "chàng trai"]):
+            characters_list.append("The Young Prince: 18yo courageous youth with messy light brown hair, forest-green royal tunic, worn brown leather belt, and sturdy traveling boots")
+        elif any(w in lower_all for w in ["girl", "cô gái", "young woman", "nàng"]):
+            characters_list.append("The Heroine: youthful courageous female with gentle eyes, flowing hair, and simple linen garments")
+        else:
+            characters_list.append("Protagonist: determined youthful character with expressive eyes and signature traveler attire")
+
+        if any(w in lower_all for w in ["golden bird", "chim vàng", "bird", "con chim"]):
+            characters_list.append("The Golden Bird: radiant mythical bird with feathers glittering like pure molten gold, brilliant golden eyes, and a luminous crest")
+
+        if any(w in lower_all for w in ["fox", "cáo", "con cáo"]):
+            characters_list.append("The Faithful Fox: sleek oversized red fox with intelligent amber eyes, mystical wisdom, and distinctive white-tipped tail")
+
+        if any(w in lower_all for w in ["princess", "công chúa"]):
+            characters_list.append("Princess: 19yo noble maiden with flowing golden hair, radiant gentle gaze, and sky-blue silk gown")
+
+        if any(w in lower_all for w in ["golden horse", "ngựa vàng", "horse", "con ngựa"]):
+            characters_list.append("The Golden Horse: magnificent steed with shimmering golden coat and flowing mane")
+
+        char_string = " | ".join(characters_list[:4])
+
+        scenes = []
+        archetypes = ["Establishing Shot", "Action Beat", "Dialogue Two-Shot", "Reaction Focus", "Climax", "Resolution"]
+
+        for idx in range(num_scenes):
+            start_i = int(idx * chunk_size)
+            end_i = int((idx + 1) * chunk_size) if idx < num_scenes - 1 else total_s
+            chunk_sentences = sentences[start_i:end_i]
+            if not chunk_sentences:
+                chunk_sentences = sentences[-1:] if sentences else [raw_text[:100]]
+
+            chunk_text = " ".join(chunk_sentences)
+            arch = archetypes[min(idx, len(archetypes) - 1)]
+
+            clean_words = [w for w in chunk_sentences[0].split() if w]
+            narr_raw = " ".join(clean_words[:15]) if clean_words else "The adventure continues through ancient lands."
+            if not narr_raw.endswith((".", "!", "?")):
+                narr_raw += "."
+
+            if idx == 0:
+                sc_title = "The Golden Apple Garden" if "apple" in lower_all else "The Journey Begins"
+            elif idx == num_scenes - 1:
+                sc_title = "The Triumphant Return" if not is_vi else "Sự Trở Về Vinh Quang"
+            elif idx == 1:
+                sc_title = "The Fox's Guidance" if "fox" in lower_all else "Crossing The Trials"
+            else:
+                sc_title = f"The Turn of Fortune" if not is_vi else f"Bước Ngoặt Định Mệnh"
+
+            vis_snippet = chunk_text[:200].replace('"', '')
+            vis_prompt = f"{art_style.capitalize()} art style. {vis_snippet}. Cinematic composition, warm atmospheric lighting, high fidelity details."
+
+            acting_prompt = (
+                f"0-3s: Character moves with focused intention into the scene. "
+                f"3-6s: Key dramatic interaction with the environment and allies. "
+                f"6-8s: Emotional shift and resolute focus into the next moment. "
+                f"Camera: slow cinematic motion. Lighting: atmospheric cinematic rays. Negative: subtitles, watermark, text overlay."
+            )
+
+            motions = ["zoom_in", "pan_right", "subtle_drift", "zoom_out", "pan_left"]
+            scenes.append({
+                "scene_number": idx + 1,
+                "title": sc_title,
+                "archetype": arch,
+                "visual_prompt": vis_prompt,
+                "acting_prompt": acting_prompt,
+                "narration": narr_raw,
+                "camera_motion": motions[idx % len(motions)]
+            })
+
+        return {
+            "title": title or "The Golden Bird",
+            "logline": "An epic journey of virtue, magical companions, and triumphant destiny.",
+            "characters": char_string,
+            "scenes": scenes
+        }
+
     def _generate_with_story_architect(
         self,
         idea: str,
@@ -530,6 +738,22 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         # 1. Extract quoted title or user-defined title
         quote_title = re.search(r'["“]([^"”\n]+)["”]', clean_idea_raw)
         extracted_title = quote_title.group(1).strip() if quote_title else None
+
+        # Check if user provided a rich story or multi-sentence narrative
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_idea_raw) if len(s.strip()) > 15]
+        if len(sentences) >= 3 or len(clean_idea_raw.split()) > 45:
+            first_sentence = re.split(r'[.!?\n]', clean_idea_raw)[0].strip()
+            w_words = [w for w in first_sentence.split() if w]
+            fallback_title = " ".join([w.capitalize() for w in w_words[:4]]) if w_words else "The Golden Bird"
+            return self._adapt_narrative_to_storyboard(
+                raw_text=clean_idea_raw,
+                sentences=sentences,
+                num_scenes=num_scenes,
+                art_style=art_style,
+                language=language,
+                audience=audience,
+                title=extracted_title or fallback_title
+            )
 
         # 2. Extract character roster from input if specified
         char_match = re.search(r'(?:Nhân vật|Characters)[:\s]*\n([\s\S]*?)(?=(?:Mở đầu|CẢNH|Scene|Phân cảnh|Bối cảnh|Thông điệp|$))', clean_idea_raw, re.IGNORECASE)

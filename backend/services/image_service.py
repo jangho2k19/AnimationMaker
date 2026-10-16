@@ -138,6 +138,14 @@ class ImageService:
             dalle_size = "1024x1024"
 
         # ============================================================
+        # 0. STORYBOARD ONLY / MANUAL MODE (Zero AI Tokens)
+        # ============================================================
+        if image_mode in ("manual", "storyboard_only", "placeholder"):
+            self.generate_procedural_fallback(title=title, prompt=prompt, output_path=output_path, style_key=style_key, scene_idx=scene_idx, width=width, height=height)
+            print(f"Scene {scene_idx + 1} visual rendered using Storyboard-Only canvas (zero AI calls).")
+            return output_path
+
+        # ============================================================
         # 1. NEURAL.LOVE AI ART MODE
         # ============================================================
         if image_mode == "neural_love":
@@ -156,7 +164,7 @@ class ImageService:
         # ============================================================
         # 2. GOOGLE GEMINI / IMAGEN 3 MODE
         # ============================================================
-        if image_mode == "gemini" or (image_mode != "server" and self.provider in ("gemini", "gemini_cookie")):
+        if image_mode == "gemini":
             gemini_error = None
             # 2a. Try official Gemini API Key with Image models
             if self.api_key and "__Secure-1PSID" not in self.api_key and self.provider != "gemini_cookie":

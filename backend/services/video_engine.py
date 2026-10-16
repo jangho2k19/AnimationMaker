@@ -148,6 +148,7 @@ class VideoEngine:
             vf_filters.append(f"subtitles='{escaped_srt}':force_style='{sub_style}'")
 
         vf_chain = ",".join(vf_filters)
+        source_has_audio = bool(has_acting_video and self._has_audio_stream(source_video_path))
 
         cmd = [FFMPEG_PATH, "-y"]
         if has_acting_video:
@@ -161,16 +162,49 @@ class VideoEngine:
                 "-i", str(image_path),
             ])
 
-        if has_audio:
-            cmd.extend(["-i", str(audio_path)])
-        else:
-            cmd.extend(["-f", "lavfi", "-t", str(clip_duration), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"])
+        filter_complex_clauses = []
+        filter_complex_clauses.append(f"[0:v]{vf_chain}[vout]")
 
+        if source_has_audio and has_audio:
+            # Both Google Flow ambient video audio AND synthesized voiceover audio are present:
+            # Mix them together so neither the acting motion sounds nor the spoken dialogue are lost!
+            cmd.extend(["-i", str(audio_path)])
+            filter_complex_clauses.append(
+                f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=0.85[a_src];"
+                f"[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1.30[a_vox];"
+                f"[a_src][a_vox]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            )
+            audio_map = "[aout]"
+
+        elif source_has_audio and not has_audio:
+            # Google Flow video has native audio track: preserve it directly
+            filter_complex_clauses.append(
+                f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo[aout]"
+            )
+            audio_map = "[aout]"
+
+        elif has_audio:
+            # Video is silent (standard from Google Flow text-to-video): attach crystal-clear voiceover audio
+            cmd.extend(["-i", str(audio_path)])
+            filter_complex_clauses.append(
+                f"[1:a]aformat=sample_rates=48000:channel_layouts=stereo[aout]"
+            )
+            audio_map = "[aout]"
+
+        else:
+            # Fallback silence generator only if both are unavailable
+            cmd.extend(["-f", "lavfi", "-t", str(clip_duration), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"])
+            filter_complex_clauses.append(
+                f"[1:a]aformat=sample_rates=48000:channel_layouts=stereo[aout]"
+            )
+            audio_map = "[aout]"
+
+        filter_graph = ";".join(filter_complex_clauses)
         cmd.extend([
-            "-map", "0:v:0",
-            "-map", "1:a:0",
+            "-filter_complex", filter_graph,
+            "-map", "[vout]",
+            "-map", audio_map,
             "-t", str(clip_duration),
-            "-vf", vf_chain,
             "-r", "24",
             "-c:v", "libx264",
             "-preset", "fast",
