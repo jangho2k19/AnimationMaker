@@ -67,7 +67,7 @@ def _read() -> dict:
     """
     with open(_PROVIDERS_FILE, encoding="utf-8") as f:
         data = json.load(f)
-    data.setdefault("active", "claude")
+    data.setdefault("active", "gemini")
     data.setdefault("roles", {})
     # Same no-await-in-the-gap rule as _apply.
     config.CLI_PROVIDERS.clear()
@@ -135,9 +135,14 @@ async def get_providers(live: bool = False):
     data = _read()
     statuses = {}
     for name, binary in PROVIDER_BINARIES.items():
-        # `muse` is the assistant itself — always available, no binary to probe.
-        installed = True if binary is None else shutil.which(binary) is not None
-        tested, error = (await _probe_version(binary)) if (live and installed and binary) else (None, None)
+        if name == "gemini":
+            installed = True
+            tested = True if live else None
+            error = None
+        else:
+            # `muse` is the assistant itself — always available, no binary to probe.
+            installed = True if binary is None else shutil.which(binary) is not None
+            tested, error = (await _probe_version(binary)) if (live and installed and binary) else (None, None)
         statuses[name] = {
             "binary": binary,
             "installed": installed,
@@ -158,7 +163,7 @@ async def get_providers(live: bool = False):
 
 @router.get("/models")
 async def get_provider_models(
-    provider: str = Query(..., description="claude | agy | codex"),
+    provider: str = Query(..., description="gemini | claude | agy | codex"),
     refresh: bool = Query(False, description="Bypass the 5-minute catalog cache"),
 ):
     """List a provider's models.
@@ -206,10 +211,11 @@ async def patch_providers(body: dict):
         provider = body["active"]
         if provider not in PROVIDER_BINARIES:
             raise HTTPException(400, f"Unknown provider '{provider}'. Known: {list(PROVIDER_BINARIES)}")
-        if PROVIDER_BINARIES[provider] is None:
-            raise HTTPException(400, f"'{provider}' has no CLI binary — it is only valid as a per-role provider, not as the active default")
-        if not shutil.which(PROVIDER_BINARIES[provider]):
-            raise HTTPException(400, f"'{PROVIDER_BINARIES[provider]}' binary not found on PATH — install it first")
+        if provider == "muse":
+            raise HTTPException(400, "'muse' is the agent itself — it is only valid as a per-role provider, not as the active default")
+        binary = PROVIDER_BINARIES[provider]
+        if binary is not None and not shutil.which(binary):
+            raise HTTPException(400, f"'{binary}' binary not found on PATH — install it first")
         data["active"] = provider
         # Switching the whole agent over has to carry the roles with it.
         # Only roles this build knows about. A name left behind by another

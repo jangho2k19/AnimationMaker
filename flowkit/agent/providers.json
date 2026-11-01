@@ -1,10 +1,10 @@
 {
-  "active": "claude",
+  "active": "gemini",
   "roles": {
     "video_review": {
-      "provider": "claude",
-      "model": null,
-      "effort": null
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "effort": "low"
     }
   }
 }

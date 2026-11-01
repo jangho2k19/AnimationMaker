@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
-  <link rel="stylesheet" href="/css/style.css?v=5">
+  <link rel="stylesheet" href="/css/style.css?v=10">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -18,435 +18,641 @@
 
   <!-- Main App Shell -->
   <div class="app-container">
-    <!-- Navbar Header -->
-    <header class="studio-header">
-      <div id="brandHomeLink" class="brand-group clickable-brand" role="button" tabindex="0" title="Return to Homepage (AniStory AI)">
-        <div class="brand-logo-icon">
-          <span class="icon-glyph">🎬</span>
-        </div>
-        <div class="brand-titles">
-          <h1 class="brand-name">AniStory <span class="gradient-text">AI</span></h1>
-          <p class="brand-tagline">Autonomous Storyboard & Animation Director Agent</p>
+    <!-- Navbar Header with Integrated Compact Stepper -->
+    <header class="studio-header compact-nav-header">
+      <div class="header-brand-wrap">
+        <div id="brandHomeLink" class="brand-group clickable-brand" role="button" tabindex="0" title="Return to Homepage (AniStory AI)">
+          <div class="brand-logo-icon">
+            <span class="icon-glyph">🎬</span>
+          </div>
+          <div class="brand-titles">
+            <h1 class="brand-name">AniStory <span class="gradient-text">AI</span></h1>
+            <p class="brand-tagline">Autonomous Animation Studio Agent</p>
+          </div>
         </div>
       </div>
 
+      <!-- Compact Workflow Stepper directly inside Sticky Header -->
+      <nav class="workflow-stepper compact-stepper" aria-label="Creation Steps">
+        <div id="stepTab1" class="step-item active" title="1. Concept & Style">
+          <span class="step-num">1</span>
+          <div class="step-meta">
+            <span class="step-label">Concept</span>
+          </div>
+        </div>
+        <div class="step-connector"></div>
+        <div id="stepTab2" class="step-item" title="2. Director's Board">
+          <span class="step-num">2</span>
+          <div class="step-meta">
+            <span class="step-label">Storyboard</span>
+          </div>
+        </div>
+        <div class="step-connector"></div>
+        <div id="stepTab3" class="step-item" title="3. Studio Render">
+          <span class="step-num">3</span>
+          <div class="step-meta">
+            <span class="step-label">Render</span>
+          </div>
+        </div>
+        <div class="step-connector"></div>
+        <div id="stepTab4" class="step-item" title="4. Cinema Premiere">
+          <span class="step-num">4</span>
+          <div class="step-meta">
+            <span class="step-label">Cinema</span>
+          </div>
+        </div>
+      </nav>
+
       <div class="header-actions">
-        <button id="btnNavHome" class="glass-btn secondary-btn nav-home-btn" title="Back to Homepage / Concept & Style">
-          <span class="btn-icon">🏠</span> Home
+        <button id="btnNavHome" class="glass-btn secondary-btn nav-home-btn compact-header-btn" title="Back to Homepage / Concept & Style">
+          <span class="btn-icon">🏠</span> <span class="header-btn-text">Home</span>
         </button>
-        <button id="btnOpenProjects" class="glass-btn secondary-btn" title="Open or switch between existing projects">
-          <span class="btn-icon">📂</span> Load Project
+        <button id="btnOpenProjects" class="glass-btn secondary-btn compact-header-btn" title="Open or switch between existing projects">
+          <span class="btn-icon">📂</span> <span class="header-btn-text">Projects</span>
         </button>
-        <button id="btnOpenSettings" class="glass-btn secondary-btn" title="Configure AI keys and preferences">
-          <span class="btn-icon">⚙️</span> Settings
+        <button id="btnOpenSettings" class="glass-btn secondary-btn compact-header-btn" title="Configure AI keys and preferences">
+          <span class="btn-icon">⚙️</span>
         </button>
-        <div class="status-indicator-pill">
+        <div class="status-indicator-pill header-status-pill">
           <span class="status-pulse-dot"></span>
-          <span id="agentSystemStatus">Agent Engine Online</span>
+          <span id="agentSystemStatus">Online</span>
         </div>
       </div>
     </header>
-
-    <!-- Workflow Progress Step Bar -->
-    <nav class="workflow-stepper" aria-label="Creation Steps">
-      <div id="stepTab1" class="step-item active">
-        <span class="step-num">1</span>
-        <div class="step-meta">
-          <span class="step-label">Concept & Style</span>
-          <span class="step-desc">Idea & Art Direction</span>
-        </div>
-      </div>
-      <div class="step-connector"></div>
-      <div id="stepTab2" class="step-item">
-        <span class="step-num">2</span>
-        <div class="step-meta">
-          <span class="step-label">Director's Board</span>
-          <span class="step-desc">Storyboard & Script</span>
-        </div>
-      </div>
-      <div class="step-connector"></div>
-      <div id="stepTab3" class="step-item">
-        <span class="step-num">3</span>
-        <div class="step-meta">
-          <span class="step-label">Studio Render</span>
-          <span class="step-desc">Camera & Voiceover</span>
-        </div>
-      </div>
-      <div class="step-connector"></div>
-      <div id="stepTab4" class="step-item">
-        <span class="step-num">4</span>
-        <div class="step-meta">
-          <span class="step-label">Cinema Premiere</span>
-          <span class="step-desc">Watch & Download</span>
-        </div>
-      </div>
-    </nav>
 
     <!-- MAIN VIEW PANELS -->
     <main class="view-stage">
 
       <!-- STAGE 1: IDEA & ART STYLE -->
       <section id="stage1Idea" class="stage-panel active">
-        <div class="stage-intro">
-          <h2 class="stage-title">What story would you like to bring to life?</h2>
-          <p class="stage-subtitle">Provide any creative concept, fairy tale, or lesson. Our multi-agent team will write the screenplay, paint the frames, narrate, and animate camera motions.</p>
-        </div>
-
-        <div class="input-card glass-panel">
+        <!-- Compact Stage Intro -->
+        <div class="stage-intro compact-intro">
+          <div class="intro-left">
+            <h2 class="stage-title compact-stage-title">Create Animated Story</h2>
+            <p class="stage-subtitle compact-stage-subtitle">Multi-agent screenplay, character acting, art direction & cinematic Ken Burns animation</p>
+          </div>
           <!-- Creation Mode Switcher -->
-          <div class="creation-mode-tabs">
+          <div class="creation-mode-tabs compact-mode-tabs">
             <button id="tabModePrompt" class="mode-tab-btn active" type="button">
               💡 Option A: Write Story Idea
             </button>
             <button id="tabModePaste" class="mode-tab-btn" type="button">
-              📋 Option B: Paste AI Storyboard from Gemini
+              📋 Option B: Paste Storyboard
             </button>
             <button id="tabModeLoad" class="mode-tab-btn" type="button">
-              📂 Option C: Load Existing Project
+              📂 Option C: Load Project
+            </button>
+            <button id="tabModeAd" class="mode-tab-btn" type="button">
+              🛍️ Option D: Goods Advertisement
             </button>
           </div>
+        </div>
 
-          <!-- Panel A: Story Idea -->
-          <div id="panelPromptMode">
-            <div class="form-row" style="margin-bottom: 16px;">
-              <label for="inputProjectTitle" class="input-label">
-                <span>🎬 Project Name / Film Title</span>
-                <span class="hint-text">Give your film a custom title (optional — AI will generate one if empty)</span>
-              </label>
-              <input type="text" id="inputProjectTitle" class="styled-input" placeholder="e.g. Whispers of the Ancient Woods, Đôi Bạn Rừng Xanh...">
-            </div>
+        <!-- Main Studio Workspace Card -->
+        <div class="input-card glass-panel compact-studio-panel">
 
-            <div class="form-row">
-              <label for="inputIdeaPrompt" class="input-label">
-                <span>🌟 Your Story Idea or Topic</span>
-                <span class="hint-text">Be as descriptive or as brief as you like</span>
-              </label>
-              <textarea id="inputIdeaPrompt" rows="3" class="styled-textarea" placeholder="e.g. A lonely clockmaker in a steampunk tower invents a mechanical humming-bird that brings memories back to the townspeople..."></textarea>
-            </div>
+          <!-- 2-Column Studio Layout -->
+          <div class="studio-stage1-workspace">
 
-            <!-- Quick idea inspiration tags -->
-            <div class="inspiration-box">
-              <span class="inspire-title">⚡ Quick Sparks:</span>
-              <div class="inspire-chips">
-                <button class="inspire-chip" data-prompt="A curious little kitten who sneaks aboard a starship to explore the glittering rings of Saturn.">🚀 Cosmic Kitten</button>
-                <button class="inspire-chip" data-prompt="A friendly ancient forest spirit teaching a lost traveler how to listen to the whisper of the trees.">🍃 Forest Spirit</button>
-                <button class="inspire-chip" data-prompt="A cyberpunk detective and a witty hologram raven uncovering the lost memory of an neon metropolis.">🏙️ Neon Raven</button>
-                <button class="inspire-chip" data-prompt="A magical bakery that bakes fluffy cloud-bread that makes anyone who tastes it float with joy.">🧁 Floating Bakery</button>
-                <button class="inspire-chip" data-prompt="Hai chú rùa và thỏ học cách chia sẻ những trái táo chín mọng trong ngày hội mùa thu tươi đẹp.">🍎 Đôi Bạn Rừng Xanh (VN)</button>
-              </div>
-            </div>
-          </div>
+            <!-- LEFT COLUMN: Story Concept, AI Model & Direct Generate CTA -->
+            <div class="studio-col-story">
 
-          <!-- Panel B: Direct Paste from Gemini Pro -->
-          <div id="panelPasteMode" style="display: none; margin-bottom: 24px;">
-            <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 14px; padding: 16px; margin-bottom: 16px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                <div>
-                  <span style="font-size:14px; color:var(--text-main); font-weight:700;">✨ Using Gemini Pro (gemini.google.com)?</span>
-                  <p style="font-size:12px; color:var(--text-muted); margin-top:3px;">Click below to copy an optimized animation screenplay prompt, paste it into Gemini Pro, then paste its response below!</p>
+              <!-- Panel A: Story Idea -->
+              <div id="panelPromptMode">
+                <div class="form-row compact-row">
+                  <label for="inputProjectTitle" class="input-label small-label">
+                    <span>🎬 Film Title</span>
+                    <span class="hint-text">Custom or auto-generated</span>
+                  </label>
+                  <input type="text" id="inputProjectTitle" class="styled-input compact-input" placeholder="e.g. Whispers of the Ancient Woods, Đôi Bạn Rừng Xanh...">
                 </div>
-                <button id="btnCopyGeminiPromptDirect" class="glass-btn secondary-btn" type="button" style="padding:8px 16px; font-size:13px; font-weight:600;">
-                  📑 1-Click Copy Prompt for Gemini
+
+                <div class="form-row compact-row">
+                  <label for="inputIdeaPrompt" class="input-label small-label">
+                    <span>🌟 Story Idea or Creative Prompt</span>
+                    <span class="hint-text">Brief or descriptive</span>
+                  </label>
+                  <textarea id="inputIdeaPrompt" rows="3" class="styled-textarea compact-textarea" placeholder="e.g. A lonely clockmaker in a steampunk tower invents a mechanical humming-bird that brings memories back to the townspeople..."></textarea>
+                </div>
+
+                <!-- Quick idea inspiration tags -->
+                <div class="inspiration-box compact-inspire">
+                  <span class="inspire-title">⚡ Sparks:</span>
+                  <div class="inspire-chips">
+                    <button class="inspire-chip" data-prompt="A curious little kitten who sneaks aboard a starship to explore the glittering rings of Saturn.">🚀 Cosmic Kitten</button>
+                    <button class="inspire-chip" data-prompt="A friendly ancient forest spirit teaching a lost traveler how to listen to the whisper of the trees.">🍃 Forest Spirit</button>
+                    <button class="inspire-chip" data-prompt="A cyberpunk detective and a witty hologram raven uncovering the lost memory of an neon metropolis.">🏙️ Neon Raven</button>
+                    <button class="inspire-chip" data-prompt="A magical bakery that bakes fluffy cloud-bread that makes anyone who tastes it float with joy.">🧁 Floating Bakery</button>
+                    <button class="inspire-chip" data-prompt="Hai chú rùa và thỏ học cách chia sẻ những trái táo chín mọng trong ngày hội mùa thu tươi đẹp.">🍎 Rừng Xanh (VN)</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Panel B: Direct Paste from Gemini Pro -->
+              <div id="panelPasteMode" style="display: none; margin-bottom: 14px;">
+                <div class="gemini-paste-banner">
+                  <div class="gemini-paste-meta">
+                    <span class="gemini-paste-title">✨ Gemini Pro (gemini.google.com)</span>
+                    <p class="gemini-paste-desc">Copy our prompt, ask Gemini Pro, then paste its response below!</p>
+                  </div>
+                  <button id="btnCopyGeminiPromptDirect" class="glass-btn secondary-btn compact-btn" type="button">
+                    📑 Copy Prompt
+                  </button>
+                </div>
+
+                <div class="form-row compact-row">
+                  <label for="inputDirectPasteText" class="input-label small-label">
+                    <span>📋 Paste Output (JSON or Text):</span>
+                    <span class="hint-text">Auto-detects scenes, visual & dialogue</span>
+                  </label>
+                  <textarea id="inputDirectPasteText" rows="6" class="styled-textarea compact-textarea" placeholder="Paste Gemini Pro's output here (JSON or Scene 1 / Visual / Narration)..."></textarea>
+                </div>
+              </div>
+
+              <!-- Panel D: Goods Advertisement & Commercial -->
+              <div id="panelAdMode" style="display: none; margin-bottom: 14px;">
+                <div class="ad-mode-header-box">
+                  <div class="ad-mode-title-wrap">
+                    <span class="ad-mode-badge">🛍️ Goods Advertisement Commercial</span>
+                    <span class="hint-text">Upload product photos, input specs & generate high-converting video ads</span>
+                  </div>
+                  <!-- Quick Sparks for Goods Templates -->
+                  <div class="inspiration-box compact-inspire" style="margin-top: 6px; margin-bottom: 8px;">
+                    <span class="inspire-title">⚡ Example Goods:</span>
+                    <div class="inspire-chips" id="adSparksChips">
+                      <button type="button" class="inspire-chip" data-ad="headphones">🎧 ANC Headphones</button>
+                      <button type="button" class="inspire-chip" data-ad="espresso">☕ Smart Espresso Machine</button>
+                      <button type="button" class="inspire-chip" data-ad="serum">✨ Glow Skin Serum</button>
+                      <button type="button" class="inspire-chip" data-ad="smartwatch">⌚ Pro Smartwatch</button>
+                      <button type="button" class="inspire-chip" data-ad="shoes">👟 Carbon Running Shoes</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 2-Column Product Config Row -->
+                <div class="ad-form-grid">
+                  <div class="form-row compact-row">
+                    <label for="inputAdProductName" class="input-label small-label">
+                      <span>🏷️ Product / Goods Name <strong style="color:var(--primary);">*</strong></span>
+                    </label>
+                    <input type="text" id="inputAdProductName" class="styled-input compact-input" placeholder="e.g. AeroPulse Pro Wireless Headphones">
+                  </div>
+
+                  <div class="form-row compact-row">
+                    <label for="inputAdBrand" class="input-label small-label">
+                      <span>🏢 Brand Name</span>
+                    </label>
+                    <input type="text" id="inputAdBrand" class="styled-input compact-input" placeholder="e.g. Apex Audio, Sony, Nike, Anker...">
+                  </div>
+
+                  <div class="form-row compact-row">
+                    <label for="selectAdStyle" class="input-label small-label">
+                      <span>🎬 Commercial Style</span>
+                    </label>
+                    <select id="selectAdStyle" class="styled-select compact-select">
+                      <option value="cinematic_commercial" selected>🎬 Cinematic Commercial (Apple / Nike style)</option>
+                      <option value="viral_reels">⚡ Viral TikTok / Reels / Shorts (Fast-Paced)</option>
+                      <option value="spec_breakdown">🔬 Tech Deep-Dive & Spec Showcase</option>
+                      <option value="luxury_macro">💎 Ultra-Luxury Elegance (Rolex / Porsche macro)</option>
+                      <option value="problem_solution">💡 Problem & Solution Transformation</option>
+                    </select>
+                  </div>
+
+                  <div class="form-row compact-row">
+                    <label for="selectAdAudience" class="input-label small-label">
+                      <span>🎯 Target Audience</span>
+                    </label>
+                    <select id="selectAdAudience" class="styled-select compact-select">
+                      <option value="General" selected>Global Shoppers & Consumers</option>
+                      <option value="Tech Enthusiasts & Professionals">Tech Enthusiasts & Professionals</option>
+                      <option value="Gen Z & Young Adults">Gen Z & Young Adults (Social Media)</option>
+                      <option value="Affluent & Luxury Buyers">Affluent & Luxury Buyers</option>
+                      <option value="Fitness & Active Lifestyle">Fitness & Active Lifestyle</option>
+                      <option value="Families & Homeowners">Families & Homeowners</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-row compact-row">
+                  <label for="textareaAdDesc" class="input-label small-label">
+                    <span>📝 Product Description & Key Selling Points <strong style="color:var(--primary);">*</strong></span>
+                    <span class="hint-text">Core benefits, problem solved, unique value</span>
+                  </label>
+                  <textarea id="textareaAdDesc" rows="2" class="styled-textarea compact-textarea" placeholder="e.g. Premium wireless noise-cancelling headphones crafted from aerospace titanium. Crystal-clear acoustic tuning with effortless all-day comfort."></textarea>
+                </div>
+
+                <div class="form-row compact-row">
+                  <label for="textareaAdSpecs" class="input-label small-label">
+                    <span>⚙️ Technical Specs & Hardware Highlights</span>
+                    <span class="hint-text">Specs, dimensions, battery, materials, power</span>
+                  </label>
+                  <textarea id="textareaAdSpecs" rows="2" class="styled-textarea compact-textarea" placeholder="e.g. • 45dB Dual-Processor Hybrid ANC • 40-hour Battery Life • 40mm Beryllium Drivers • Fast Charge (10min = 5hrs) • 185g Aerospace Titanium"></textarea>
+                </div>
+
+                <div class="ad-form-grid" style="margin-bottom: 8px;">
+                  <div class="form-row compact-row">
+                    <label for="inputAdOffer" class="input-label small-label">
+                      <span>🏷️ Special Offer / Pricing</span>
+                    </label>
+                    <input type="text" id="inputAdOffer" class="styled-input compact-input" placeholder="e.g. 50% Flash Sale — Only $149 (Reg. $299)">
+                  </div>
+
+                  <div class="form-row compact-row">
+                    <label for="inputAdCTA" class="input-label small-label">
+                      <span>📣 Call to Action (CTA)</span>
+                    </label>
+                    <input type="text" id="inputAdCTA" class="styled-input compact-input" placeholder="e.g. Order now at link in bio! Free shipping worldwide.">
+                  </div>
+                </div>
+
+                <!-- Product Photos Upload Section -->
+                <div class="ad-images-upload-box">
+                  <div class="ad-images-header">
+                    <label class="input-label small-label" style="margin-bottom:0;">
+                      <span>📸 Goods / Product Photos</span>
+                      <span class="hint-text">Upload front, side, detail, or in-use shots</span>
+                    </label>
+                    <span id="adImagesCountBadge" class="ad-count-badge">0 photos added</span>
+                  </div>
+
+                  <div id="dropzoneAdImages" class="ad-dropzone">
+                    <input type="file" id="inputAdImages" accept="image/*" multiple style="display:none;">
+                    <div class="dropzone-content">
+                      <span class="dropzone-icon">📷</span>
+                      <div class="dropzone-text">
+                        <strong>Click to Browse</strong> or <span>Drag & Drop product photos here</span>
+                      </div>
+                      <span class="dropzone-hint">PNG, JPG, WEBP • Automatically formatted for video</span>
+                    </div>
+                  </div>
+
+                  <!-- Uploaded Images Thumbnails Grid -->
+                  <div id="adImagesPreviewContainer" class="ad-images-preview-grid" style="display:none;"></div>
+                </div>
+              </div>
+
+              <!-- Multi-Provider AI Engine & Image Mode Selector -->
+              <div class="ai-provider-panel glass-panel compact-provider-panel">
+                <div class="provider-panel-header">
+                  <div class="provider-panel-title">
+                    <span>🧠</span>
+                    <strong>AI Screenplay & Storyboard Model</strong>
+                  </div>
+                  <span id="labelProviderStatus" class="provider-status-badge">● Ready</span>
+                </div>
+
+                <div class="provider-grid compact-provider-grid">
+                  <div class="form-group">
+                    <label for="selectAiProvider" class="input-label small-label">Provider</label>
+                    <select id="selectAiProvider" class="styled-select compact-select">
+                      <option value="gemini" selected>✨ Google Gemini (API)</option>
+                      <option value="gemini_cookie">🍪 Gemini Web (Cookies)</option>
+                      <option value="openai">🟢 OpenAI</option>
+                      <option value="claude">🟣 Claude</option>
+                      <option value="deepseek">🐋 DeepSeek</option>
+                      <option value="nvidia">⚡ NVIDIA NIM</option>
+                      <option value="builtin">🏛️ Built-in Offline</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group">
+                    <div class="label-with-action">
+                      <label for="selectAiModel" class="input-label small-label">Model</label>
+                      <button id="btnDetectModels" type="button" class="glass-btn secondary-btn mini-btn" title="Scan and choose available models">
+                        <span>🔄 Detect</span>
+                      </button>
+                    </div>
+                    <select id="selectAiModel" class="styled-select compact-select">
+                      <!-- Injected via JavaScript -->
+                    </select>
+                  </div>
+
+                  <div class="form-group" id="groupProviderKey">
+                    <div class="label-with-action">
+                      <label for="inputProviderKey" id="labelProviderKey" class="input-label small-label">API Key / Cookie</label>
+                      <span id="badgeProviderHint" class="mini-hint"></span>
+                    </div>
+                    <input type="password" id="inputProviderKey" class="styled-input compact-input" placeholder="Enter API Key or Cookie...">
+                  </div>
+                </div>
+
+                <!-- Image Generation Mode Toggle Banner -->
+                <div class="image-mode-banner compact-image-banner">
+                  <div class="image-mode-meta">
+                    <div class="image-mode-badge-wrap">
+                      <span>🎨</span>
+                      <span class="image-mode-lbl">Paint Engine:</span>
+                      <span id="badgeImageMode" class="tag-badge compact-badge">✨ Google Gemini Imagen 3</span>
+                    </div>
+                    <p id="descImageMode" class="image-mode-desc">High-fidelity Google Imagen 3 visuals powered by your Gemini Key</p>
+                  </div>
+                  <button id="btnToggleImageMode" type="button" class="glass-btn secondary-btn compact-btn">
+                    <span id="iconToggleImageMode">🖌️</span> Switch Mode
+                  </button>
+                </div>
+              </div>
+
+              <!-- Action Footer (Generate Storyboard CTA) positioned directly in the left column! -->
+              <div class="action-footer compact-action-footer">
+                <button id="btnGenerateStoryboard" class="hero-action-btn studio-generate-btn">
+                  <span class="btn-glow-layer"></span>
+                  <span class="btn-text">Generate Storyboard with AI</span>
+                  <span class="btn-arrow">✨</span>
+                </button>
+                <button id="btnDirectLoadStoryboard" class="hero-action-btn studio-generate-btn" style="display: none;">
+                  <span class="btn-glow-layer"></span>
+                  <span class="btn-text">Load Into Director's Board</span>
+                  <span class="btn-arrow">🚀</span>
+                </button>
+                <button id="btnGenerateAdVideo" class="hero-action-btn studio-generate-btn" style="display: none;">
+                  <span class="btn-glow-layer"></span>
+                  <span class="btn-text">Generate Advertisement Video</span>
+                  <span class="btn-arrow">🛍️</span>
                 </button>
               </div>
-            </div>
 
-            <div class="form-row">
-              <label for="inputDirectPasteText" class="input-label">
-                <span>📋 Paste Gemini Pro's Output Here (JSON or Text):</span>
-                <span class="hint-text">Auto-detects scenes, visual descriptions, and dialogue</span>
-              </label>
-              <textarea id="inputDirectPasteText" rows="7" class="styled-textarea" placeholder="Paste Gemini Pro's generated story here...
-Supports either JSON format or formatted text like:
-Title: My Film
-Scene 1:
-Visual: A high-tech neon rooftop in rain...
-Narration: The detective scanned the horizon for clues..."></textarea>
-            </div>
-          </div>
+            </div> <!-- /studio-col-story -->
 
-          <!-- Panel C: Load Existing Project -->
-          <div id="panelLoadMode" style="display: none; margin-bottom: 24px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+            <!-- RIGHT COLUMN: Visual Art Style & Audio / Format Controls -->
+            <div class="studio-col-controls">
+              
+              <div class="config-grid compact-config-grid">
+                
+                <!-- Art Style Selection -->
+                <div class="config-column style-column">
+                  <label class="input-label small-label">🎨 Visual Animation Style</label>
+                  <div id="styleOptionsGrid" class="style-cards-grid compact-style-grid">
+                    <!-- Injected via JavaScript -->
+                  </div>
+                </div>
+
+                <!-- Voice and Film Format Settings -->
+                <div class="config-column controls-column">
+                  
+                  <!-- Voice Narrator Box -->
+                  <div class="form-group voice-box-card" id="groupVoiceSelect">
+                    <div class="voice-box-header">
+                      <label for="selectVoice" class="input-label small-label">🎙️ Narrator Voice</label>
+                      <div class="voice-toggles">
+                        <button id="btnToggleVoiceoverStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" title="Click to turn Voiceover ON or OFF">
+                          <span id="iconVoiceoverStage1">🎙️</span> <span id="textVoiceoverStage1">Voiceover: ON</span>
+                        </button>
+                        <span id="voiceSampleStatus" class="voice-audition-status">Audition Ready</span>
+                      </div>
+                    </div>
+                    <div class="select-with-btn">
+                      <select id="selectVoice" class="styled-select compact-select">
+                        <!-- Injected via JavaScript -->
+                      </select>
+                      <button id="btnAuditionSampleVoice" type="button" class="glass-btn icon-only-btn compact-icon-btn" title="Listen to sample audio">
+                        <span id="iconAuditionVoice">🔊</span>
+                      </button>
+                    </div>
+
+                    <!-- Interactive Audition Audio Player & Status Bar -->
+                    <div id="auditionPlayerContainer" class="compact-audition-player" style="display:none;">
+                      <div class="audition-player-header">
+                        <span id="auditionVoiceLabel" class="audition-label">🔊 Playing Sample</span>
+                        <button id="btnCloseAuditionPlayer" type="button" class="audition-close-btn" title="Close player">✕</button>
+                      </div>
+                      <audio id="audioAuditionPlayer" controls class="compact-audio-el"></audio>
+                      <div id="auditionSampleText" class="audition-quote-text"></div>
+                    </div>
+                  </div>
+
+                  <!-- Format & Pacing 2x2 Grid -->
+                  <div class="format-params-grid">
+                    <div class="form-group" id="groupSceneCount">
+                      <label for="selectSceneCount" class="input-label small-label">🎞️ Scenes Count</label>
+                      <select id="selectSceneCount" class="styled-select compact-select">
+                        <option value="auto">🤖 Auto (Agent Decides)</option>
+                        <option value="1">1 Scene (Teaser)</option>
+                        <option value="2">2 Scenes (2 Shots)</option>
+                        <option value="3">3 Scenes (Short Teaser)</option>
+                        <option value="4" selected>4 Scenes (Classic Film)</option>
+                        <option value="5">5 Scenes (Dramatic Arc)</option>
+                        <option value="6">6 Scenes (Extended Story)</option>
+                        <option value="7">7 Scenes (Full Chapter)</option>
+                        <option value="8">8 Scenes (Epic Adventure)</option>
+                        <option value="10">10 Scenes (Mini Episode)</option>
+                        <option value="12">12 Scenes (Full Film)</option>
+                        <option value="14">14 Scenes (Cinema Short)</option>
+                        <option value="16">16 Scenes (Extended Episode)</option>
+                        <option value="18">18 Scenes (Saga Arc)</option>
+                        <option value="20">20 Scenes (Short Movie)</option>
+                        <option value="24">24 Scenes (Grand Cinema)</option>
+                      </select>
+                    </div>
+
+                    <div class="form-group" id="groupTargetDuration">
+                      <label for="selectTargetDuration" class="input-label small-label">⏱️ Scene Pacing</label>
+                      <select id="selectTargetDuration" class="styled-select compact-select">
+                        <option value="auto_acting" selected>⚡ Veo Acting (8s/scene)</option>
+                        <option value="30">30s (~7.5s/scene)</option>
+                        <option value="60">60s (~15s/scene)</option>
+                        <option value="90">90s Spotlight</option>
+                        <option value="120">120s Mini Film</option>
+                      </select>
+                    </div>
+
+                    <div class="form-group" id="groupAspectRatio">
+                      <label for="selectAspectRatio" class="input-label small-label">📐 Aspect Ratio</label>
+                      <select id="selectAspectRatio" class="styled-select compact-select">
+                        <option value="16:9" selected>🖥️ 16:9 Widescreen</option>
+                        <option value="9:16">📱 9:16 Vertical (Reels)</option>
+                        <option value="1:1">🔲 1:1 Square (Feed)</option>
+                        <option value="4:3">📺 4:3 Classic TV</option>
+                        <option value="3:4">📸 3:4 Tall Portrait</option>
+                        <option value="21:9">🎬 21:9 Ultrawide</option>
+                      </select>
+                    </div>
+
+                    <div class="form-group">
+                      <label for="selectLanguage" class="input-label small-label">🌐 Language</label>
+                      <select id="selectLanguage" class="styled-select compact-select">
+                        <option value="en" selected>English (Natural)</option>
+                        <option value="vi">Tiếng Việt (Việt Nam)</option>
+                        <option value="ja">日本語 (Japanese)</option>
+                        <option value="fr">Français (French)</option>
+                        <option value="es">Español (Spanish)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="form-group" style="margin-bottom:0;">
+                    <label for="selectAudience" class="input-label small-label">🎯 Tone & Audience</label>
+                    <select id="selectAudience" class="styled-select compact-select">
+                      <option value="General" selected>Heartwarming & Universal</option>
+                      <option value="Kids & Children">Children & Bedtime Tale</option>
+                      <option value="Cinematic Drama">Cinematic & Atmospheric</option>
+                      <option value="Educational">Educational & Informative</option>
+                    </select>
+                  </div>
+
+                </div> <!-- /controls-column -->
+
+              </div> <!-- /config-grid -->
+
+            </div> <!-- /studio-col-controls -->
+
+          </div> <!-- /studio-stage1-workspace -->
+
+          <!-- Panel C: Load Existing Project (Full Width Panel) -->
+          <div id="panelLoadMode" style="display: none; margin-top: 10px;">
+            <div class="load-projects-header">
               <div>
-                <span style="font-size:15px; color:var(--text-main); font-weight:700;">📂 Existing Animated Projects</span>
-                <p style="font-size:12px; color:var(--text-muted); margin:3px 0 0 0;">Select any film to open its Director's Storyboard, generate Veo acting clips, or watch its final render.</p>
+                <span class="load-projects-title">📂 Existing Animated Projects</span>
+                <p class="load-projects-desc">Select any project to open Director's Board or watch render</p>
               </div>
-              <div style="display:flex; align-items:center; gap:8px;">
+              <div class="load-projects-actions">
                 <input type="file" id="inputImportProjectJsonStage1" accept=".json" style="display:none;">
-                <button id="btnImportProjectJsonStage1" class="glass-btn secondary-btn" type="button" style="border-color:rgba(59,130,246,0.4); color:#93c5fd;" title="Import a project.json file from your computer">
-                  📥 Import project.json
+                <button id="btnImportProjectJsonStage1" class="glass-btn secondary-btn compact-btn import-json-btn" type="button" title="Import project.json">
+                  📥 Import JSON
                 </button>
-                <button id="btnRefreshProjectsStage1" class="glass-btn secondary-btn" type="button" title="Refresh projects list">
+                <button id="btnRefreshProjectsStage1" class="glass-btn secondary-btn compact-btn" type="button" title="Refresh projects">
                   🔄 Refresh
                 </button>
               </div>
             </div>
-            <div id="stage1ProjectsList" class="projects-grid" style="max-height: 520px; overflow-y: auto; padding-right: 4px;">
+            <div id="stage1ProjectsList" class="projects-grid compact-projects-grid">
               <!-- Rendered dynamically -->
             </div>
           </div>
 
-          <div class="config-grid">
-            <!-- Art Style Selection -->
-            <div class="config-column style-column">
-              <label class="input-label">🎨 Visual Animation Style</label>
-              <div id="styleOptionsGrid" class="style-cards-grid">
-                <!-- Injected via JavaScript -->
+        </div> <!-- /input-card -->
+      </section>
+
+      <!-- STAGE 2: DIRECTOR'S STORYBOARD -->
+      <section id="stage2Storyboard" class="stage-panel">
+        
+        <!-- Sticky Director Command Bar -->
+        <div class="director-command-bar glass-panel">
+          <!-- Primary Control Line -->
+          <div class="director-main-row">
+            <div class="director-meta">
+              <div class="director-nav-btns">
+                <button id="btnBackToHomeFromStage2" class="glass-btn secondary-btn nav-back-btn compact-btn" title="Back to Homepage / Concept & Style">
+                  <span class="btn-icon">←</span> Home
+                </button>
+                <button id="btnNewStoryFromStage2" class="glass-btn secondary-btn compact-btn" title="Start a fresh story from scratch">
+                  <span class="btn-icon">➕</span> New
+                </button>
+              </div>
+              <div class="director-film-info">
+                <div class="film-title-wrap">
+                  <h2 id="storyboardFilmTitle" class="stage-title compact-title">Film Title</h2>
+                  <span id="badgeStoryboardAspectRatio" class="tag-badge aspect-badge">📐 16:9</span>
+                  <span id="badgeStoryboardAdMode" class="tag-badge" style="display:none; background:rgba(236,72,153,0.18); color:#f472b6; border:1px solid rgba(236,72,153,0.35);">🛍️ Commercial Ad</span>
+                  <span class="tag-badge scope-badge">🧠 Director's Board</span>
+                </div>
+                <p id="storyboardLogline" class="stage-subtitle compact-logline">Logline summary</p>
               </div>
             </div>
 
-            <!-- Voice and Settings -->
-            <div class="config-column controls-column">
-              <div class="form-group" id="groupVoiceSelect">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                  <label for="selectVoice" class="input-label" style="margin-bottom:0;">🎙️ Narrator Voice</label>
-                  <div style="display:flex; align-items:center; gap:8px;">
-                    <button id="btnToggleVoiceoverStage1" type="button" class="tag-badge voice-toggle-btn" style="cursor:pointer; background:rgba(16,185,129,0.15); color:#34d399; border:1px solid rgba(16,185,129,0.3); font-size:11px; padding:3px 8px; transition:all 0.2s;" title="Click to turn Voiceover ON or OFF">
-                      <span id="iconVoiceoverStage1">🎙️</span> <span id="textVoiceoverStage1">Voiceover: ON</span>
-                    </button>
-                    <span id="voiceSampleStatus" style="font-size:11px; color:var(--text-muted);">Audition Ready</span>
-                  </div>
-                </div>
-                <div class="select-with-btn">
-                  <select id="selectVoice" class="styled-select">
-                    <!-- Injected via JavaScript -->
-                  </select>
-                  <button id="btnAuditionSampleVoice" type="button" class="glass-btn icon-only-btn" title="Click to listen to sample audio">
-                    <span id="iconAuditionVoice">🔊</span>
-                  </button>
-                </div>
-                <!-- Interactive Audition Audio Player & Status Bar -->
-                <div id="auditionPlayerContainer" style="display:none; margin-top:8px; padding:10px 12px; background:rgba(0,0,0,0.45); border:1px solid rgba(139,92,246,0.35); border-radius:10px; animation:fadeInPanel 0.25s ease;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                    <span id="auditionVoiceLabel" style="font-size:12px; font-weight:600; color:var(--primary-light);">🔊 Playing Sample</span>
-                    <button id="btnCloseAuditionPlayer" type="button" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; padding:0 4px;" title="Close player">✕</button>
-                  </div>
-                  <audio id="audioAuditionPlayer" controls style="width:100%; height:34px; border-radius:6px;"></audio>
-                  <div id="auditionSampleText" style="font-size:11px; color:var(--text-muted); margin-top:5px; font-style:italic; line-height:1.35;"></div>
-                </div>
+            <!-- Primary Action Buttons Group -->
+            <div class="director-actions-group">
+              <!-- Studio Tools Cluster -->
+              <div class="tools-cluster">
+                <button id="btnExportStoryboard" class="glass-btn secondary-btn tool-btn" title="1-Click copy all scene acting & visual prompts formatted for Google Flow / Veo 3 / Kling / Midjourney">
+                  <span>📋</span> Prompts
+                </button>
+                <button id="btnExportScript" class="glass-btn secondary-btn tool-btn" title="Export complete screenplay text with scenes & narration">
+                  <span>📄</span> Script
+                </button>
+                <button id="btnRefineAllPrompts" class="glass-btn secondary-btn tool-btn refine-all-btn" title="Upgrade all scene video prompts to professional director-grade standard" style="color: #c4b5fd; border-color: rgba(167, 139, 250, 0.45); background: rgba(139, 92, 246, 0.14);">
+                  <span>✨</span> Refine Prompts
+                </button>
+                <button id="btnSyncDialogues" class="glass-btn secondary-btn tool-btn" title="Extract dialogues from story and add to Voiceover Narration, Image & Video Clip prompts" style="color: #6ee7b7; border-color: rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.14);">
+                  <span>💬</span> Add Dialogues
+                </button>
+                <button id="btnOpenGoogleFlow" class="glass-btn secondary-btn tool-btn flow-btn" title="Open signed-in Google Flow Studio (Veo) in Chromium">
+                  <span>🌐</span> Veo Flow
+                </button>
+                <button id="btnSwitchProject" class="glass-btn secondary-btn tool-btn" title="Open or switch to another animated project">
+                  <span>📂</span> Switch
+                </button>
               </div>
 
-              <div class="form-group" id="groupSceneCount">
-                <label for="selectSceneCount" class="input-label">🎞️ Number of Scenes</label>
-                <select id="selectSceneCount" class="styled-select">
-                  <option value="1">1 Scene (Single Shot / Teaser)</option>
-                  <option value="2">2 Scenes (Flash Bite / 2 Shots)</option>
-                  <option value="3">3 Scenes (Short Teaser)</option>
-                  <option value="4" selected>4 Scenes (Standard Classic Film)</option>
-                  <option value="5">5 Scenes (Dramatic Arc)</option>
-                  <option value="6">6 Scenes (Extended Story)</option>
-                  <option value="7">7 Scenes (Full Chapter)</option>
-                  <option value="8">8 Scenes (Epic Adventure)</option>
-                  <option value="10">10 Scenes (Mini Episode)</option>
-                  <option value="12">12 Scenes (Full Narrative Film)</option>
-                  <option value="14">14 Scenes (Cinema Short)</option>
-                  <option value="16">16 Scenes (Extended Episode)</option>
-                  <option value="18">18 Scenes (Saga Arc)</option>
-                  <option value="20">20 Scenes (Complete Short Movie)</option>
-                  <option value="24">24 Scenes (Grand Cinematic Masterpiece)</option>
-                </select>
-              </div>
-
-              <div class="form-group" id="groupTargetDuration">
-                <label for="selectTargetDuration" class="input-label">⏱️ Scene Pacing & Target Duration</label>
-                <select id="selectTargetDuration" class="styled-select">
-                  <option value="auto_acting" selected>⚡ Google Flow / Veo Acting Video (Strict 8s per scene)</option>
-                  <option value="30">30s — Social Short (~7.5s / scene)</option>
-                  <option value="60">60s — 1 Minute Standard (~10-15s / scene)</option>
-                  <option value="90">90s — 1.5 Minutes Spotlight</option>
-                  <option value="120">120s — 2 Minutes Mini Film</option>
-                </select>
-              </div>
-
-              <div class="form-group" id="groupAspectRatio">
-                <label for="selectAspectRatio" class="input-label">📐 Video Dimensions & Aspect Ratio</label>
-                <select id="selectAspectRatio" class="styled-select">
-                  <option value="16:9" selected>🖥️ 16:9 Widescreen (1280x720) — YouTube & Landscape</option>
-                  <option value="9:16">📱 9:16 Vertical (720x1280) — TikTok, Reels & Shorts</option>
-                  <option value="1:1">🔲 1:1 Square (720x720) — Instagram & Feed</option>
-                  <option value="4:3">📺 4:3 Classic TV (960x720) — Retro & Presentation</option>
-                  <option value="3:4">📸 3:4 Tall Portrait (720x960) — Social Story / Pin</option>
-                  <option value="21:9">🎬 21:9 Ultrawide Cinema (1680x720) — Anamorphic Movie</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label for="selectLanguage" class="input-label">🌐 Narration Language</label>
-                <select id="selectLanguage" class="styled-select">
-                  <option value="en" selected>English (Natural Storytelling)</option>
-                  <option value="vi">Tiếng Việt (Việt Nam)</option>
-                  <option value="ja">日本語 (Japanese)</option>
-                  <option value="fr">Français (French)</option>
-                  <option value="es">Español (Spanish)</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label for="selectAudience" class="input-label">🎯 Tone & Audience</label>
-                <select id="selectAudience" class="styled-select">
-                  <option value="General" selected>Heartwarming & Universal</option>
-                  <option value="Kids & Children">Children & Bedtime Tale</option>
-                  <option value="Cinematic Drama">Cinematic & Atmospheric</option>
-                  <option value="Educational">Educational & Informative</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <!-- Multi-Provider AI Engine & Image Mode Selector -->
-          <div class="ai-provider-panel glass-panel" style="margin-top: 22px; padding: 18px 22px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:18px;">🧠</span>
-                <strong style="font-size:14px; font-family:'Outfit',sans-serif;">AI Screenplay & Storyboard Model</strong>
-              </div>
-              <span id="labelProviderStatus" style="font-size:12px; color:var(--accent-emerald);">● Ready</span>
-            </div>
-
-            <div class="provider-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:16px;">
-              <div class="form-group" style="margin-bottom:0;">
-                <label for="selectAiProvider" class="input-label" style="font-size:12px;">Provider</label>
-                <select id="selectAiProvider" class="styled-select">
-                  <option value="gemini" selected>✨ Google Gemini (API Key)</option>
-                  <option value="gemini_cookie">🍪 Google Gemini Web (Cookies / Pro)</option>
-                  <option value="openai">🟢 OpenAI</option>
-                  <option value="claude">🟣 Anthropic Claude</option>
-                  <option value="deepseek">🐋 DeepSeek</option>
-                  <option value="nvidia">⚡ NVIDIA NIM</option>
-                  <option value="builtin">🏛️ Built-in Story Architect (Offline)</option>
-                </select>
-              </div>
-
-              <div class="form-group" style="margin-bottom:0;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                  <label for="selectAiModel" class="input-label" style="font-size:12px; margin-bottom:0;">Model</label>
-                  <button id="btnDetectModels" type="button" class="glass-btn secondary-btn" style="padding: 2px 8px; font-size: 11px; height: 22px; display:inline-flex; align-items:center; gap:4px;" title="Scan and choose available models from API & Cookies">
-                    <span>🔄 Detect & Select</span>
-                  </button>
-                </div>
-                <select id="selectAiModel" class="styled-select">
-                  <!-- Injected via JavaScript with optgroups -->
-                </select>
-              </div>
-
-              <div class="form-group" id="groupProviderKey" style="margin-bottom:0;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                  <label for="inputProviderKey" id="labelProviderKey" class="input-label" style="font-size:12px; margin-bottom:0;">API Key / Cookie</label>
-                  <span id="badgeProviderHint" style="font-size:10px; color:var(--text-muted);"></span>
-                </div>
-                <input type="password" id="inputProviderKey" class="styled-input" placeholder="Enter API Key or Cookie...">
-              </div>
-            </div>
-
-            <!-- Image Generation Mode Toggle Banner -->
-            <div class="image-mode-banner flex-between" style="padding-top:14px; border-top:1px solid var(--border-subtle); flex-wrap:wrap; gap:12px;">
-              <div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <span style="font-size:16px;">🎨</span>
-                  <span style="font-weight:600; font-size:13px;">Image Painting Mode:</span>
-                  <span id="badgeImageMode" class="tag-badge" style="background:rgba(139,92,246,0.2); color:#c4b5fd;">🌐 Server API & Open Art</span>
-                </div>
-                <p id="descImageMode" style="font-size:12px; color:var(--text-dim); margin-top:3px;">
-                  Auto server generation with OpenAI DALL-E 3, Google Gemini, Openverse & Wikimedia
-                </p>
-              </div>
-              <div>
-                <button id="btnToggleImageMode" type="button" class="glass-btn secondary-btn" style="padding:7px 16px; font-size:13px; font-weight:600;">
-                  <span id="iconToggleImageMode">🖌️</span> Switch to In-Browser Puter.js
+              <!-- Batch Production & Final Render CTA -->
+              <div class="production-cluster">
+                <button id="btnPaintAllImages" class="glass-btn secondary-btn batch-btn" title="Paint all scenes sequentially one by one while keeping character consistency">
+                  <span>🎨</span> Paint All
+                </button>
+                <button id="btnAnimateAllScenes" class="glass-btn secondary-btn batch-btn animate-btn" title="Render animated video clips for every scene sequentially">
+                  <span>🎬</span> Animate All
+                </button>
+                <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn batch-btn" title="Save script and narration edits">
+                  <span>💾</span> Save
+                </button>
+                <button id="btnProceedToRender" class="hero-action-btn compact-btn render-film-btn" title="Render Full Animated Film">
+                  <span class="btn-text">Render Full Film</span>
+                  <span class="btn-arrow">🚀</span>
                 </button>
               </div>
             </div>
           </div>
 
-          <div class="action-footer">
-            <button id="btnGenerateStoryboard" class="hero-action-btn">
-              <span class="btn-glow-layer"></span>
-              <span class="btn-text">Generate Storyboard with AI</span>
-              <span class="btn-arrow">✨</span>
-            </button>
-            <button id="btnDirectLoadStoryboard" class="hero-action-btn" style="display: none;">
-              <span class="btn-glow-layer"></span>
-              <span class="btn-text">Load Into Director's Board</span>
-              <span class="btn-arrow">🚀</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- STAGE 2: DIRECTOR'S STORYBOARD -->
-      <section id="stage2Storyboard" class="stage-panel">
-        <div class="stage-nav-strip">
-          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <button id="btnBackToHomeFromStage2" class="glass-btn secondary-btn nav-back-btn" title="Back to Homepage / Concept & Style">
-              <span class="btn-icon">←</span> Back to Home
-            </button>
-            <button id="btnNewStoryFromStage2" class="glass-btn secondary-btn" title="Start a fresh story from scratch">
-              <span class="btn-icon">➕</span> New Story
-            </button>
-          </div>
-          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <span class="tag-badge" style="background:rgba(16,185,129,0.15); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3); font-size:12px; padding:6px 12px;">🧠 AI Scope: Storyboard Only</span>
-            <span id="badgeStoryboardAspectRatio" class="tag-badge" style="background:rgba(59,130,246,0.15); color:#93c5fd; font-size:12px; padding:6px 12px;">📐 16:9 Widescreen</span>
-            <button id="btnToggleVoiceoverStage2" class="glass-btn secondary-btn" title="Toggle voiceover narration ON or OFF">
-              <span id="iconVoiceoverStage2">🎙️</span> <span id="textVoiceoverStage2">Voiceover: ON</span>
-            </button>
-            <button id="btnToggleSubtitlesStage2" class="glass-btn secondary-btn" title="Toggle burnt-in subtitles ON or OFF">
-              <span id="iconSubtitlesStage2">💬</span> <span id="textSubtitlesStage2">Captions: ON</span>
-            </button>
-            <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn" title="Toggle between Storyboard Only, Server API, and In-Browser Puter.js paint">
-              <span id="iconImageModeStage2">🌐</span> <span id="textImageModeStage2">Paint Mode: Server API</span>
-            </button>
-            <button id="btnToggleAutoPaint" class="glass-btn secondary-btn" title="Toggle automatic scene painting (Default: OFF — manual review mode)">
-              <span id="iconAutoPaint">🚫</span> <span id="textAutoPaint">Auto-Paint: OFF</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="stage-intro flex-between">
-          <div>
-            <h2 id="storyboardFilmTitle" class="stage-title">Film Title</h2>
-            <p id="storyboardLogline" class="stage-subtitle">Logline summary</p>
-          </div>
-          <div class="top-stage-actions">
-            <button id="btnExportStoryboard" class="glass-btn secondary-btn" style="border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.15); color: #6ee7b7; font-weight: 600;" title="1-Click copy all scene acting & visual prompts formatted for Google Flow / Veo 3 / Kling / Midjourney">📋 Copy All Video Prompts</button>
-            <button id="btnExportScript" class="glass-btn secondary-btn" title="Export complete screenplay text with scenes & narration">📄 Export Script</button>
-            <button id="btnSwitchProject" class="glass-btn secondary-btn" title="Open or switch to another animated project">📂 Switch Project</button>
-            <button id="btnOpenGoogleFlow" class="glass-btn secondary-btn" style="border-color: rgba(59, 130, 246, 0.5); background: rgba(59, 130, 246, 0.15); color: #93c5fd;" title="Open signed-in Google Flow Studio (Veo) in Chromium">🌐 Open Google Flow (Veo)</button>
-            <button id="btnPaintAllImages" class="glass-btn secondary-btn" title="Paint all scenes sequentially one by one while keeping character consistency">🎨 Paint All (1-by-1)</button>
-            <button id="btnAnimateAllScenes" class="glass-btn secondary-btn" style="border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.12); color: #c7d2fe;" title="Render animated video clips for every scene sequentially">🎬 Animate All Scenes</button>
-            <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn">💾 Save Script Changes</button>
-            <button id="btnProceedToRender" class="hero-action-btn compact-btn">
-              <span class="btn-text">Render Full Film</span>
-              <span class="btn-arrow">🚀</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Character Consistency Anchor Card -->
-        <div id="characterConsistencyCard" class="glass-panel" style="margin-bottom: 20px; padding: 14px 18px; border-radius: 12px; background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(148, 163, 184, 0.2);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 16px;">👥</span>
-              <span style="font-weight: 600; font-size: 13px; color: #f1f5f9;">Character Consistency Anchor:</span>
-              <span class="tag-badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7; font-size: 11px; padding: 3px 8px;">🔒 Locked across scenes</span>
+          <!-- Secondary Director Options Bar (Toggles & Character Lock) -->
+          <div class="director-sub-row">
+            <div class="director-toggles-wrap">
+              <button id="btnToggleVoiceoverStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle voiceover narration ON or OFF">
+                <span id="iconVoiceoverStage2">🎙️</span> <span id="textVoiceoverStage2">Voiceover: ON</span>
+              </button>
+              <div class="stage2-voice-selector-wrap" style="display: inline-flex; align-items: center; gap: 4px;">
+                <select id="selectVoiceStage2" class="styled-select compact-select" style="max-width: 240px; height: 32px; font-size: 12px; padding: 2px 8px;" title="Select Narrator Voice for this Project">
+                  <!-- Populated via JS -->
+                </select>
+                <button id="btnAuditionVoiceStage2" class="glass-btn secondary-btn toggle-pill-btn" style="padding: 4px 8px; height: 32px;" title="Preview selected narrator voice">
+                  <span id="iconAuditionVoiceStage2">🔊</span>
+                </button>
+              </div>
+              <button id="btnToggleSubtitlesStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle burnt-in subtitles ON or OFF">
+                <span id="iconSubtitlesStage2">💬</span> <span id="textSubtitlesStage2">Captions: ON</span>
+              </button>
+              <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle between Storyboard Only, Server API, and In-Browser Puter.js paint">
+                <span id="iconImageModeStage2">🌐</span> <span id="textImageModeStage2">Paint: Server API</span>
+              </button>
+              <button id="btnToggleAutoPaint" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle automatic scene painting (Default: OFF — manual review mode)">
+                <span id="iconAutoPaint">🚫</span> <span id="textAutoPaint">Auto-Paint: OFF</span>
+              </button>
             </div>
-            <span style="font-size: 12px; color: var(--text-dim);">Locks face, hair, and clothing traits across every scene illustration</span>
-          </div>
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <input type="text" id="inputCharacterConsistency" class="styled-input" style="font-size: 13px; padding: 9px 14px; flex: 1;" placeholder="Describe main character visual features (e.g. Leo, 10yo boy, tousled brown hair, yellow hoodie, blue jeans)...">
-            <button id="btnLockCharacter" class="glass-btn secondary-btn" style="white-space: nowrap; padding: 8px 14px; font-size: 12px;" title="Save character specification">🔒 Lock Character</button>
+
+            <!-- Inline Character Consistency Anchor -->
+            <div id="characterConsistencyCard" class="compact-char-anchor">
+              <div class="char-anchor-label">
+                <span>👥</span>
+                <span class="char-anchor-tag">Character Lock:</span>
+              </div>
+              <input type="text" id="inputCharacterConsistency" class="styled-input compact-char-input" placeholder="Main character visual traits (e.g. Leo, 10yo boy, yellow hoodie)...">
+              <button id="btnLockCharacter" class="glass-btn secondary-btn compact-lock-btn" title="Save character specification">🔒 Lock</button>
+            </div>
           </div>
         </div>
 
-        <div id="storyboardScenesGrid" class="scenes-masonry-grid">
+        <!-- Sticky Scene Quick-Jump Ribbon -->
+        <nav id="sceneQuickJumpBar" class="scene-quick-jump-ribbon" aria-label="Scene Quick Navigation">
+          <!-- Populated dynamically by app.js: [Sc 1 ✓] [Sc 2 ✓] [Sc 3 ⏳] ... -->
+        </nav>
+
+        <!-- Scene Cards Masonry Grid -->
+        <div id="storyboardScenesGrid" class="scenes-masonry-grid compact-grid">
           <!-- Populated dynamically with scene cards -->
+        </div>
+
+        <!-- Floating Quick Scroll to Top & Render Pill -->
+        <div id="floatingDirectorWidget" class="floating-director-widget" style="display:none;">
+          <button id="btnFloatingScrollTop" type="button" class="floating-widget-btn" title="Scroll to top of Director's Board">
+            <span>⬆️ Top</span>
+          </button>
+          <button id="btnFloatingRenderFilm" type="button" class="floating-widget-btn render-cta" title="Render Full Film">
+            <span>🚀 Render Film</span>
+          </button>
         </div>
       </section>
 
       <!-- STAGE 3: STUDIO RENDERING -->
       <section id="stage3Rendering" class="stage-panel">
-        <div class="render-progress-card glass-panel">
+        <div class="render-progress-card glass-panel compact-render-card">
           <div class="render-orb-visual">
             <div class="pulse-ring"></div>
             <div class="pulse-ring delay-1"></div>
@@ -454,7 +660,7 @@ Narration: The detective scanned the horizon for clues..."></textarea>
           </div>
 
           <h2 class="render-heading">Animation Engine at Work</h2>
-          <p id="renderStepDetail" class="render-detail-text">Composing scene frames and voiceover...</p>
+          <p id="renderStepDetail" class="render-detail-text">Composing scene frames, audio narration, and cinematic pan & zoom...</p>
 
           <div class="progress-bar-wrapper">
             <div class="progress-bar-track">
@@ -476,11 +682,11 @@ Narration: The detective scanned the horizon for clues..."></textarea>
           </div>
 
           <!-- Navigation controls while rendering -->
-          <div class="render-nav-actions" style="margin-top: 24px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-            <button id="btnBackToBoardFromStage3" class="glass-btn secondary-btn" title="Return to Director's Storyboard">
-              <span class="btn-icon">📋</span> Back to Director's Board
+          <div class="render-nav-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button id="btnBackToBoardFromStage3" class="glass-btn secondary-btn compact-btn" title="Return to Director's Storyboard">
+              <span class="btn-icon">📋</span> Back to Storyboard
             </button>
-            <button id="btnBackToHomeFromStage3" class="glass-btn secondary-btn" title="Return to Homepage">
+            <button id="btnBackToHomeFromStage3" class="glass-btn secondary-btn compact-btn" title="Return to Homepage">
               <span class="btn-icon">🏠</span> Back to Home
             </button>
           </div>
@@ -489,23 +695,23 @@ Narration: The detective scanned the horizon for clues..."></textarea>
 
       <!-- STAGE 4: CINEMA PREMIERE & DOWNLOAD -->
       <section id="stage4Cinema" class="stage-panel">
-        <div class="cinema-theater-box glass-panel">
+        <div class="cinema-theater-box glass-panel compact-cinema-box">
           <div class="theater-header">
             <div>
               <span class="tag-badge">🏆 Master Film Complete</span>
-              <h2 id="cinemaMovieTitle" class="cinema-title">Untitled Film</h2>
-              <p id="cinemaMovieLogline" class="cinema-logline">A story rendered by AniStory AI</p>
+              <h2 id="cinemaMovieTitle" class="cinema-title compact-title">Untitled Film</h2>
+              <p id="cinemaMovieLogline" class="cinema-logline compact-logline">A story rendered by AniStory AI</p>
             </div>
             <div class="cinema-action-buttons">
-              <button id="btnCinemaBackToBoard" class="glass-btn secondary-btn" title="Return to Storyboard to edit">
+              <button id="btnCinemaBackToBoard" class="glass-btn secondary-btn compact-btn" title="Return to Storyboard to edit">
                 <span class="btn-icon">📋</span> Storyboard
               </button>
               <a id="btnDownloadMovie" class="hero-action-btn compact-btn" href="#" download>
-                <span class="btn-text">Download MP4 Film</span>
+                <span class="btn-text">Download MP4</span>
                 <span class="btn-arrow">📥</span>
               </a>
-              <button id="btnStartNewStory" class="glass-btn secondary-btn" title="Start a fresh story from scratch">
-                <span class="btn-icon">🏠</span> Back to Home / New Story
+              <button id="btnStartNewStory" class="glass-btn secondary-btn compact-btn" title="Start a fresh story from scratch">
+                <span class="btn-icon">🏠</span> New Story
               </button>
             </div>
           </div>
@@ -518,7 +724,7 @@ Narration: The detective scanned the horizon for clues..."></textarea>
           </div>
 
           <!-- Film Metadata Specs -->
-          <div class="movie-specs-grid">
+          <div class="movie-specs-grid compact-specs-grid">
             <div class="spec-card">
               <span class="spec-label">Resolution & Ratio</span>
               <span id="specResolution" class="spec-val">1280 x 720 HD (16:9)</span>
@@ -538,15 +744,24 @@ Narration: The detective scanned the horizon for clues..."></textarea>
           </div>
 
           <!-- Individual Scene Clips Gallery -->
-          <div id="cinemaSceneClipsWrapper" style="margin-top: 28px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 24px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px; flex-wrap:wrap; gap:10px;">
+          <div id="cinemaSceneClipsWrapper" style="margin-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px; flex-wrap:wrap; gap:8px;">
               <div>
-                <h3 style="font-family:'Outfit', sans-serif; font-size: 18px; font-weight:700; color:#f1f5f9; display:flex; align-items:center; gap:8px;">
+                <h3 style="font-family:'Outfit', sans-serif; font-size: 16px; font-weight:700; color:#f1f5f9; display:flex; align-items:center; gap:8px;">
                   <span>🎬</span> Individual Scene Animation Clips
                   <span id="cinemaClipsCountBadge" class="tag-badge" style="background:rgba(99, 102, 241, 0.2); color:#a5b4fc; font-size:11px;">0 clips</span>
                 </h3>
                 <p style="color:var(--text-dim); font-size:12px; margin-top:2px;">Watch and download each animated scene video separately</p>
               </div>
+            </div>
+            <div id="cinemaSceneClipsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;">
+              <!-- Populated dynamically with scene clip cards -->
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>        </div>
             </div>
             <div id="cinemaSceneClipsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
               <!-- Populated dynamically with scene clip cards -->
@@ -568,11 +783,10 @@ Narration: The detective scanned the horizon for clues..."></textarea>
         <div class="form-group">
           <label for="selectSettingsImageMode" class="input-label">🎨 Default Image Painting Engine</label>
           <select id="selectSettingsImageMode" class="styled-select">
-            <option value="manual">📝 Storyboard Only (No AI Painting — Placeholders & Manual Uploads)</option>
-            <option value="server">🌐 Free Neural AI (Flux / SDXL) & Server Engine (Zero Cost)</option>
+            <option value="gemini" selected>✨ Google Gemini / Imagen 3 AI Paint (API Key or Cookie)</option>
             <option value="neural_love">💖 Neural.love AI Art Engine (High-Fidelity Artwork)</option>
-            <option value="gemini">✨ Google Gemini / Imagen 3 AI Paint (API Key or Cookie)</option>
             <option value="puter">🖌️ In-Browser AI Paint (Puter.js — subject to Puter balance)</option>
+            <option value="manual">📝 Storyboard Only (No AI Painting — Placeholders & Manual Uploads)</option>
           </select>
           <p class="field-hint">You can also quickly toggle this directly on the Director's Storyboard bar.</p>
         </div>
@@ -795,6 +1009,6 @@ Narration: The detective scanned the horizon for clues..."></textarea>
   <div id="toastNotification" class="toast-popup"></div>
 
   <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=2.4"></script>
+  <script src="/js/app.js?v=3.2"></script>
 </body>
 </html>

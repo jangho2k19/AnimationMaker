@@ -66,6 +66,6 @@
       "veo_3_1_i2v_lite",
       "veo_3_1_i2v_s_fast_ultra"
     ],
-    "default": "veo_3_1_i2v_lite"
+    "default": "veo_3_1_i2v_s_fast_ultra"
   }
 }

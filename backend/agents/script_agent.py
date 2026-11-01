@@ -11,6 +11,10 @@ class ScriptAgent:
         self.api_key = api_key or os.environ.get(f"{self.provider.upper()}_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
         self.model = model
 
+        # If provider is explicitly builtin / offline, do not search or overwrite with cloud credentials
+        if self.provider in ("builtin", "offline", "architect"):
+            return
+
         # Automatically check server-side stored credentials if api_key was not passed
         if not self.api_key:
             try:
@@ -18,11 +22,17 @@ class ScriptAgent:
                 creds = get_server_credentials()
                 psid = creds.get("gemini_cookie_psid")
                 psidts = creds.get("gemini_cookie_psidts")
-                if psid and self.provider in ("gemini", "gemini_cookie", "gemini_web"):
-                    self.api_key = f"{psid}|{psidts}" if psidts else psid
-                    self.provider = "gemini_cookie"
-                elif creds.get("gemini_api_key") and self.provider == "gemini":
-                    self.api_key = creds.get("gemini_api_key")
+                if self.provider == "gemini":
+                    if creds.get("gemini_api_key") and creds["gemini_api_key"].startswith("AIzaSy"):
+                        self.api_key = creds.get("gemini_api_key")
+                    elif psid:
+                        self.api_key = f"{psid}|{psidts}" if psidts else psid
+                        self.provider = "gemini_cookie"
+                    elif creds.get("gemini_api_key"):
+                        self.api_key = creds.get("gemini_api_key")
+                elif self.provider in ("gemini_cookie", "gemini_web"):
+                    if psid:
+                        self.api_key = f"{psid}|{psidts}" if psidts else psid
                 elif creds.get("openai_api_key") and self.provider == "openai":
                     self.api_key = creds.get("openai_api_key")
                 elif creds.get("claude_api_key") and self.provider in ("claude", "anthropic"):
@@ -31,16 +41,50 @@ class ScriptAgent:
                     self.api_key = creds.get("deepseek_api_key")
                 elif creds.get("nvidia_api_key") and self.provider == "nvidia":
                     self.api_key = creds.get("nvidia_api_key")
-                elif psid and not self.api_key:
-                    self.api_key = f"{psid}|{psidts}" if psidts else psid
-                    self.provider = "gemini_cookie"
             except Exception:
                 pass
+
+    @classmethod
+    def estimate_optimal_scene_count(cls, idea: str, target_duration: int = None) -> int:
+        """
+        Analyzes the input story's length, paragraph structure, dialogue turns, and narrative beats
+        to automatically determine the optimal number of 8-second scenes.
+        """
+        if target_duration and target_duration > 0:
+            return max(3, min(16, int(round(target_duration / 8.0))))
+
+        clean = (idea or "").strip()
+        if not clean:
+            return 4
+
+        # Check explicit scene headers (e.g. Scene 1, Cảnh 1)
+        scene_headers = re.findall(r'(?:^|\n)\s*(?:Scene|Cảnh|Phân cảnh)\s*\d+', clean, re.IGNORECASE)
+        if len(scene_headers) >= 2:
+            return max(2, min(24, len(scene_headers)))
+
+        words = clean.split()
+        word_count = len(words)
+        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', clean) if len(p.strip()) > 10]
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?…])\s+|\n+', clean) if len(s.strip()) > 8]
+        dialogue_turns = re.findall(r'(?:^|\n)\s*[–\-—]\s*[^\n]+|["“][^"”\n]{4,}["”]', clean)
+
+        if word_count <= 25 and len(dialogue_turns) <= 1:
+            return 4
+        if word_count <= 45 and len(dialogue_turns) <= 2:
+            return 5
+
+        by_words = int(round(word_count / 20.0))
+        by_sentences = int(round(len(sentences) * 0.75))
+        by_dialogues = len(dialogue_turns) + 2
+        by_paragraphs = len(paragraphs) + 1 if len(paragraphs) >= 3 else 4
+
+        estimated = max(4, by_words, by_sentences, by_dialogues, by_paragraphs)
+        return max(4, min(16, estimated))
 
     async def generate_storyboard(
         self,
         idea: str,
-        num_scenes: int = 4,
+        num_scenes: int = 0,
         target_duration: int = None,
         art_style: str = "ghibli",
         language: str = "en",
@@ -65,93 +109,57 @@ class ScriptAgent:
             print(f"🎬 Detected pre-existing screenplay with {len(imported['scenes'])} scenes in user idea! Importing directly...")
             if title and (not imported.get("title") or imported.get("title") == "Imported Film"):
                 imported["title"] = title
+            imported["scenes"] = [
+                self.ensure_separate_prompts(sc, art_style=art_style, language=language)
+                for sc in imported["scenes"]
+                if isinstance(sc, dict)
+            ]
+            imported["scenes"] = self.sync_story_dialogues_to_scenes(
+                imported["scenes"],
+                idea=idea,
+                art_style=art_style,
+                language=language,
+                target="all"
+            )
             return imported
 
         # 2. Only use offline Story Architect if explicitly requested
         if self.provider in ("builtin", "offline", "architect"):
             print("🏛️ Using offline built-in Story Architect as explicitly configured.")
-            return self._generate_with_story_architect(idea, num_scenes, art_style, language, audience)
+            story = self._generate_with_story_architect(idea, num_scenes, art_style, language, audience)
+            if story and isinstance(story.get("scenes"), list):
+                story["scenes"] = [
+                    self.ensure_separate_prompts(sc, art_style=art_style, language=language)
+                    for sc in story["scenes"]
+                    if isinstance(sc, dict)
+                ]
+                story["scenes"] = self.sync_story_dialogues_to_scenes(
+                    story["scenes"],
+                    idea=idea,
+                    art_style=art_style,
+                    language=language,
+                    target="all"
+                )
+            return story
 
         prompt = self._build_story_prompt(idea, num_scenes, target_duration, art_style, language, audience, title=title)
 
-        # 3. Check for API key / session cookies
-        if not self.api_key:
-            # Last-ditch check in server credentials
-            try:
-                from backend.config import get_server_credentials
-                creds = get_server_credentials()
-                psid = creds.get("gemini_cookie_psid")
-                psidts = creds.get("gemini_cookie_psidts")
-                if psid and self.provider in ("gemini", "gemini_cookie", "gemini_web"):
-                    self.api_key = f"{psid}|{psidts}" if psidts else psid
-                    self.provider = "gemini_cookie"
-            except Exception:
-                pass
-
-        if not self.api_key:
-            raise RuntimeError(
-                f"AI Storyboard Error: No API Key or Gemini Cookie found for provider '{self.provider}'. "
-                "Please configure your Gemini Cookie or API key in Settings ⚙️ to generate the storyboard with AI."
-            )
-
         try:
-            is_cookie = (
-                self.provider in ("gemini_cookie", "gemini_web") or
-                ("__Secure-1PSID" in self.api_key) or
-                (self.provider == "gemini" and len(self.api_key) > 70 and not self.api_key.startswith("AIzaSy"))
-            )
-
-            if is_cookie:
-                story = await self._generate_with_gemini_cookie(prompt, self.api_key)
-                print("Generated screenplay using Google Gemini Web Session (Cookies)!")
-                return story
-
-            elif self.provider == "gemini":
-                story = self._generate_with_gemini(prompt, self.model or "gemini-2.0-flash")
-                print(f"Generated screenplay using Google Gemini ({self.model or 'gemini-2.0-flash'})!")
-                return story
-
-            elif self.provider == "openai":
-                story = self._generate_with_openai_compatible(
-                    endpoint="https://api.openai.com/v1",
-                    api_key=self.api_key,
-                    model=self.model or "gpt-4o",
-                    prompt=prompt
+            story = await self._dispatch_llm_request(prompt)
+            if story and isinstance(story, dict) and "scenes" in story and isinstance(story["scenes"], list):
+                story["scenes"] = [
+                    self.ensure_separate_prompts(sc, art_style=art_style, language=language)
+                    for sc in story["scenes"]
+                    if isinstance(sc, dict)
+                ]
+                story["scenes"] = self.sync_story_dialogues_to_scenes(
+                    story["scenes"],
+                    idea=idea,
+                    art_style=art_style,
+                    language=language,
+                    target="all"
                 )
-                print(f"Generated screenplay using OpenAI ({self.model or 'gpt-4o'})!")
-                return story
-
-            elif self.provider in ("claude", "anthropic"):
-                story = self._generate_with_anthropic(
-                    api_key=self.api_key,
-                    model=self.model or "claude-3-5-sonnet-20241022",
-                    prompt=prompt
-                )
-                print(f"Generated screenplay using Anthropic Claude ({self.model or 'claude-3-5-sonnet'})!")
-                return story
-
-            elif self.provider == "deepseek":
-                story = self._generate_with_openai_compatible(
-                    endpoint="https://api.deepseek.com/v1",
-                    api_key=self.api_key,
-                    model=self.model or "deepseek-chat",
-                    prompt=prompt
-                )
-                print(f"Generated screenplay using DeepSeek ({self.model or 'deepseek-chat'})!")
-                return story
-
-            elif self.provider == "nvidia":
-                story = self._generate_with_openai_compatible(
-                    endpoint="https://integrate.api.nvidia.com/v1",
-                    api_key=self.api_key,
-                    model=self.model or "meta/llama-3.1-70b-instruct",
-                    prompt=prompt
-                )
-                print(f"Generated screenplay using NVIDIA NIM ({self.model or 'meta/llama-3.1-70b-instruct'})!")
-                return story
-
-            else:
-                raise RuntimeError(f"Unsupported AI provider '{self.provider}'.")
+            return story
 
         except Exception as e:
             err_msg = str(e)
@@ -167,6 +175,173 @@ class ScriptAgent:
                 "Please check your API key, model selection, or network connection."
             )
 
+    async def _dispatch_llm_request(self, prompt: str) -> Dict[str, Any]:
+        """Dispatches a prompt across the configured AI provider and returns structured JSON."""
+        if not self.api_key and self.provider not in ("builtin", "offline", "architect"):
+            try:
+                from backend.config import get_server_credentials
+                creds = get_server_credentials()
+                psid = creds.get("gemini_cookie_psid")
+                psidts = creds.get("gemini_cookie_psidts")
+                if self.provider == "gemini":
+                    if creds.get("gemini_api_key") and creds["gemini_api_key"].startswith("AIzaSy"):
+                        self.api_key = creds.get("gemini_api_key")
+                    elif psid:
+                        self.api_key = f"{psid}|{psidts}" if psidts else psid
+                        self.provider = "gemini_cookie"
+                    elif creds.get("gemini_api_key"):
+                        self.api_key = creds.get("gemini_api_key")
+                elif self.provider in ("gemini_cookie", "gemini_web"):
+                    if psid:
+                        self.api_key = f"{psid}|{psidts}" if psidts else psid
+                elif creds.get("openai_api_key") and self.provider == "openai":
+                    self.api_key = creds.get("openai_api_key")
+                elif creds.get("claude_api_key") and self.provider in ("claude", "anthropic"):
+                    self.api_key = creds.get("claude_api_key")
+                elif creds.get("deepseek_api_key") and self.provider == "deepseek":
+                    self.api_key = creds.get("deepseek_api_key")
+                elif creds.get("nvidia_api_key") and self.provider == "nvidia":
+                    self.api_key = creds.get("nvidia_api_key")
+            except Exception:
+                pass
+
+        if not self.api_key:
+            raise RuntimeError(
+                f"AI Generation Error: No API Key or Gemini Cookie found for provider '{self.provider}'. "
+                "Please configure your Gemini Cookie or API key in Settings ⚙️."
+            )
+
+        is_cookie = (
+            self.provider in ("gemini_cookie", "gemini_web") or
+            ("__Secure-1PSID" in self.api_key) or
+            (self.provider == "gemini" and len(self.api_key) > 70 and not self.api_key.startswith("AIzaSy"))
+        )
+
+        if is_cookie:
+            return await self._generate_with_gemini_cookie(prompt, self.api_key)
+        elif self.provider == "gemini":
+            return await self._generate_with_gemini(prompt, self.model or "gemini-2.5-flash")
+        elif self.provider == "openai":
+            return await self._generate_with_openai_compatible(
+                endpoint="https://api.openai.com/v1",
+                api_key=self.api_key,
+                model=self.model or "gpt-4o-mini",
+                prompt=prompt
+            )
+        elif self.provider in ("claude", "anthropic"):
+            return await self._generate_with_anthropic(
+                api_key=self.api_key,
+                model=self.model or "claude-3-5-haiku-20241022",
+                prompt=prompt
+            )
+        elif self.provider == "deepseek":
+            return await self._generate_with_openai_compatible(
+                endpoint="https://api.deepseek.com/v1",
+                api_key=self.api_key,
+                model=self.model or "deepseek-chat",
+                prompt=prompt
+            )
+        elif self.provider == "nvidia":
+            return await self._generate_with_openai_compatible(
+                endpoint="https://integrate.api.nvidia.com/v1",
+                api_key=self.api_key,
+                model=self.model or "meta/llama-3.1-70b-instruct",
+                prompt=prompt
+            )
+        else:
+            raise RuntimeError(f"Unsupported AI provider '{self.provider}'.")
+
+    async def generate_advertisement_storyboard(
+        self,
+        product_name: str,
+        description: str,
+        specs: str = "",
+        brand: str = "",
+        target_audience: str = "General",
+        ad_style: str = "cinematic_commercial",
+        call_to_action: str = "Order now!",
+        pricing_offer: str = "",
+        num_scenes: int = 4,
+        target_duration: int = None,
+        art_style: str = "realistic",
+        language: str = "en"
+    ) -> Dict[str, Any]:
+        """
+        Generates an electrifying, high-converting product commercial storyboard.
+        Tailored for advertising goods with product photos, technical specs, and persuasive copy.
+        """
+        # If offline/builtin mode requested:
+        if self.provider in ("builtin", "offline", "architect"):
+            print("🛍️ Using built-in offline Commercial Generator...")
+            return self._generate_offline_advertisement(
+                product_name=product_name,
+                description=description,
+                specs=specs,
+                brand=brand,
+                target_audience=target_audience,
+                ad_style=ad_style,
+                call_to_action=call_to_action,
+                pricing_offer=pricing_offer,
+                num_scenes=num_scenes,
+                art_style=art_style,
+                language=language
+            )
+
+        prompt = self._build_advertisement_prompt(
+            product_name=product_name,
+            description=description,
+            specs=specs,
+            brand=brand,
+            target_audience=target_audience,
+            ad_style=ad_style,
+            call_to_action=call_to_action,
+            pricing_offer=pricing_offer,
+            num_scenes=num_scenes,
+            target_duration=target_duration,
+            art_style=art_style,
+            language=language
+        )
+
+        try:
+            story = await self._dispatch_llm_request(prompt)
+            if not story or not isinstance(story.get("scenes"), list) or len(story["scenes"]) == 0:
+                print("⚠️ AI returned empty ad storyboard. Falling back to built-in commercial director...")
+                story = self._generate_offline_advertisement(
+                    product_name=product_name,
+                    description=description,
+                    specs=specs,
+                    brand=brand,
+                    target_audience=target_audience,
+                    ad_style=ad_style,
+                    call_to_action=call_to_action,
+                    pricing_offer=pricing_offer,
+                    num_scenes=num_scenes,
+                    art_style=art_style,
+                    language=language
+                )
+            else:
+                story["scenes"] = [
+                    self.ensure_separate_prompts(sc, art_style=art_style, language=language)
+                    for sc in story["scenes"]
+                    if isinstance(sc, dict)
+                ]
+            return story
+        except Exception as e:
+            print(f"⚠️ Commercial AI generation error ({e}). Using offline Commercial Generator fallback...")
+            return self._generate_offline_advertisement(
+                product_name=product_name,
+                description=description,
+                specs=specs,
+                brand=brand,
+                target_audience=target_audience,
+                ad_style=ad_style,
+                call_to_action=call_to_action,
+                pricing_offer=pricing_offer,
+                num_scenes=num_scenes,
+                art_style=art_style,
+                language=language
+            )
+
     def _build_story_prompt(
         self,
         idea: str,
@@ -177,146 +352,134 @@ class ScriptAgent:
         audience: str = "general",
         title: str = None
     ) -> str:
-        # For Google Flow / Veo acting videos, each video clip is fixed at 8.0s.
-        # Spoken narration MUST be <= 7.2 seconds (strictly 12-16 words, absolute maximum 17 words)
-        # to ensure the narration concludes before the video finishes, completely
-        # avoiding awkward looping or repeating video content.
-        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 8)
-        target_scene_sec = max(5, int(calc_duration / max(1, num_scenes)))
-        target_scene_sec = min(target_scene_sec, 8)  # Google Flow / Veo standard is 8.0s
-        max_words = min(17, max(12, int((target_scene_sec - 1.0) * 2.3)))
+        is_auto_scenes = not num_scenes or num_scenes <= 0
+        est_scenes = self.estimate_optimal_scene_count(idea, target_duration) if is_auto_scenes else num_scenes
+        min_auto_scenes = max(3, est_scenes - 1)
+        max_auto_scenes = min(20, est_scenes + 2)
+
+        calc_duration = target_duration if (target_duration and target_duration > 0) else (est_scenes * 8)
+        target_scene_sec = max(5, int(calc_duration / max(1, est_scenes)))
+        target_scene_sec = min(target_scene_sec, 8)
+        max_words = min(24, max(15, int((target_scene_sec - 0.5) * 2.8)))
 
         clean_idea_strip = idea.strip()
         word_count = len(clean_idea_strip.split())
+        has_dialogue_markers = bool(re.search(r'(?:^|\n)\s*[–\-—]|["“”]', clean_idea_strip))
         is_narrative = (
-            word_count > 45 or
+            word_count > 30 or
+            has_dialogue_markers or
             "\n\n" in clean_idea_strip or
             any(marker in clean_idea_strip.lower() for marker in [
                 "once upon", "in times gone by", "there was a", "long ago",
                 "ngày xửa ngày xưa", "thời xa xưa", "câu chuyện", "tại một vương quốc",
-                "the king", "the prince", "the princess", "the golden"
+                "truyện", "kịch bản", "the king", "the prince", "the princess", "the golden"
             ])
+        )
+
+        scene_count_desc = (
+            f"an optimal number of scenes determined by you (recommended {min_auto_scenes} to {max_auto_scenes} scenes based on the story's natural beats and dialogues)"
+            if is_auto_scenes
+            else f"{num_scenes} scenes"
+        )
+        arc_header = (
+            f"1. 3-ACT NARRATIVE ARC & AUTONOMOUS SCENE COUNTING (AUTO MODE — Recommended {min_auto_scenes}–{max_auto_scenes} scenes):\n"
+            f"   - Analyze the story's plot beats, setting shifts, character interactions, and dialogues to decide the exact number of scenes needed.\n"
+            f"   - Give each distinct action beat, dialogue exchange, and the final twist/punchline its own dedicated 8-second scene so no scene is rushed or overcrowded."
+            if is_auto_scenes
+            else f"1. 3-ACT NARRATIVE ARC (Across {num_scenes} scenes):"
+        )
+        seq_continuity_desc = (
+            "from Scene 1 through the final scene"
+            if is_auto_scenes
+            else f"from Scene 1 to Scene {num_scenes}"
         )
 
         adaptation_mandate = ""
         if is_narrative:
-            adaptation_mandate = f"""
-STORY ADAPTATION & FIDELITY MANDATE (ABSOLUTE HIGHEST PRIORITY):
-The user provided a COMPLETE, SPECIFIC STORY / FAIRY TALE / NARRATIVE below.
-Your role as director is FAITHFUL ADAPTATION of this EXACT story into a {num_scenes}-scene animated short film.
-
-CRITICAL DIRECTORIAL RULES:
-1. STRICT PLOT ACCURACY & ZERO CONTRADICTIONS:
-   - Adhere strictly to the actual plot, true sequence of events, and canonical characters provided in the story.
-   - Do NOT invent an unrelated story or fabricate bizarre plot twists that contradict the source material.
-2. PRESERVE ALL CENTRAL CREATURES, MAGICAL ARTIFACTS & TITULAR ENTITIES:
-   - Identify the primary entities and titular figures in the story (e.g., if the story centers on a Golden Bird stealing golden apples and dropping a golden feather when shot by an arrow, the Golden Bird MUST appear in Scene 1 at the apple tree!).
-   - ABSOLUTE PROHIBITION ON CONFUSING OR SWAPPING CHARACTERS:
-     * Never replace one creature with another (e.g., DO NOT replace the Golden Bird with the Fox under the apple tree! The Fox is met later on the road as an ally).
-     * DO NOT omit titular or central entities (the Golden Bird must be prominently present in the scenes where it belongs: the midnight theft, the cage quest, the recovery, and the triumphant return!).
-3. COMPREHENSIVE NARRATIVE PACING ACROSS {num_scenes} SCENES:
-   Distribute the dramatic arc chronologically from the actual beginning to the actual ending:
-   - Scene 1: The Inciting Incident & Central Mystery/Wonder (The original starting dilemma, titular creature/wonder, quest initiation).
-   - Middle Scenes: The Quest, Allies & Trials (Encountering the faithful guide/Fox, journeying to the foreign castle, the challenge of the cages/horses, securing the treasures and companion).
-   - Climax / Crisis: The Turning Point / Treachery / Conflict (Ambush by jealous brothers at the brook, theft of the prizes, betrayal).
-   - Final Scene: The Triumphant Return & Resolution (Returning in disguise, the magical creatures/bird singing in recognition, exposure of villains, celebration, and freeing the faithful helper from the curse).
-4. CHARACTERS SPECIFICATION:
-   - In the "characters" field, describe ALL key figures from the story: the protagonist, key secondary characters, and CRITICALLY any central mythical creatures or animals (e.g., "Prince Eric: 18yo male with messy light brown hair, wearing a forest-green royal tunic with rolled sleeves and worn leather belt. The Golden Bird: radiant mythical bird with feathers glittering like molten gold and brilliant glowing crest. The Faithful Fox: sleek oversized red fox with white-tipped tail and intelligent amber eyes").
-"""
+            adaptation_mandate = (
+                f"- FAITHFUL STORY & DIALOGUE ADAPTATION: Follow the user's EXACT plot, canonical characters, dialogues, twists, and punchline/ending chronologically across {scene_count_desc} without omitting or replacing key figures or key lines."
+            )
         else:
-            adaptation_mandate = f"""
-STORY FIDELITY DIRECTIVE:
-- Develop an engaging animated short film directly rooted in the user's concept.
-- If the idea mentions specific characters, animals, or creatures (e.g., a golden bird, a dragon, a fox), ensure all of them are faithfully featured in the character specification and scene visual prompts.
-- Never conflate or mix up distinct characters or creatures.
-"""
+            adaptation_mandate = (
+                f"- COHESIVE ORIGINAL STORY ARC: Create an emotionally engaging, cause-and-effect story arc rooted in \"{clean_idea_strip}\" with consistent characters across {scene_count_desc}."
+            )
 
-        title_line = f'Project Title: "{title}" (IMPORTANT: Use this exact title for the film)\n' if title else f'Film Title: Catchy, cinematic, specific to the plot in {language}.\n'
+        title_clause = f'Film Title: "{title}"' if title else f'Film Title: Catchy, cinematic title in {language}'
 
-        return f"""You are an award-winning animation director and screenwriter at Pixar, Studio Ghibli, and modern AI video studios.
-Create an animated short film storyboard tailored for ACTING VIDEO GENERATION (Google Flow / Google Veo 3 / I2V) faithfully representing the provided story:
+        return f"""You are a master animation director at Pixar, Studio Ghibli, and premier cinematic AI studios (Google Flow / Google Veo 3 / Imagen 3).
+Transform the provided input into a breathtaking, emotionally resonant animated short film storyboard tailored for ACTING VIDEO GENERATION (8-second scenes, Google Flow / Veo 3 I2V).
+
 Story Input:
 \"\"\"
-{idea}
+{clean_idea_strip}
 \"\"\"
-{title_line}Target Audience: {audience}
-Number of Scenes: Exactly {num_scenes} scenes
-Art Style: {art_style}
-Language for Narration & Titles: {language}
+
+Parameters:
+- {title_clause}
+- Target Audience: {audience} | Art Style: {art_style} | Narration Language: {language}
 {adaptation_mandate}
 
-DIRECTORIAL MANDATE FOR CHARACTER VISUAL CONSISTENCY:
-1. CHARACTERS SPECIFICATION:
-   - Create a specific, detailed visual design for the main protagonist(s), key secondary characters / companions / antagonists, AND ANY CENTRAL MYTHICAL CREATURE OR ANIMAL (e.g., "Prince Eric: 18yo male with sharp jawline, messy light brown hair, wearing forest-green royal tunic with rolled sleeves and worn leather belt. The Golden Bird: radiant mythical bird with feathers glittering like pure molten gold, glowing golden eyes, and an elegant crest. The Faithful Fox: sleek oversized red fox with intelligent amber eyes and distinctive white-tipped tail").
-   - These exact visual design tokens must remain consistent throughout the entire film.
+CINEMATIC DIRECTIVES:
+{arc_header}
+   - Act I (Exposition & Catalyst): Establish the world, introduce the protagonist's specific situation, and ignite the central conflict or adventure.
+   - Act II (Rising Action & Confrontation): Escalating obstacles, key character interactions and dialogues, stakes rising to peak tension.
+   - Act III (Climax & Resolution): Deliver the decisive emotional climax, twist, or punchline, followed by a resonant conclusion tied directly to the premise.
 
-2. ACTING VIDEO DIRECTIVES & PERFORMANCE CHOREOGRAPHY (GOOGLE FLOW & VEO 3):
-   - For EVERY scene, you must provide:
-     a) `visual_prompt`: Ultra-detailed scene illustration prompt describing environment, lighting, art style, framing, and the character's signature visual tokens.
-     b) `acting_prompt`: Exhaustive 8-second acting performance prompt formatted specifically for Google Flow / Veo video generation.
-        CRITICAL RULES FOR `acting_prompt`:
-        - 3-BEAT TEMPORAL PACING (MANDATORY): Structure every 8-second clip into sequential physical beats:
-          `0-3s: [Initial physical action, movement, gesture, or establishing character state]`
-          `3-6s: [Core physical activity, interaction with props/objects, or spoken dialogue/conflict]`
-          `6-8s: [Emotional reaction, physiological response, resolution, and camera settle]`
-          `Camera: [Cinematic camera movement]. Lighting: [Atmospheric lighting]. Negative: subtitles, watermark, text overlay.`
-        - CHARACTER ACTIVITIES & PHYSICAL ACTIONS:
-          Direct concrete, observable physical tasks: examining clues, welding or hammering, climbing, handing over props, drawing weapons, bandaging wounds, turning dials, or fleeing pursuit. Describe physical symptoms of emotion (bead of sweat, pupils dilating, chest heaving, tight jaw).
-        - CHARACTER COMMUNICATION & SPOKEN DIALOGUE (MANDATORY in at least 2 scenes):
-          Characters MUST communicate, converse, or argue! In dialogue scenes (Two-Shot, Over-The-Shoulder, or Speaking/Reaction), embed their spoken words directly inside the clip using this exact syntax:
-          `[Character Name] says: "[Short dialogue line]" (no subtitles) — [tone of voice]`
-          (If language is Vietnamese, use: `(không phụ đề) — [giọng nói]`)
-          * Dialogue length: STRICTLY 5 to 12 words per character per 8s clip for realistic, crisp lip-sync.
-          * Always include the `(no subtitles)` suffix to prevent AI from burning distorted text onto video frames.
-        - CINEMATIC SCENE ARCHETYPE VARIETY:
-          Blend diverse archetypes across the {num_scenes} scenes:
-          - Establishing Shot (world scale, geography, atmospheric lighting, zero or distant character)
-          - Action Beat (physical labor, athletic motion, combat, mechanics, escape)
-          - Dialogue Two-Shot (two characters in frame, exchanging dialogue, tension, decision)
-          - Reaction Focus (close-up on listener's internal shift while dialogue or shock is absorbed)
-          - Climax / Resolution (climactic action and poignant closing)
-     c) Separation of Narration and In-Scene Dialogue:
-        - `narration` field: Voiceover narration spoken by the narrator (TTS). Provides macroscopic lore, emotional depth, and stakes. STRICTLY <= 7.2 seconds ({max_words} words max).
-        - `acting_prompt` field: Contains the visual acting, physical performance, and microscopic character dialogue (`Character says: "..."`).
+2. SEPARATE PROMPTS FOR IMAGE & VIDEO (MANDATORY REQUIREMENT):
+   - You MUST generate TWO ENTIRELY SEPARATE, DIFFERENT prompts for each scene:
+     a) `visual_prompt` (STILL IMAGE PROMPT for Midjourney / Google Imagen 3):
+        * A detailed, rich visual description of the single frozen frame in {art_style} art style.
+        * Focus on: scene composition, character visual appearance & outfit, environment background, color palette, lighting atmosphere, artistic textures.
+        * STRICT PROHIBITION: Do NOT include 0-3s timestamps, camera motion instructions, negative prompts, or spoken dialogue quotes.
+     b) `acting_prompt` (PROFESSIONAL CINEMATIC VIDEO PROMPT for Google Flow / Veo 3 / Kling / Sora):
+        * Write as natural, director-grade cinematic prose (90-140 words) in ENGLISH only regardless of project narration language.
+        * Structure:
+          - [Shot Framing & Camera Movement]: Define shot type (e.g. Medium wide tracking shot, Low-angle cinematic tracking shot) and describe the continuous camera motion as a dedicated cinematic sentence (e.g. "The camera executes a smooth, slow dolly push-in at eye level with steady fluid stabilization."). NEVER write "Camera: zoom_in".
+          - [Physically Reasonable 8-Second Performance]: Ground the character's movement in realistic physical inertia and natural progression tied to the scene's story event:
+            * 0-3s (Initiation): Organic movement starting from the keyframe pose (breathing, ambient breeze stirring hair and clothing, subtle weight shift, turning gaze).
+            * 3-6s (Core Acting Beat): Focused physical action and emotional nuance matching the scene's narrative beat. If speaking, keep dialogue strictly under 6 words so it delivers naturally: Character says in a [vocal tone] voice: "..." (no subtitles).
+            * 6-8s (Settling & Landing): Emotional reaction settling, steady breath or subtle nod, holding composition steady for a clean scene transition.
+          - [Atmospheric Lighting & Optics]: Define lighting setup (e.g. "Volumetric golden-hour rim lighting cutting through ambient dust motes, shot on 35mm lens with shallow depth of field and creamy background falloff.").
+          - [Veo 3 Audio & Negative Prompt]:
+            Audio: [natural atmospheric soundscape, gentle ambient breeze, no background music].
+            SFX: [1-2 subtle, realistic physical foley sound effects].
+            Negative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces, abrupt camera snap.
+        * STRICT REASONABILITY MANDATE: Avoid impossible morphing, violent acrobatics, rapid multi-angle cutting, or chaotic scene jumps. Keep the physical performance grounded, elegant, and believable for an 8-second single take.
+   - `visual_prompt` and `acting_prompt` MUST NEVER be identical. They serve two completely different AI engines.
 
-3. MANDATORY VOICEOVER DURATION CONSTRAINT (EQUAL OR SHORTER THAN 8-SECOND VIDEO):
-   - CRITICAL REQUIREMENT: Google Flow / Veo acting video clips have a fixed length of 8.0 seconds.
-   - The spoken voiceover narration for EACH scene MUST take no more than 5.0 to 7.2 seconds to speak (STRICTLY MAXIMUM {max_words} WORDS PER SCENE).
-   - Under NO circumstances should narration exceed {max_words} words! Longer narrations will force the 8-second video to repeat or loop its content, which is strictly prohibited.
-   - Narration must be punchy, rhythmic, emotionally evocative, and concise so it concludes naturally before the 8-second video clip ends.
+3. CHARACTER CONSISTENCY BLUEPRINT:
+   - In `characters`: Define immutable visual anchors for each key character (e.g. "Protagonist: Leo, 10yo boy with tousled amber-brown hair, expressive hazel eyes, signature mustard yellow knitted sweater, blue denim shorts, leather satchel").
+   - MANDATORY: Every `visual_prompt` MUST include these EXACT visual anchor tokens whenever that character appears to guarantee cross-scene character consistency in Imagen 3 and Veo 3.
 
-Requirements:
-- Film Title: {"Use '" + title + "'" if title else "Catchy, cinematic, specific to the plot in " + language}.
-- Logline: 1 compelling sentence.
-- Characters: Visual traits and signature appearance for strict character consistency across all scenes, including any titular or mythical beasts.
-- Scenes: Exactly {num_scenes} scenes following a dramatic narrative arc (Beginning -> Rising Tension -> Climax -> Resolution).
-  - Each scene MUST have:
-    - scene_number (int, from 1 to {num_scenes})
-    - title (creative scene title in {language})
-    - archetype (e.g., "Establishing Shot", "Action Beat", "Dialogue Two-Shot", "Reaction Focus", "Climax")
-    - visual_prompt (setting, lighting, character consistency tokens, 16:9 cinematic framing)
-    - acting_prompt (3-beat temporal action breakdown: 0-3s, 3-6s, 6-8s with character activities, physical performance, and spoken dialogue if applicable)
-    - narration (paced for <= 7.2s, STRICTLY 12 to {max_words} words of evocative voiceover narration in {language})
-    - camera_motion (choose one: "zoom_in", "zoom_out", "pan_left", "pan_right", "subtle_drift")
+4. CAMERA SHOT GRAMMAR:
+   - Progress shots dynamically across the arc: "Extreme Wide Establishing Shot", "Medium Character Profile", "Intimate Two-Shot Dialogue", "Dynamic Low-Angle Action Tracking", "Close-Up Heroic Climax", "Sweeping Panoramic Pull-Out".
+   - `camera_motion`: Choose kinetic, purposeful movement: "zoom_in", "zoom_out", "pan_left", "pan_right", or "subtle_drift".
 
-Return ONLY valid JSON matching this exact structure:
+5. VOICEOVER NARRATION — MUST TIE DIRECTLY TO THE STORY (CRITICAL MANDATE):
+   - `narration`: Engaging, story-driven voiceover narration in {language} that serves as the primary storytelling audio and subtitle track of the film.
+   - DIRECT STORY TIE-IN: Every scene's `narration` MUST directly narrate the specific plot event, character action, cause-and-effect progression, and emotional beat happening in that scene.
+   - SEQUENTIAL STORY CONTINUITY: When read {seq_continuity_desc}, the `narration` lines MUST form a complete, cohesive, self-contained story that faithfully tells the user's premise from beginning to end.
+   - PRESERVE KEY DIALOGUE & PUNCHLINES: When a scene involves a pivotal question, answer, revelation, or comedic/dramatic punchline from the story, `narration` MUST explicitly include or quote that key spoken line in {language} (e.g., 'Chàng trai kinh hãi lắp bắp hỏi: "Quan cũng có mặt ở đó sao? Chẳng lẽ..."'), NEVER replace key story dialogue or punchlines with vague, detached third-person meta-summaries (such as "Anh lắp bắp hỏi lại trong sợ hãi và nghi ngờ").
+   - NO GENERIC FILLER OR SCENERY STUBS: Never write disconnected 3-5 word weather/scenery fragments or generic atmospheric platitudes that do not advance the story.
+   - PACING RULE: Aim for 14 to {max_words} words per scene so the narration tells the story clearly while fitting comfortably within an 8-second scene clip.
+
+Return ONLY raw JSON matching this structure:
 {{
   "title": "Title",
-  "logline": "Logline",
-  "characters": "Protagonist: [Name & Role, Visual description] | Key Creature / Secondary: [Name & Visual description]",
+  "logline": "1-sentence logline",
+  "characters": "Protagonist: [Name & Role, Immutable visual tokens] | Companion/Creature: [Name, Immutable visual tokens]",
   "scenes": [
     {{
       "scene_number": 1,
       "title": "Scene 1 Title",
-      "archetype": "Action Beat",
-      "visual_prompt": "...",
-      "acting_prompt": "0-3s: ... 3-6s: ... 6-8s: ... Camera: ... Lighting: ... Negative: subtitles, watermark, text overlay.",
+      "archetype": "Establishing Shot",
+      "visual_prompt": "Detailed static illustration description: frozen composition, character visual details and outfit, environment, color palette, lighting in {art_style} art style. (NO timing, NO camera moves, NO dialogue quotes)",
+      "acting_prompt": "Medium wide shot of [Character] in [Setting]. The camera executes a smooth slow dolly push-in at eye level with fluid stabilization. 0-3s: [Character] steps forward naturally as ambient wind stirs clothing and hair. 3-6s: [Character] pauses to inspect [prop/surroundings], eyes filled with quiet resolve. Character says in a calm voice: \\\"We are close.\\\" (no subtitles). 6-8s: [Character] takes a steady breath as the scene holds composition. Volumetric atmospheric rim lighting with soft 35mm depth of field.\\n\\nAudio: gentle mountain breeze, distant bird calls, no background music.\\nSFX: soft footsteps on stone, cloth rustle.\\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.",
       "narration": "...",
       "camera_motion": "zoom_in"
     }}
   ]
-}}
-Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
+}}"""
 
     def _clean_json_response(self, text: str) -> Dict[str, Any]:
         cleaned = text.strip()
@@ -326,7 +489,905 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         else:
             outer_match = re.search(r"(\{[\s\S]*\})", cleaned)
             candidate = outer_match.group(1).strip() if outer_match else cleaned
+        # Strip trailing citation brackets such as [cite: 1] if generated by Gemini Web
+        candidate = re.sub(r'\[cite:[^\]]+\]', '', candidate).strip()
         return json.loads(candidate)
+
+    @classmethod
+    def professionalize_video_prompt(
+        cls,
+        acting_prompt: str,
+        visual_prompt: str = "",
+        narration: str = "",
+        camera_motion: str = "zoom_in",
+        title: str = "",
+        art_style: str = "ghibli",
+        is_commercial: bool = False
+    ) -> str:
+        """
+        Transforms any raw, robotic, or placeholder video prompt into a professional,
+        physically reasonable, director-grade cinematic video prompt optimized for
+        Google Flow, Google Veo 3, Kling, and Sora.
+        """
+        raw_prompt = (acting_prompt or "").strip()
+        vis_text = (visual_prompt or "").strip()
+        narr_text = (narration or "").strip()
+        clean_title = (title or "").strip()
+        style_key = (art_style or "ghibli").lower()
+
+        # 1. Safety & Policy Filtering (Safe Prompting for Veo/Flow)
+        safe_replacements = [
+            (r'\b(?:attack|strike|bomb|missile)\b', 'strategic maneuver'),
+            (r'\b(?:kill|kills|killing|killed|dead|corpse|body bags?)\b', 'fall'),
+            (r'\b(?:blood|bloody|wound|wounded|injury|gore)\b', 'dust and debris'),
+            (r'\b(?:explosion|blast|detonate)\b', 'radiant shockwave'),
+            (r'\b(?:destroy|devastate|annihilate)\b', 'impact'),
+            (r'\b(?:chaos|carnage|massacre)\b', 'tense aftermath'),
+            (r'\b(?:aggressive|menace|threaten)\b', 'resolute and firm'),
+            (r'\b(?:angry|furious|rage)\b', 'intense determination'),
+            (r'\b(?:hostage|torture|prisoner)\b', 'diplomatic standoff'),
+            (r'\b(?:pointing aggressively)\b', 'gesturing firmly'),
+        ]
+        for pattern, replacement in safe_replacements:
+            raw_prompt = re.sub(pattern, replacement, raw_prompt, flags=re.IGNORECASE)
+
+        # 2. Extract and Normalize Spoken Dialogue (from acting_prompt or narration)
+        dialogue_match = re.search(
+            r'(?:character says|nhân vật nói|[A-Za-zÀ-ỹ\s]+(?:nói|hỏi|đáp|thưa|kêu|thì thầm)|says|whispers|murmurs|asks|replies|gasps|shouts|crying out|cries|explains|blurts|exclaims|mutters|calls out)[^:"“\n]{0,45}[:\s]+["“]([^"”]+)["”]',
+            raw_prompt,
+            re.IGNORECASE
+        )
+        if not dialogue_match and narr_text:
+            dialogue_match = re.search(r'["“]([^"”]{2,})["”]', narr_text)
+        dialogue_text = ""
+        if dialogue_match:
+            cand_diag = dialogue_match.group(1).strip()
+            words = cand_diag.split()
+            if len(words) > 18:
+                cand_diag = " ".join(words[:16]).rstrip(' ,;:-') + "..."
+            dialogue_text = cand_diag
+
+        # 3. Detect and Map Camera Motion to Director-Grade Prose
+        cam_match = re.search(r'(?i)Camera\s*:\s*([a-zA-Z_\-]+)', raw_prompt)
+        detected_cam = (cam_match.group(1) if cam_match else camera_motion or "zoom_in").lower().replace("-", "_")
+
+        if is_commercial:
+            camera_prose_map = {
+                "zoom_in": "The camera performs a smooth, high-precision motorized slider push-in toward the product hero silhouette.",
+                "dolly_in": "The camera performs a smooth, high-precision motorized slider push-in toward the product hero silhouette.",
+                "zoom_out": "The camera smoothly dollies out with a steady pedestal pull-back, revealing the full premium product lineup.",
+                "dolly_out": "The camera smoothly dollies out with a steady pedestal pull-back, revealing the full premium product lineup.",
+                "pan_left": "The camera glides in a graceful horizontal tracking pan to the left, capturing sleek metallic edges and reflections.",
+                "pan_right": "The camera executes a smooth 360-degree orbital turntable tracking glide to the right, highlighting flawless textures.",
+                "subtle_drift": "A steady locked-off macro hero shot with subtle organic drift and high-end commercial depth of field.",
+                "static": "A locked-off studio beauty shot with crisp commercial depth of field.",
+                "crane_down": "The camera performs an elegant vertical crane sweep gliding downward smoothly to product eye level.",
+                "tilt_up": "The camera slowly tilts upward along the product contours, highlighting its sculpted architectural lines."
+            }
+        else:
+            camera_prose_map = {
+                "zoom_in": "The camera executes a smooth, slow cinematic dolly push-in toward the subject at eye level with fluid stabilization.",
+                "dolly_in": "The camera executes a smooth, slow cinematic dolly push-in toward the subject at eye level with fluid stabilization.",
+                "zoom_out": "The camera smoothly dollies out with a steady pedestal pull-back, gradually revealing the expansive atmospheric environment.",
+                "dolly_out": "The camera smoothly dollies out with a steady pedestal pull-back, gradually revealing the expansive atmospheric environment.",
+                "pan_left": "The camera performs a graceful horizontal tracking pan to the left, smoothly following the subject's eyeline.",
+                "pan_right": "The camera glides in a smooth cinematic tracking pan to the right with fluid stabilization.",
+                "subtle_drift": "A steady locked-off camera with subtle organic handheld drift and shallow depth of field.",
+                "static": "A steady locked-off medium shot with subtle organic handheld drift and shallow depth of field.",
+                "crane_down": "The camera performs a graceful crane shot gliding downward smoothly to eye level.",
+                "tilt_up": "The camera slowly tilts upward, capturing the majestic scale and vertical expanse of the scene.",
+                "tracking": "A steady low-angle tracking arc shot glides gracefully around the subject with fluid motion.",
+                "orbit": "A steady orbital arc pan smoothly glides around the character, capturing their expression and surroundings."
+            }
+        camera_sentence = camera_prose_map.get(detected_cam, camera_prose_map.get("zoom_in", "The camera executes a smooth cinematic push-in."))
+
+        # 4. Extract or Derive Scene Subject & Context
+        def clean_vis(v: str) -> str:
+            c = re.sub(
+                r'(?i)^(?:một phân cảnh hoạt hình[^,.\n]*[,.\s]*|phong cách\s+[^,.\n]*[,.\s]*|photorealistic cinematic live-action|studio ghibli 2d|ghibli|anime|3d pixar|pixar 3d animation style|pixar|disney|comic book|cyberpunk|watercolor|retro 80s|pixel art|realistic)\s*(?:art|style)?[,.\s]*',
+                '',
+                v
+            )
+            c = re.sub(r'(?i)^(?:góc quay[^,.\n]*[,.\s]*)', '', c)
+            c = re.sub(r'(?i)\b(?:cinematic composition|rich atmospheric lighting|masterpiece (?:illustration|photography)|high fidelity details|intricate environmental details|tỉ lệ \d+:\d+|không chữ)\b[,.\s]*', '', c)
+            return c.strip(' .,-')
+
+        subject_context = clean_vis(vis_text)
+        if not subject_context or len(subject_context) < 10:
+            subject_context = clean_title or "the scene"
+
+        if len(subject_context) > 130:
+            subject_context = subject_context[:125].rsplit(' ', 1)[0]
+
+        # If subject_context contains non-ASCII (e.g. Vietnamese visual_prompt), keep the English framing clean
+        has_non_ascii_subj = any(ord(ch) > 127 for ch in subject_context)
+        if has_non_ascii_subj:
+            subject_context_lower = "the character in the scene setting"
+        elif subject_context.startswith("A "):
+            subject_context_lower = "a " + subject_context[2:]
+        elif subject_context.startswith("An "):
+            subject_context_lower = "an " + subject_context[3:]
+        elif subject_context.startswith("The "):
+            subject_context_lower = "the " + subject_context[4:]
+        else:
+            subject_context_lower = subject_context
+
+        # 5. Determine whether existing prompt has meaningful custom beats or is placeholder
+        is_placeholder = (
+            not raw_prompt or
+            "Character moves naturally into the scene" in raw_prompt or
+            "Core emotional action beat" in raw_prompt or
+            "Core emotional performance beat" in raw_prompt or
+            "Diễn xuất và chuyển động tự nhiên" in raw_prompt or
+            "Cảm xúc chuyển biến tự nhiên" in raw_prompt or
+            "Character begins action in the scene" in raw_prompt or
+            len(raw_prompt) < 25
+        )
+
+        # 6. Build Grounded, Reasonable 3-Beat Motion
+        if is_placeholder:
+            if is_commercial:
+                beat1 = f"0-3s: Fluid camera glide slowly reveals pristine geometric contours and subtle light reflections on {subject_context_lower}."
+                beat2 = "3-6s: Dynamic tactile interaction highlights responsive controls and fine material craftsmanship."
+                beat3 = "6-8s: The composition settles into an authoritative hero angle with ultimate brand prestige."
+            else:
+                beat1 = f"0-3s: The character initiates natural, measured movement in the setting, hair and clothing gently stirring in the ambient breeze."
+                if dialogue_text:
+                    beat2 = f'3-6s: The character pauses with focused poise. Character says in a calm, resolute voice: "{dialogue_text}" (no subtitles).'
+                elif narr_text and len(narr_text) < 40:
+                    beat2 = "3-6s: The character performs a focused, deliberate interaction with the immediate setting, eyes reflecting thoughtful determination."
+                else:
+                    beat2 = "3-6s: The character performs a focused, deliberate interaction with the immediate environment, their gaze steady and expressive."
+                beat3 = "6-8s: The character takes a steadying breath, settling into a grounded posture as their expression deepens with quiet confidence."
+            body_beats = f"{beat1} {beat2} {beat3}"
+        else:
+            # Clean existing prompt from clunky metadata tags and bracketed tags
+            cleaned_body = raw_prompt
+            cleaned_body = re.sub(r'(?i)Camera\s*:[^.\n]*\.?', '', cleaned_body)
+            cleaned_body = re.sub(r'(?i)Lighting\s*:[^.\n]*\.?', '', cleaned_body)
+            cleaned_body = re.sub(r'(?i)Negative\s*:[^.\n]*\.?', '', cleaned_body)
+            cleaned_body = re.sub(r'(?i)Audio\s*:[^.\n]*\.?', '', cleaned_body)
+            cleaned_body = re.sub(r'(?i)SFX\s*:[^.\n]*\.?', '', cleaned_body)
+            cleaned_body = re.sub(r'(?i)Music\s*:[^.\n]*\.?', '', cleaned_body)
+            cleaned_body = re.sub(r'\(\s*(?:không phụ đề|no subtitles)\s*\)', '', cleaned_body, flags=re.IGNORECASE)
+            cleaned_body = re.sub(r'(?i)\b(?:không phụ đề|no subtitles)\b', '', cleaned_body)
+            cleaned_body = re.sub(r'\(\s*\)', '', cleaned_body)
+
+            # Strip existing camera prose sentences to ensure idempotency when re-refined
+            for c_val in [
+                "The camera executes a smooth, slow cinematic dolly push-in toward the subject at eye level with fluid stabilization.",
+                "The camera smoothly dollies out with a steady pedestal pull-back, gradually revealing the expansive atmospheric environment.",
+                "The camera performs a graceful horizontal tracking pan to the left, smoothly following the subject's eyeline.",
+                "The camera glides in a smooth cinematic tracking pan to the right with fluid stabilization.",
+                "A steady locked-off camera with subtle organic handheld drift and shallow depth of field.",
+                "A steady locked-off medium shot with subtle organic handheld drift and shallow depth of field.",
+                "The camera performs a graceful crane shot gliding downward smoothly to eye level.",
+                "The camera slowly tilts upward, capturing the majestic scale and vertical expanse of the scene.",
+                "A steady low-angle tracking arc shot glides gracefully around the subject with fluid motion.",
+                "A steady orbital arc pan smoothly glides around the character, capturing their expression and surroundings.",
+                "The camera performs a smooth, high-precision motorized slider push-in toward the product hero silhouette.",
+                "The camera smoothly dollies out with a steady pedestal pull-back, revealing the full premium product lineup.",
+                "The camera glides in a graceful horizontal tracking pan to the left, capturing sleek metallic edges and reflections.",
+                "The camera executes a smooth 360-degree orbital turntable tracking glide to the right, highlighting flawless textures.",
+                "A steady locked-off macro hero shot with subtle organic drift and high-end commercial depth of field.",
+                "A locked-off studio beauty shot with crisp commercial depth of field.",
+                "The camera performs an elegant vertical crane sweep gliding downward smoothly to product eye level.",
+                "The camera slowly tilts upward along the product contours, highlighting its sculpted architectural lines."
+            ]:
+                cleaned_body = cleaned_body.replace(c_val, "")
+
+            # Strip existing lighting prose
+            for l_prose in [
+                "Commercial studio softbox key light with crisp edge reflections and immaculate specular highlights, shot on 50mm f/1.8 lens.",
+                "Volumetric cinematic rim lighting, shot on 35mm anamorphic lens with shallow depth of field and creamy background falloff.",
+                "Painted volumetric sunlight filtering through the atmosphere, soft rim highlights, beautiful anime depth of field.",
+                "Soft studio-grade three-point lighting with gentle specular highlights, rich cinematic 3D depth of field.",
+                "Atmospheric volumetric lighting with rich highlights and gentle shadow roll-off, shallow depth of field."
+            ]:
+                cleaned_body = cleaned_body.replace(l_prose, "")
+
+            cleaned_body = re.sub(r'(?i)^(?:Medium shot of [^.]*\.\s*)', '', cleaned_body)
+            cleaned_body = re.sub(r'\s+', ' ', cleaned_body).strip(' .,-')
+
+            # Translate common Vietnamese phrasing into professional English if present
+            cleaned_body = re.sub(r'(?i)nhân vật bước vào', 'the character steps into', cleaned_body)
+            cleaned_body = re.sub(r'(?i)nhân vật mỉm cười', 'the character smiles gently', cleaned_body)
+            cleaned_body = re.sub(r'(?i)nhân vật nhìn', 'the character looks', cleaned_body)
+            cleaned_body = re.sub(r'(?i)khu đền cổ', 'the ancient temple', cleaned_body)
+            cleaned_body = re.sub(r'(?i)khu vườn', 'the garden', cleaned_body)
+            cleaned_body = re.sub(r'(?i)góc quay lướt chậm', 'the camera glides slowly', cleaned_body)
+            cleaned_body = re.sub(r'(?i)ánh sáng viền', 'rim light highlights', cleaned_body)
+            cleaned_body = re.sub(r'(?i)nhân vật nói\s*[:\-]*\s*["“]([^"”]+)["”]', r'Character says in a clear voice: "\1" (no subtitles)', cleaned_body)
+
+            # Check if timestamps already exist
+            has_timestamps = bool(re.search(r'\b\d+-\d+s\s*:', cleaned_body))
+            if has_timestamps:
+                cleaned_body = re.sub(
+                    r'((?:says|whispers|gasps|shouts|asks|replies|nói|hỏi|đáp|thưa)[^"\n]*["“][^"”]+["”])(?!\s*\(no subtitles\))',
+                    r'\1 (no subtitles)',
+                    cleaned_body,
+                    flags=re.IGNORECASE
+                )
+                # If dialogue_text exists (e.g. from narration) but is not yet in cleaned_body, inject it into 3-6s beat
+                if dialogue_text and not re.search(r'["“][^"”]+["”]', cleaned_body):
+                    if re.search(r'\b3-6s\s*:', cleaned_body):
+                        cleaned_body = re.sub(
+                            r'(\b3-6s\s*:[^6\n]*?)(\s*\b6-8s\s*:|$)',
+                            lambda m: f'{m.group(1).rstrip(" .")}. Character says in an expressive voice: "{dialogue_text}" (no subtitles). {m.group(2).lstrip()}',
+                            cleaned_body,
+                            count=1
+                        )
+                    else:
+                        cleaned_body = cleaned_body.rstrip(' .') + f'. 3-6s: Character says in an expressive voice: "{dialogue_text}" (no subtitles).'
+                if not re.search(r'\b[56]-\d+s\s*:', cleaned_body):
+                    cleaned_body = cleaned_body.rstrip(' .') + ". 6-8s: The character settles into a calm, grounded posture as the scene reaches a steady cinematic hold."
+                body_beats = cleaned_body
+            else:
+                if dialogue_text and not re.search(r'["“][^"”]+["”]', cleaned_body):
+                    beat2_str = f'3-6s: The character speaks with expressive emotion. Character says in a clear voice: "{dialogue_text}" (no subtitles).'
+                else:
+                    beat2_str = "3-6s: The motion continues with smooth momentum and expressive nuance."
+                body_beats = f"0-3s: {cleaned_body.rstrip(' .')}. {beat2_str} 6-8s: The subject settles naturally into frame with cinematic poise."
+
+        # 7. Optics & Atmospheric Lighting
+        if is_commercial:
+            lighting_prose = "Commercial studio softbox key light with crisp edge reflections and immaculate specular highlights, shot on 50mm f/1.8 lens."
+        elif "realistic" in style_key:
+            lighting_prose = "Volumetric cinematic rim lighting, shot on 35mm anamorphic lens with shallow depth of field and creamy background falloff."
+        elif "ghibli" in style_key or "anime" in style_key:
+            lighting_prose = "Painted volumetric sunlight filtering through the atmosphere, soft rim highlights, beautiful anime depth of field."
+        elif "pixar" in style_key or "3d" in style_key:
+            lighting_prose = "Soft studio-grade three-point lighting with gentle specular highlights, rich cinematic 3D depth of field."
+        elif "stick" in style_key or "stickman" in style_key:
+            lighting_prose = "Clean high-contrast vector lighting, sharp silhouette outlines, Alan Becker stick figure animation aesthetics."
+        else:
+            lighting_prose = "Atmospheric volumetric lighting with rich highlights and gentle shadow roll-off, shallow depth of field."
+
+        # 8. Audio, SFX & Negative Prompt (Veo 3 Audio Standards)
+        if is_commercial:
+            audio_prose = "Audio: upbeat sophisticated ambient electronic rhythm, no lyrics."
+            sfx_prose = "SFX: subtle tactile click, gentle smooth slider sound."
+        elif "stick" in style_key or "stickman" in style_key:
+            audio_prose = "Audio: crisp rhythmic ambient soundscape, subtle motion hum, no background music."
+            sfx_prose = "SFX: snappy stick figure whoosh, subtle tactile impact sound."
+        else:
+            audio_prose = "Audio: natural atmospheric ambient soundscape, gentle ambient breeze, no background music."
+            sfx_prose = "SFX: subtle realistic footsteps, gentle cloth movement."
+
+        if "stick" in style_key or "stickman" in style_key:
+            negative_prose = "Negative: photorealistic human, detailed facial features, realistic eyes, realistic skin, complex realistic clothing, 3D render, subtitles, captions, watermark, text overlay, jittery motion."
+        else:
+            negative_prose = "Negative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces, abrupt camera snap."
+
+        if not body_beats.endswith('.'):
+            body_beats += '.'
+
+        if is_placeholder:
+            body_text = f"Medium shot of {subject_context_lower}. {camera_sentence} {body_beats} {lighting_prose}"
+        else:
+            body_text = f"{camera_sentence} {body_beats} {lighting_prose}"
+
+        full_prompt = (
+            f"{body_text}\n\n"
+            f"{audio_prose}\n"
+            f"{sfx_prose}\n"
+            f"{negative_prose}"
+        )
+
+        full_prompt = re.sub(r' +', ' ', full_prompt)
+        full_prompt = re.sub(r'\.\s*\.', '.', full_prompt)
+        full_prompt = full_prompt.replace('\n ', '\n')
+
+        return full_prompt.strip()
+
+    @staticmethod
+    def ensure_story_tied_narration(scene: Dict[str, Any], language: str = "en", story_context: str = "") -> str:
+        """
+        Guarantees that the scene's voiceover `narration` ties directly to the story's
+        plot progression, character actions, and key spoken dialogue / punchlines.
+        Prevents detached 3-5 word scenery stubs (e.g. 'Trời nhuộm màu cam', 'Máy gặt đến gần')
+        and vague meta-summaries that omit key spoken dialogue or punchlines.
+        """
+        narr = str(scene.get("narration") or "").strip()
+        vis = str(scene.get("visual_prompt") or "").strip()
+        act = str(scene.get("acting_prompt") or "").strip()
+        title = str(scene.get("title") or "").strip()
+        is_vi = language.startswith("vi") or any(ord(c) > 127 for c in (narr or vis or title or story_context))
+
+        # Extract spoken dialogue from acting_prompt if present
+        spoken_quotes = re.findall(
+            r'(?:character says|nhân vật nói|[A-Za-zÀ-ỹ\s]+(?:nói|hỏi|đáp|thưa)|says|whispers|murmurs|asks|replies|gasps|shouts|crying out|cries|explains|blurts|exclaims|mutters|calls out)[^:"“\n]{0,45}[:\s]+["“]([^"”]+)["”]',
+            act,
+            re.IGNORECASE
+        )
+        primary_quote = spoken_quotes[0].strip() if spoken_quotes else ""
+
+        # Clean visual description of style boilerplates and speaker headers
+        clean_vis = re.sub(
+            r'(?i)^(?:một phân cảnh hoạt hình[^,.\n]*[,.\s]*|phong cách\s+[^,.\n]*[,.\s]*|photorealistic cinematic live-action|studio ghibli 2d|ghibli|anime|3d pixar|pixar 3d animation style|pixar|disney|comic book|cyberpunk|watercolor|retro 80s|pixel art|realistic)\s*(?:art|style)?[,.\s]*',
+            '',
+            vis
+        )
+        clean_vis = re.sub(r'(?i)\b(?:cinematic composition|rich atmospheric lighting|masterpiece (?:illustration|photography)|high fidelity details|intricate environmental details|tỉ lệ \d+:\d+|không chữ)\b[,.\s]*', '', clean_vis)
+        clean_vis = re.sub(r'\s+', ' ', clean_vis).strip(' .,-')
+
+        narr_words = narr.split()
+        vis_sentences = [s.strip() for s in re.split(r'[.!?\n]+', clean_vis) if s.strip()]
+        first_vis_sent = vis_sentences[0] if vis_sentences else ""
+
+        # Detect if narration is missing or is a bare scenery stub (e.g. "Trời nhuộm màu cam", "Máy gặt đến gần", or exact first sentence of visual_prompt without story resolution)
+        is_scenery_stub = (
+            not narr or
+            len(narr_words) <= 5 or
+            (first_vis_sent and narr.rstrip('.!?').strip().lower() == first_vis_sent.lower() and (len(vis_sentences) > 1 or primary_quote))
+        )
+
+        if is_scenery_stub:
+            # Build a story-tied narration from the full visual action + spoken dialogue
+            action_sents = []
+            for s in vis_sentences:
+                # Skip pure 3-4 word weather stubs if there are real character action sentences
+                if len(s.split()) <= 4 and len(vis_sentences) > 1 and any(w in s.lower() for w in ["trời", "ánh nắng", "mưa", "buổi sáng", "chiều", "sky", "sunlight", "morning"]):
+                    continue
+                # Strip raw ALL-CAPS dialogue blocks if accidentally leaked into visual
+                s_clean = re.sub(r'\b[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]{2,}(?:\s+[A-ZÀ-Ỹ]{2,})*\s*(?:\([^\)]*\))?\s*', '', s).strip()
+                if s_clean:
+                    action_sents.append(s_clean)
+                if len(" ".join(action_sents).split()) >= 16:
+                    break
+
+            base_story = ". ".join(action_sents).strip(' .')
+            if not base_story and first_vis_sent:
+                base_story = first_vis_sent.strip(' .')
+            if not base_story:
+                base_story = title or ("Câu chuyện tiếp diễn." if is_vi else "The story unfolds.")
+
+            if primary_quote and primary_quote.lower() not in base_story.lower():
+                quote_is_vi = any(ord(c) > 127 for c in primary_quote)
+                if is_vi == quote_is_vi:
+                    narr = f'{base_story}: "{primary_quote}"'
+                else:
+                    narr = f"{base_story}."
+            else:
+                narr = f"{base_story}."
+
+        elif primary_quote:
+            # Ensure spoken dialogue from acting_prompt is included in voiceover narration when not already present
+            quote_is_vi = any(ord(c) > 127 for c in primary_quote)
+            has_quote_in_narr = ('"' in narr or '“' in narr or '”' in narr or primary_quote.lower().rstrip('.!?') in narr.lower())
+            if not has_quote_in_narr and (is_vi == quote_is_vi):
+                lower_narr = narr.lower()
+                clean_n = narr.rstrip(' .!?')
+                if is_vi:
+                    speech_endings_vi = (
+                        "hỏi", "nói", "thưa", "đáp", "kêu lên", "thốt lên", "trình báo",
+                        "giải thích", "thì thầm", "bẩm", "than", "gọi", "bảo"
+                    )
+                    if any(clean_n.lower().endswith(w) for w in speech_endings_vi):
+                        narr = f'{clean_n}: "{primary_quote}"'
+                    elif (
+                        any(w in lower_narr for w in ["hai tên trộm", "bọn trộm", "kẻ trộm tinh ranh", "chúng nhìn nhau", "chúng phối hợp", "khiêng nguyên", "lén", "âm thầm", "chúng dắt"])
+                        and not any(w in lower_narr for w in ["chẳng tên trộm", "trình báo", "công đường", "quan huyện"])
+                    ):
+                        narr = f'{clean_n}, khẽ bảo nhau: "{primary_quote}"'
+                    elif "ngủ" in lower_narr and not any(w in lower_narr for w in ["hai tên trộm", "bọn trộm", "khiêng"]):
+                        narr = f'{clean_n}, khẽ mớ: "{primary_quote}"'
+                    elif primary_quote.endswith("?") and not any(w in lower_narr for w in ["hỏi", "thắc mắc"]):
+                        narr = f'{clean_n}, thốt lên: "{primary_quote}"'
+                    else:
+                        narr = f'{clean_n}: "{primary_quote}"'
+                else:
+                    narr = f'{clean_n}: "{primary_quote}"'
+
+        if narr and not narr.endswith(('.', '!', '?', '"', '”', '…')):
+            narr += "."
+        scene["narration"] = narr
+        return narr
+
+    @staticmethod
+    def extract_story_dialogues(idea_text: str) -> List[Dict[str, Any]]:
+        """
+        Extracts character dialogues from raw story prose or screenplay text.
+        Supports:
+        1. Screenplay speaker blocks (ALL-CAPS speaker header followed by dialogue line)
+        2. Dash-prefixed dialogue lines (– / - / — common in Vietnamese & European stories)
+        3. Quoted dialogue in narrative prose ("..." or “...”)
+        Returns list of dicts: {"speaker": str, "tone": str, "intro": str, "line": str, "scene_num": Optional[int]}
+        """
+        if not idea_text or not str(idea_text).strip():
+            return []
+
+        raw_lines = [ln.strip() for ln in str(idea_text).splitlines()]
+        extracted: List[Dict[str, Any]] = []
+        current_scene_num = None
+        last_narrative = ""
+
+        scene_header_re = re.compile(
+            r'^(?:\*{0,2})(?:CẢNH|PHÂN CẢNH|SCENE)\s*(?:(\d+)|CUỐI|KẾT)(?:\*{0,2})(?:\s*[:\-–—\s]\s*(.*))?$',
+            re.IGNORECASE
+        )
+        speaker_re = re.compile(
+            r'^([A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ][A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ\s\d\.]{1,28}?)(?:\s*\(([^\)]+)\))?\s*$'
+        )
+        meta_prefixes = (
+            "thể loại:", "thời lượng:", "bối cảnh:", "thông điệp:", "nhân vật",
+            "hình ảnh:", "âm thanh:", "âm nhạc:", "góc máy:", "ánh sáng:", "chữ trên màn hình"
+        )
+        section_headers = {
+            "mở đầu", "phát triển", "cao trào", "kết", "kết thúc", "hết", "hết.",
+            "act 1", "act 2", "act 3", "intro", "climax", "outro", "ending"
+        }
+
+        idx = 0
+        scene_counter = 0
+        while idx < len(raw_lines):
+            ln = raw_lines[idx]
+            if not ln:
+                idx += 1
+                continue
+
+            m_sc = scene_header_re.match(ln)
+            if m_sc:
+                scene_counter += 1
+                current_scene_num = int(m_sc.group(1)) if m_sc.group(1) else scene_counter
+                last_narrative = ""
+                idx += 1
+                continue
+
+            if ln.lower().strip(' .:') in section_headers or any(ln.lower().startswith(p) for p in meta_prefixes):
+                idx += 1
+                continue
+
+            # 1. Screenplay ALL-CAPS speaker line followed by dialogue
+            m_spk = speaker_re.match(ln)
+            if m_spk and idx + 1 < len(raw_lines) and raw_lines[idx + 1]:
+                spk_cand = m_spk.group(1).strip()
+                if spk_cand.upper() not in ("CHỮ TRÊN MÀN HÌNH", "TEXT ON SCREEN", "SUPER", "TITLE", "NHÂN VẬT", "MỞ ĐẦU", "CAO TRÀO", "KẾT"):
+                    spk_name = spk_cand.title()
+                    spk_tone = (m_spk.group(2) or "").strip()
+                    dial_line = raw_lines[idx + 1].strip(' "“”')
+                    if dial_line:
+                        extracted.append({
+                            "speaker": spk_name,
+                            "tone": spk_tone,
+                            "intro": last_narrative,
+                            "line": dial_line,
+                            "scene_num": current_scene_num
+                        })
+                    last_narrative = ""
+                    idx += 2
+                    continue
+
+            # 2. Dash-prefixed dialogue line (– ... or - ... or — ...)
+            m_dash = re.match(r'^[–\-—]\s*(.+)$', ln)
+            if m_dash:
+                d_text = m_dash.group(1).strip(' "“”')
+                # Filter out pure 3rd-person narrator transition bullets (e.g. "- Hát rồi vẫn yêu cầu hát nữa, đã ba bốn lần nhưng khán giả vẫn không chịu cho nghỉ.")
+                is_narrator_bullet = bool(
+                    re.search(r'\b(?:khán giả vẫn không chịu|đã ba bốn lần nhưng|nhưng không ai chịu)\b', d_text, re.IGNORECASE)
+                    and not d_text.endswith(('?', '!'))
+                )
+                if d_text and not is_narrator_bullet and not any(d_text.lower().startswith(p) for p in meta_prefixes):
+                    extracted.append({
+                        "speaker": "",
+                        "tone": "",
+                        "intro": last_narrative,
+                        "line": d_text,
+                        "scene_num": current_scene_num
+                    })
+                last_narrative = ""
+                idx += 1
+                continue
+
+            # 3. Inline quoted dialogue in prose (preceded by speech context or >= 4 words)
+            inline_quotes = re.findall(r'([^"“”\n]{0,60})["“]([^"”]{3,})["”]', ln)
+            added_inline = False
+            for prefix_ctx, q_str in inline_quotes:
+                q_clean = q_str.strip()
+                has_speech_verb = bool(re.search(
+                    r'\b(?:nói|hỏi|đáp|thưa|kêu|thì thầm|thốt|bẩm|gọi|bảo|mớ|said|asked|replied|whispered|shouted|exclaimed|cried|says|asks)\b',
+                    prefix_ctx or last_narrative,
+                    re.IGNORECASE
+                ))
+                if has_speech_verb or len(q_clean.split()) >= 5 or q_clean.endswith(('?', '!')):
+                    extracted.append({
+                        "speaker": "",
+                        "tone": "",
+                        "intro": (prefix_ctx.strip(' :,-') or last_narrative),
+                        "line": q_clean,
+                        "scene_num": current_scene_num
+                    })
+                    added_inline = True
+
+            if not added_inline:
+                # Only keep narrative intro lines that introduce speech (not stray web questions or headers)
+                if (
+                    not re.match(r'^(?:truyện cười|tiêu đề|nguồn)\s*:', ln, re.IGNORECASE)
+                    and not ln.endswith('?')
+                    and (ln.endswith(':') or re.search(r'\b(?:trình|hỏi|thưa|nói|đáp|kêu|bẩm|lắp bắp|giải thích)\b', ln, re.IGNORECASE))
+                ):
+                    last_narrative = ln.rstrip(' :').split('.')[-1].strip()
+                else:
+                    last_narrative = ""
+            idx += 1
+
+        return extracted
+
+    @staticmethod
+    def sync_story_dialogues_to_scenes(
+        scenes: List[Dict[str, Any]],
+        idea: str = "",
+        art_style: str = "ghibli",
+        language: str = "en",
+        target: str = "all",
+        target_scene_idx: int = None,
+        auto_invent: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Extracts dialogues from the story (`idea`) and scene fields, and synchronizes/adds them to:
+        - `narration` (Voiceover Narration): weaves authentic character dialogue(s) into the scene voiceover
+        - `visual_prompt` (Image Prompt): adds expressive character dialogue/speaking visual cues
+        - `acting_prompt` (Video Clip Prompt): embeds the spoken dialogue into the 3-6s performance beat
+        `target`: "all" | "narration" | "clip" | "image"
+        """
+        if not scenes or not isinstance(scenes, list):
+            return scenes
+
+        target_norm = (target or "all").lower().strip()
+        update_narration = target_norm in ("all", "narration", "voiceover")
+        update_image = target_norm in ("all", "clip", "image", "image_clip", "video")
+        update_clip = target_norm in ("all", "clip", "video", "image_clip")
+
+        story_dialogues = ScriptAgent.extract_story_dialogues(idea) if idea else []
+
+        # Helper to tokenize Vietnamese/English content words for matching
+        stop_words = {
+            "và", "của", "những", "một", "các", "trong", "cho", "với", "được", "này", "đó",
+            "thì", "mà", "là", "có", "không", "ra", "vào", "lên", "xuống", "đi", "lại",
+            "con", "chúng", "nó", "anh", "ta", "cái", "chiếc",
+            "the", "and", "for", "with", "that", "this", "from", "into", "his", "her", "their"
+        }
+
+        def get_tokens(txt: str) -> set:
+            words = re.findall(r'[a-zA-ZÀ-ỹ0-9]+', (txt or "").lower())
+            return {w for w in words if len(w) >= 2 and w not in stop_words}
+
+        # Map story_dialogues to scene indices
+        scene_dialogue_map: Dict[int, List[Dict[str, Any]]] = {i: [] for i in range(len(scenes))}
+
+        if story_dialogues:
+            has_explicit_scene_nums = any(d.get("scene_num") is not None for d in story_dialogues)
+            if has_explicit_scene_nums:
+                for d in story_dialogues:
+                    sc_num = d.get("scene_num")
+                    if sc_num is not None and 1 <= sc_num <= len(scenes):
+                        scene_dialogue_map[sc_num - 1].append(d)
+            else:
+                # Prose story dialogues: determine which scenes are conversational/dialogue scenes
+                # (e.g., courtroom scenes mentioning quan/trình/khai/hỏi/thưa/giải thích) vs pure setup scenes
+                all_dial_text = " ".join(f"{d.get('intro', '')} {d.get('line', '')}" for d in story_dialogues).lower()
+                is_courtroom_conversation = ("bẩm quan" in all_dial_text or "trình quan" in all_dial_text)
+
+                candidate_scene_indices = []
+                if is_courtroom_conversation:
+                    for sc_idx, sc in enumerate(scenes):
+                        sc_combined = f"{sc.get('title', '')} {sc.get('narration', '')} {sc.get('visual_prompt', '')}".lower()
+                        if any(k in sc_combined for k in ["quan", "trình", "kiện", "khai", "phán", "tòa", "courthouse", "magistrate", "courtroom", "judge"]):
+                            candidate_scene_indices.append(sc_idx)
+
+                if not candidate_scene_indices:
+                    candidate_scene_indices = list(range(len(scenes)))
+
+                min_allowed_sc_idx = candidate_scene_indices[0]
+                num_d = len(story_dialogues)
+                num_cand = len(candidate_scene_indices)
+
+                for d_idx, d in enumerate(story_dialogues):
+                    d_tokens = get_tokens(f"{d.get('intro', '')} {d.get('line', '')}")
+                    d_line_tokens = get_tokens(d.get("line", ""))
+                    rel_d = d_idx / max(1, num_d - 1)
+                    best_sc_idx = None
+                    best_score = -999.0
+
+                    for cand_pos, sc_idx in enumerate(candidate_scene_indices):
+                        if sc_idx < min_allowed_sc_idx:
+                            continue
+                        sc = scenes[sc_idx]
+                        sc_narr = str(sc.get("narration") or "")
+                        sc_act = str(sc.get("acting_prompt") or "")
+                        sc_title = str(sc.get("title") or "")
+                        sc_vis = str(sc.get("visual_prompt") or "")
+
+                        # Extract existing quote in scene acting_prompt or narration (excluding previously synced full quotes)
+                        base_sc_narr = re.split(r'\s*:\s*["“]', sc_narr)[0]
+                        existing_quotes = re.findall(r'["“\']([^"”\']{2,})["”\']', f"{sc_act} {sc_narr}")
+                        quote_tokens = get_tokens(" ".join(q for q in existing_quotes if len(q.split()) <= 16))
+                        narr_tokens = get_tokens(f"{base_sc_narr} {sc_title}")
+                        full_narr_tokens = get_tokens(sc_narr)
+                        vis_tokens = get_tokens(sc_vis)
+
+                        # Weighted token overlap + chronological story progression alignment
+                        overlap_quote = len(d_line_tokens & quote_tokens) * 4.0
+                        overlap_narr = len(d_tokens & narr_tokens) * 2.5
+                        overlap_full_narr = len(d_line_tokens & full_narr_tokens) * 3.5
+                        overlap_vis = len(d_tokens & vis_tokens) * 0.5
+                        rel_sc = cand_pos / max(1, num_cand - 1)
+                        chrono_bonus = (1.0 - abs(rel_d - rel_sc)) * 8.0
+
+                        score = overlap_quote + overlap_narr + overlap_full_narr + overlap_vis + chrono_bonus
+                        if d_line_tokens and len(d_line_tokens & full_narr_tokens) >= max(2, int(len(d_line_tokens) * 0.65)):
+                            score += 20.0
+                        d_line_low = d.get("line", "").lower()
+                        narr_title_low = f"{base_sc_narr} {sc_title}".lower()
+
+                        # Speaker-role alignment (petitioner vs magistrate/judge)
+                        if "bẩm quan" in d_line_low:
+                            if any(k in narr_title_low for k in ["trình", "thưa", "khai", "kiện"]):
+                                score += 8.0
+                            if any(k in narr_title_low for k in ["quan huyện liền", "phán quyết", "giải thích rằng"]):
+                                score -= 10.0
+                        elif any(k in d_line_low for k in ["mày ", "ngươi "]):
+                            if any(k in narr_title_low for k in ["quan huyện liền", "phán quyết", "giải thích"]):
+                                score += 8.0
+
+                        if re.search(r'\b(?:trình|quan|hỏi|thưa|đáp|giải thích|lắp bắp|ngớ người|kinh khiếp|nói|kêu)\b', base_sc_narr.lower()):
+                            score += 1.5
+                        if num_cand >= 2:
+                            score -= len(scene_dialogue_map[sc_idx]) * 5.0
+                        if score > best_score:
+                            best_score = score
+                            best_sc_idx = sc_idx
+
+                    if best_sc_idx is not None and best_score >= 3.0:
+                        scene_dialogue_map[best_sc_idx].append(d)
+                        # Advance min_allowed_sc_idx gradually so earlier dialogues cannot skip over intermediate dialogue scenes
+                        if best_sc_idx > min_allowed_sc_idx:
+                            min_allowed_sc_idx = min(best_sc_idx, min_allowed_sc_idx + 1)
+
+                # Ensure conversational reply lines (like Magistrate's retort right after cowherd's report)
+                # are paired with their preceding question/report scene if unassigned
+                for d_i, d_item in enumerate(story_dialogues):
+                    if not any(d_item in d_list for d_list in scene_dialogue_map.values()):
+                        # Prefer the scene assigned to the immediately preceding dialogue (d_i - 1)
+                        placed = False
+                        for prev_i in range(d_i - 1, -1, -1):
+                            prev_d = story_dialogues[prev_i]
+                            for sc_i, d_list in scene_dialogue_map.items():
+                                if prev_d in d_list:
+                                    scene_dialogue_map[sc_i].append(d_item)
+                                    placed = True
+                                    break
+                            if placed:
+                                break
+                        if not placed and candidate_scene_indices:
+                            scene_dialogue_map[candidate_scene_indices[0]].append(d_item)
+
+        # Now process each scene
+        for idx, sc in enumerate(scenes):
+            if target_scene_idx is not None and idx != target_scene_idx:
+                continue
+
+            narr = str(sc.get("narration") or "").strip()
+            vis = str(sc.get("visual_prompt") or "").strip()
+            act = str(sc.get("acting_prompt") or "").strip()
+            title = str(sc.get("title") or f"Scene {idx + 1}").strip()
+            camera = str(sc.get("camera_motion") or "zoom_in").strip()
+            is_vi = language.startswith("vi") or any(ord(c) > 127 for c in (narr or vis or title or idea))
+
+            matched_d = scene_dialogue_map.get(idx, [])
+
+            # Extract any existing spoken quote from acting_prompt and narration
+            act_quotes = re.findall(
+                r'(?:character says|nhân vật nói|[A-Za-zÀ-ỹ\s]+(?:nói|hỏi|đáp|thưa)|says|whispers|murmurs|asks|replies|gasps|shouts|crying out|cries|explains|blurts|exclaims|mutters|calls out)[^:"“\n]{0,45}[:\s]+["“]([^"”]+)["”]',
+                act,
+                re.IGNORECASE
+            )
+            narr_quotes = re.findall(r'["“]([^"”]{2,})["”]', narr)
+
+            primary_clip_quote = ""
+            if matched_d:
+                # Build authentic story dialogue string for narration and clip
+                if len(matched_d) == 1:
+                    d_line = matched_d[0]["line"].strip()
+                    spk = matched_d[0].get("speaker", "").strip()
+                    primary_clip_quote = d_line
+                    if update_narration:
+                        d_toks = get_tokens(d_line)
+                        n_toks = get_tokens(narr)
+                        already_in_narr = (
+                            d_line.lower().rstrip('.!?…') in narr.lower()
+                            or (d_toks and len(d_toks & n_toks) >= max(2, int(len(d_toks) * 0.75)))
+                        )
+                        if not already_in_narr:
+                            # Strip any abbreviated/synthetic trailing quote in narration (e.g. : "Bẩm quan con mất bò.")
+                            base_narr = re.split(r'\s*:\s*["“]', narr)[0].strip(' .!?')
+                            if not base_narr:
+                                base_narr = narr.rstrip(' .!?')
+                            narr = f'{base_narr}: "{d_line}"'
+                else:
+                    # Multiple dialogues in this scene
+                    has_screenplay_speakers = any(d.get("speaker") for d in matched_d)
+                    if has_screenplay_speakers and narr_quotes:
+                        primary_clip_quote = narr_quotes[-1] if len(narr_quotes[0].split()) <= 3 and len(narr_quotes) > 1 else narr_quotes[0]
+                    else:
+                        is_courtroom_sc = any(k in f"{narr} {title}".lower() for k in ["quan", "công đường", "trình", "bẩm quan", "tòa"])
+                        if len(matched_d) >= 3 and len(scenes) <= 4 and is_courtroom_sc:
+                            selected_lines = [matched_d[0]["line"], matched_d[-2]["line"], matched_d[-1]["line"]]
+                            primary_clip_quote = matched_d[-1]["line"]
+                            if update_narration:
+                                base_narr = re.split(r'\s*:\s*["“]', narr)[0].strip(' .!?')
+                                narr = (
+                                    f'{base_narr}: "{selected_lines[0]}" '
+                                    f'Quan giải thích: "{selected_lines[1]}" '
+                                    f'Chàng trai kinh hãi hỏi: "{selected_lines[2]}"'
+                                )
+                        else:
+                            d1 = matched_d[0]["line"].strip()
+                            d2 = matched_d[1]["line"].strip()
+                            primary_clip_quote = d2 if "bẩm quan" in d2.lower() else d1
+                            if update_narration:
+                                base_narr = re.split(r'\s*:\s*["“]', narr)[0].strip(' .!?')
+                                if is_courtroom_sc and "bẩm quan" in d2.lower() and "thưa" in base_narr.lower():
+                                    first_intro = matched_d[0].get("intro") or ("Quan ngơ ngác hỏi" if is_vi else "The magistrate asks")
+                                    narr = f'{first_intro}: "{d1}" {base_narr}: "{d2}"'
+                                elif is_courtroom_sc:
+                                    reply_intro = matched_d[1].get("intro") or (
+                                        "Anh thưa" if "bẩm quan" in d2.lower() else ("Quan hỏi lại" if is_vi else "They reply")
+                                    )
+                                    narr = f'{base_narr}: "{d1}" {reply_intro}: "{d2}"'
+                                else:
+                                    reply_intro = matched_d[1].get("intro") or ("Rồi đáp" if is_vi else "Then replies")
+                                    narr = f'{base_narr}: "{d1}" {reply_intro}: "{d2}"'
+            else:
+                # No story-level dialogue mapped from `idea`; sync between `narration` and `acting_prompt`
+                if narr_quotes:
+                    primary_clip_quote = narr_quotes[-1] if len(narr_quotes) > 1 and len(narr_quotes[0].split()) <= 3 else narr_quotes[0]
+                elif act_quotes:
+                    primary_clip_quote = act_quotes[0].strip()
+                    if update_narration:
+                        sc["narration"] = narr
+                        narr = ScriptAgent.ensure_story_tied_narration(sc, language="vi" if is_vi else language)
+                elif auto_invent:
+                    # User explicitly clicked +Dialogue on a scene without existing dialogue: derive a natural line
+                    clean_base = narr.rstrip(' .!?')
+                    if is_vi:
+                        derived_line = f"{title}!" if len(title.split()) >= 2 else "Thật tuyệt vời!"
+                        if update_narration:
+                            narr = f'{clean_base}: "{derived_line}"'
+                        primary_clip_quote = derived_line
+                    else:
+                        derived_line = f"{title}!" if len(title.split()) >= 2 else "This changes everything!"
+                        if update_narration:
+                            narr = f'{clean_base}: "{derived_line}"'
+                        primary_clip_quote = derived_line
+
+            if narr and not narr.endswith(('.', '!', '?', '"', '”', '…')):
+                narr += "."
+            if update_narration:
+                sc["narration"] = narr
+
+            # Update Image Prompt (`visual_prompt`) with expressive dialogue visual cues if scene has dialogue
+            if update_image and primary_clip_quote and vis:
+                vis_is_vi = any(ord(c) > 127 for c in vis)
+                if vis_is_vi:
+                    if "biểu cảm đối thoại" not in vis.lower() and "khẩu hình" not in vis.lower():
+                        vis = vis.rstrip(' .') + ", biểu cảm gương mặt và khẩu hình đối thoại sinh động, ánh mắt giao tiếp tự nhiên, không bong bóng thoại, không chữ."
+                else:
+                    if "expressive speaking" not in vis.lower() and "dialogue expression" not in vis.lower():
+                        vis = vis.rstrip(' .') + ", expressive speaking pose and vivid facial dialogue expression, natural conversational gesture, no speech bubbles, no text."
+                sc["visual_prompt"] = vis
+
+            # Update Video Clip Prompt (`acting_prompt`) with the authentic spoken dialogue
+            if update_clip and primary_clip_quote:
+                words = primary_clip_quote.split()
+                clip_quote_trimmed = " ".join(words[:16]).rstrip(' ,;:-') + "..." if len(words) > 18 else primary_clip_quote
+                if re.search(
+                    r'(?:character says|nhân vật nói|[A-Za-zÀ-ỹ\s]+(?:nói|hỏi|đáp|thưa)|says|whispers|murmurs|asks|replies|gasps|shouts|crying out|cries|explains|blurts|exclaims|mutters|calls out)[^:"“\n]{0,45}[:\s]+["“][^"”]+["”]',
+                    act,
+                    re.IGNORECASE
+                ):
+                    act = re.sub(
+                        r'((?:character says|nhân vật nói|[A-Za-zÀ-ỹ\s]+(?:nói|hỏi|đáp|thưa)|says|whispers|murmurs|asks|replies|gasps|shouts|crying out|cries|explains|blurts|exclaims|mutters|calls out)[^:"“\n]{0,45}[:\s]+["“])([^"”]+)(["”])',
+                        lambda m: f"{m.group(1)}{clip_quote_trimmed}{m.group(3)}",
+                        act,
+                        count=1,
+                        flags=re.IGNORECASE
+                    )
+                sc["acting_prompt"] = ScriptAgent.professionalize_video_prompt(
+                    acting_prompt=act,
+                    visual_prompt=sc.get("visual_prompt", vis),
+                    narration=sc.get("narration", narr),
+                    camera_motion=camera,
+                    title=title,
+                    art_style=art_style
+                )
+
+        return scenes
+
+    @staticmethod
+    def ensure_separate_prompts(scene: Dict[str, Any], art_style: str = "ghibli", language: str = "en") -> Dict[str, Any]:
+        """
+        Guarantees that visual_prompt (for still image generation), acting_prompt (for video motion),
+        and narration (story-tied voiceover) are distinctly populated, correctly formatted, and never identical.
+        Applies professional cinematic standards to acting_prompt.
+        """
+        raw_vis = str(scene.get("visual_prompt") or scene.get("image_prompt") or scene.get("visual") or scene.get("prompt") or "").strip()
+        raw_act = str(scene.get("acting_prompt") or scene.get("video_prompt") or scene.get("motion_prompt") or scene.get("acting") or "").strip()
+        title = scene.get("title", f"Scene {scene.get('scene_number', 1)}")
+        narration = scene.get("narration", "")
+        camera = scene.get("camera_motion", "zoom_in")
+        is_vi = language.startswith("vi") or any(ord(c) > 127 for c in (narration or title or raw_vis))
+
+        def clean_acting_to_visual(text: str) -> str:
+            c = re.sub(r'(?i)\b\d+-\d+s\s*:\s*', '', text)
+            c = re.sub(r'(?i)(?:The\s+)?camera\s+(?:executes|performs|glides|smoothly|slowly)[^.]*\.?', '', c)
+            c = re.sub(r'(?i)Camera\s*:[^.]*\.?', '', c)
+            c = re.sub(r'(?i)Lighting\s*:[^.]*\.?', '', c)
+            c = re.sub(r'(?i)Negative\s*:[^.\n]*\.?', '', c)
+            c = re.sub(r'(?i)Audio\s*:[^.\n]*\.?', '', c)
+            c = re.sub(r'(?i)SFX\s*:[^.\n]*\.?', '', c)
+            c = re.sub(r'["“][^"”]+["”]', '', c)
+            c = re.sub(r'(?i)\b(?:nhân vật nói|character says|không phụ đề|no subtitles)\b[:\s]*', '', c)
+            c = re.sub(r'\s+', ' ', c).strip(' .,-')
+            return c
+
+        if art_style == "realistic":
+            style_tag = "Photorealistic cinematic live-action"
+            render_word = "masterpiece photography"
+        elif art_style == "stick_figure":
+            style_tag = "Minimalist Stick Figure Animation"
+            render_word = "masterpiece stickman animation"
+        else:
+            style_tag = f"{art_style.capitalize()} art"
+            render_word = "masterpiece illustration"
+
+        # Case 1: Both are completely empty
+        if not raw_vis and not raw_act:
+            raw_vis = f"{style_tag} style. {title}. Cinematic composition, rich atmospheric lighting, detailed background."
+            raw_act = ""
+
+        # Case 2: Only acting prompt was provided
+        elif raw_act and not raw_vis:
+            clean_desc = clean_acting_to_visual(raw_act)
+            if not clean_desc or len(clean_desc) < 10:
+                clean_desc = title
+            raw_vis = f"{style_tag} style. {clean_desc}. Cinematic composition, {render_word}, intricate environmental details."
+
+        # Case 3: Only visual prompt was provided
+        elif raw_vis and not raw_act:
+            raw_act = ""
+
+        # Case 4: Both were provided but are identical
+        elif raw_vis == raw_act:
+            if "0-3s:" in raw_act or "Camera:" in raw_act or "Negative:" in raw_act:
+                clean_desc = clean_acting_to_visual(raw_act)
+                raw_vis = f"{style_tag} style. {clean_desc or title}. Cinematic composition, beautiful lighting, rich details."
+            else:
+                raw_act = ""
+
+        scene["visual_prompt"] = raw_vis
+        scene["acting_prompt"] = raw_act
+
+        # Ensure voiceover narration ties directly to the story and scene events
+        narration = ScriptAgent.ensure_story_tied_narration(
+            scene,
+            language="vi" if is_vi else language
+        )
+
+        # Professionalize acting prompt to director-grade standard
+        pro_acting = ScriptAgent.professionalize_video_prompt(
+            acting_prompt=raw_act,
+            visual_prompt=raw_vis,
+            narration=narration,
+            camera_motion=camera,
+            title=title,
+            art_style=art_style
+        )
+
+        scene["visual_prompt"] = raw_vis
+        scene["acting_prompt"] = pro_acting
+        scene["narration"] = narration
+        return scene
 
     @staticmethod
     def parse_imported_storyboard(text: str) -> Dict[str, Any]:
@@ -336,9 +1397,25 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         - Raw JSON: {"title": ..., "scenes": [...]}
         - Markdown fenced JSON: ```json ... ```
         - Text with embedded JSON anywhere inside
-        - Formatted text screenplay (Title: ..., Scene 1: Visual: ..., Narration: ...)
+        - Formatted text screenplay (Title: ..., Scene 1 / Cảnh 1 / Cảnh cuối: Visual: ..., Dialogues, Narration: ...)
         """
         cleaned_text = text.strip()
+        # Normalize HTML entities & markdown line-continuation escapes commonly produced when copying from ChatGPT/Gemini web UI
+        cleaned_text = re.sub(r'(?i)&(?:#x0*20|#0*32|nbsp);', ' ', cleaned_text)
+        cleaned_text = cleaned_text.replace('\u00a0', ' ').replace('&amp;', '&')
+
+        def sanitize_json_candidate(raw_s: str) -> str:
+            s = raw_s.strip()
+            s = re.sub(r'(?i)&(?:#x0*20|#0*32|nbsp);', ' ', s)
+            s = s.replace('\u00a0', ' ').replace('&amp;', '&')
+            # Strip trailing markdown line-continuation backslashes at end of lines (e.g. "{\", "  \"title\": \"...\",\")
+            s = re.sub(r'\\[ \t]*(\r?\n)', r'\1', s)
+            s = re.sub(r'\\[ \t]*$', '', s)
+            # Collapse double-escaped quotes (\\") into valid JSON escaped quotes (\")
+            s = re.sub(r'\\\\"', r'\\"', s)
+            # Remove trailing commas before } or ]
+            s = re.sub(r',\s*([}\]])', r'\1', s)
+            return s
 
         # 1. Try extracting JSON block
         json_fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned_text, re.IGNORECASE)
@@ -350,130 +1427,376 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                 candidate_json_str = outer_match.group(1).strip()
 
         if candidate_json_str:
-            try:
-                parsed = json.loads(candidate_json_str)
-                if isinstance(parsed, dict) and "scenes" in parsed and isinstance(parsed["scenes"], list):
-                    normalized_scenes = []
-                    for idx, sc in enumerate(parsed["scenes"]):
-                        if not isinstance(sc, dict):
-                            continue
-                        acting = (
-                            sc.get("acting_prompt") or
-                            sc.get("video_prompt") or
-                            sc.get("acting") or
-                            sc.get("motion_prompt") or
-                            sc.get("visual_prompt", "")
-                        )
-                        normalized_scenes.append({
-                            "scene_number": sc.get("scene_number", idx + 1),
-                            "title": sc.get("title", f"Scene {idx + 1}"),
-                            "archetype": sc.get("archetype", "Cinematic Scene"),
-                            "visual_prompt": sc.get("visual_prompt") or sc.get("visual") or sc.get("prompt") or sc.get("description", ""),
-                            "acting_prompt": acting,
-                            "narration": sc.get("narration") or sc.get("voiceover") or sc.get("script") or sc.get("text", ""),
-                            "camera_motion": sc.get("camera_motion", "zoom_in")
-                        })
-                    if normalized_scenes:
-                        return {
-                            "title": parsed.get("title", "Imported Film"),
-                            "logline": parsed.get("logline", ""),
-                            "characters": parsed.get("characters", ""),
-                            "scenes": normalized_scenes
+            parsed = None
+            for attempt_str in (candidate_json_str, sanitize_json_candidate(candidate_json_str)):
+                try:
+                    parsed = json.loads(attempt_str, strict=False)
+                    if isinstance(parsed, dict) and "scenes" in parsed:
+                        break
+                except Exception:
+                    parsed = None
+
+            # Fallback regex scene-object extractor if JSON string has unescaped internal quotes or truncation
+            if not (isinstance(parsed, dict) and isinstance(parsed.get("scenes"), list) and parsed.get("scenes")):
+                try:
+                    repaired = sanitize_json_candidate(candidate_json_str)
+                    m_title = re.search(r'"title"\s*:\s*"((?:\\.|[^"\\])*)"', repaired)
+                    m_logline = re.search(r'"logline"\s*:\s*"((?:\\.|[^"\\])*)"', repaired)
+                    m_chars = re.search(r'"characters"\s*:\s*"((?:\\.|[^"\\])*)"', repaired)
+                    sc_blocks = re.findall(r'\{\s*"scene_number"\s*:[\s\S]*?"camera_motion"\s*:\s*"[^"]*"\s*\}', repaired)
+                    if sc_blocks:
+                        extracted_scenes = []
+                        for idx_b, b_str in enumerate(sc_blocks):
+                            try:
+                                sc_obj = json.loads(b_str, strict=False)
+                            except Exception:
+                                def _get_f(key: str, default: str = "") -> str:
+                                    m_f = re.search(rf'"{key}"\s*:\s*"((?:\\.|[^"\\])*)"', b_str)
+                                    return m_f.group(1).replace('\\"', '"').replace('\\n', '\n') if m_f else default
+                                sc_obj = {
+                                    "scene_number": idx_b + 1,
+                                    "title": _get_f("title", f"Scene {idx_b + 1}"),
+                                    "archetype": _get_f("archetype", "Cinematic Scene"),
+                                    "visual_prompt": _get_f("visual_prompt", ""),
+                                    "acting_prompt": _get_f("acting_prompt", ""),
+                                    "narration": _get_f("narration", ""),
+                                    "camera_motion": _get_f("camera_motion", "zoom_in")
+                                }
+                            extracted_scenes.append(sc_obj)
+                        parsed = {
+                            "title": m_title.group(1) if m_title else "Imported Film",
+                            "logline": m_logline.group(1) if m_logline else "",
+                            "characters": m_chars.group(1) if m_chars else "",
+                            "scenes": extracted_scenes
                         }
-            except Exception as e:
-                print(f"JSON parsing notice ({e}), attempting text-based heuristic parsing...")
+                except Exception as e_fallback:
+                    print(f"Regex JSON fallback notice: {e_fallback}")
+
+            if isinstance(parsed, dict) and "scenes" in parsed and isinstance(parsed["scenes"], list):
+                normalized_scenes = []
+                for idx, sc in enumerate(parsed["scenes"]):
+                    if not isinstance(sc, dict):
+                        continue
+                    normalized_sc = {
+                        "scene_number": sc.get("scene_number", idx + 1),
+                        "title": sc.get("title", f"Scene {idx + 1}"),
+                        "archetype": sc.get("archetype", "Cinematic Scene"),
+                        "visual_prompt": sc.get("visual_prompt") or sc.get("image_prompt") or sc.get("visual") or sc.get("prompt") or sc.get("description", ""),
+                        "acting_prompt": sc.get("acting_prompt") or sc.get("video_prompt") or sc.get("motion_prompt") or sc.get("acting", ""),
+                        "narration": sc.get("narration") or sc.get("voiceover") or sc.get("script") or sc.get("text", ""),
+                        "camera_motion": sc.get("camera_motion", "zoom_in")
+                    }
+                    normalized_sc = ScriptAgent.ensure_separate_prompts(normalized_sc)
+                    normalized_scenes.append(normalized_sc)
+                if normalized_scenes:
+                    return {
+                        "title": parsed.get("title", "Imported Film"),
+                        "logline": parsed.get("logline", ""),
+                        "characters": parsed.get("characters", ""),
+                        "scenes": normalized_scenes
+                    }
 
         # 2. Heuristic text parser (if user pasted plain text screenplay)
-        scene_blocks = re.split(r"(?:^|\n)(?:Scene|Cảnh|Phân cảnh)\s*(\d+)[:\s\-]*", cleaned_text, flags=re.IGNORECASE)
+        scene_blocks = re.split(
+            r"(?:^|\n)((?:Scene|Cảnh|Phân cảnh)\s*\d+|CẢNH\s+CUỐI|CẢNH\s+KẾT|FINAL\s+SCENE)[:\s\-–—]*",
+            cleaned_text,
+            flags=re.IGNORECASE
+        )
 
         if len(scene_blocks) > 2:
-            title_match = re.search(r"(?:Title|Tiêu đề|Tên phim)[:\s]*(.+)", scene_blocks[0], re.IGNORECASE)
-            quote_title = re.search(r'["“]([^"”\n]+)["”]', scene_blocks[0])
+            header_block = scene_blocks[0]
+            title_match = re.search(r"(?:Title|Tiêu đề|Tên phim)[:\s]*(.+)", header_block, re.IGNORECASE)
+            quote_title = re.search(r'["“]([^"”\n]+)["”]', header_block)
             title = None
             if title_match:
                 title = title_match.group(1).strip()
             elif quote_title:
                 title = quote_title.group(1).strip()
             else:
-                lines = [l.strip() for l in scene_blocks[0].splitlines() if l.strip() and not any(w in l.lower() for w in ["kịch bản", "script", "thể loại", "thời lượng"])]
+                lines = [
+                    l.strip() for l in header_block.splitlines()
+                    if l.strip() and not any(w in l.lower() for w in ["kịch bản", "script", "thể loại", "thời lượng", "bối cảnh", "thông điệp", "nhân vật", "mở đầu"])
+                ]
                 if lines:
                     title = lines[0]
             title = title or "Imported Film"
 
             # Extract message or logline
-            msg_match = re.search(r'(?:Thông điệp|Message|Logline|Tóm tắt)[:\s]*(.+)', scene_blocks[0], re.IGNORECASE)
-            logline_match = re.search(r"(?:Logline|Tóm tắt)[:\s]*(.+)", scene_blocks[0], re.IGNORECASE)
-            logline = msg_match.group(1).strip() if msg_match else (logline_match.group(1).strip() if logline_match else "")
+            msg_match = re.search(r'(?:Thông điệp|Message|Logline|Tóm tắt)[:\s]*(.+)', header_block, re.IGNORECASE)
+            logline = msg_match.group(1).strip() if msg_match else ""
 
             # Extract characters specification
-            char_match = re.search(r'(?:Nhân vật|Characters)[:\s]*\n([\s\S]*?)(?=(?:Mở đầu|CẢNH|Scene|Phân cảnh|Bối cảnh|Thông điệp|$))', scene_blocks[0], re.IGNORECASE)
+            char_match = re.search(r'(?:Nhân vật|Characters)[:\s]*\n([\s\S]*?)(?=(?:Mở đầu|CẢNH|Scene|Phân cảnh|Bối cảnh|Thông điệp|$))', header_block, re.IGNORECASE)
             characters = ""
             if char_match:
                 raw_c = char_match.group(1).strip()
                 c_lines = [l.strip() for l in raw_c.splitlines() if l.strip()]
                 characters = " | ".join(c_lines[:4])
 
+            section_headers = {
+                "mở đầu", "phát triển", "cao trào", "kết", "kết thúc", "hết", "hết.", "the end", "opening", "climax", "ending"
+            }
+            speaker_re = re.compile(
+                r'^([A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]{2,}(?:\s+[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ0-9]+)*)\s*(?:\(([^\)]*)\))?$'
+            )
+
             scenes = []
+            motion_cycle = ["zoom_in", "pan_right", "subtle_drift", "zoom_out", "pan_left"]
+
             for i in range(1, len(scene_blocks), 2):
-                sc_num = int(scene_blocks[i]) if scene_blocks[i].isdigit() else len(scenes) + 1
-                sc_body = scene_blocks[i+1].strip()
+                marker_str = scene_blocks[i].strip()
+                num_m = re.search(r'(\d+)', marker_str)
+                sc_num = int(num_m.group(1)) if num_m else (len(scenes) + 1)
+                is_final_marker = any(k in marker_str.upper() for k in ["CUỐI", "KẾT", "FINAL"])
+                sc_body = scene_blocks[i + 1].strip()
 
-                lines = [l.strip() for l in sc_body.splitlines() if l.strip()]
-                first_line = lines[0] if lines else ""
-                clean_title = re.sub(r'^[–\-—:\s]+', '', first_line).strip()
-                clean_title = re.sub(r'^(?:NGOẠI|NỘI|EXT|INT)[\.\s]*', '', clean_title, flags=re.IGNORECASE).strip()
-                sc_title = clean_title if clean_title and len(clean_title) < 60 else f"Scene {sc_num}"
+                raw_lines = [l.strip() for l in sc_body.splitlines() if l.strip()]
+                if not raw_lines:
+                    continue
 
-                body_without_title = "\n".join(lines[1:]) if len(lines) > 1 else sc_body
-                vis_match = re.search(r'(?:Visual|Hình ảnh|Miêu tả)[:\s]*(.+?)(?=(?:Âm thanh|Audio|Lời thoại|Dialogue|\n[A-ZÀ-Ỹ\s]{3,}\s*(?:\([^\)]*\))?|\n\n[A-ZÀ-Ỹ]|$))', body_without_title, re.IGNORECASE | re.DOTALL)
-                visual = vis_match.group(1).strip() if vis_match else body_without_title[:250]
-                visual = re.sub(r'\s+', ' ', visual)
+                # Determine scene title vs first content line
+                first_line = raw_lines[0]
+                is_location_header = bool(re.match(r'^(?:NGOẠI|NỘI|EXT|INT)\b', first_line, re.IGNORECASE))
+                is_short_header = (
+                    not is_final_marker and
+                    len(first_line) < 60 and
+                    not first_line.endswith(('.', '!', '?')) and
+                    not re.match(r'^(?:Visual|Hình ảnh|Miêu tả|Narration|Thuyết minh|Lời dẫn|Acting|Âm thanh|Audio)[:\s]', first_line, re.IGNORECASE)
+                )
 
-                # Look for dialogues: CHARACTER NAME (tone) \n "line"
-                dials = re.findall(r'(?:^|\n)([A-ZÀ-Ỹ]{2,}(?:\s+[A-ZÀ-Ỹ]+)*)\s*(?:\(([^\)]*)\))?\n([^\n]+)', sc_body)
+                if is_location_header or is_short_header:
+                    clean_title = re.sub(r'^[–\-—:\s]+', '', first_line).strip()
+                    clean_title = re.sub(r'^(?:NGOẠI|NỘI|EXT|INT)[\.\s\-–—]*', '', clean_title, flags=re.IGNORECASE).strip()
+                    sc_title = clean_title or (f"Cảnh Cuối" if is_final_marker else f"Scene {sc_num}")
+                    content_lines = raw_lines[1:]
+                else:
+                    sc_title = "Cảnh Cuối – Dư Âm" if is_final_marker else f"Scene {sc_num}"
+                    content_lines = raw_lines
+
+                explicit_visuals = []
+                narrative_actions = []
+                dialogues = []
+                explicit_narration = ""
+                explicit_acting = ""
+                screen_message = ""
+                archetype_override = ""
+
+                idx_line = 0
+                while idx_line < len(content_lines):
+                    line = content_lines[idx_line]
+                    low_line = line.lower().strip(' .:')
+
+                    # Skip structural section dividers like "Phát triển", "Cao trào", "Kết", "Hết."
+                    if low_line in section_headers:
+                        idx_line += 1
+                        continue
+
+                    # Check for on-screen text / moral header
+                    if re.match(r'^(?:CHỮ TRÊN MÀN HÌNH|TEXT ON SCREEN|THÔNG ĐIỆP CUỐI)[:\s]*$', line, re.IGNORECASE):
+                        if idx_line + 1 < len(content_lines):
+                            screen_message = content_lines[idx_line + 1].strip(' "“”')
+                            idx_line += 2
+                            continue
+                        idx_line += 1
+                        continue
+
+                    # Check labeled fields
+                    m_vis = re.match(r'^(?:Visual|Hình ảnh|Miêu tả)[:\s]+(.+)', line, re.IGNORECASE)
+                    if m_vis:
+                        explicit_visuals.append(m_vis.group(1).strip())
+                        idx_line += 1
+                        continue
+
+                    m_aud = re.match(r'^(?:Âm thanh|Audio|Âm nhạc|Music|SFX)[:\s]+(.+)', line, re.IGNORECASE)
+                    if m_aud:
+                        idx_line += 1
+                        continue
+
+                    m_arch = re.match(r'^(?:Archetype|Thể loại cảnh)[:\s]+(.+)', line, re.IGNORECASE)
+                    if m_arch:
+                        archetype_override = m_arch.group(1).strip()
+                        idx_line += 1
+                        continue
+
+                    m_act = re.match(r'^(?:Acting|Video|Motion|Diễn xuất|Hành động)[:\s]+(.+)', line, re.IGNORECASE)
+                    if m_act:
+                        explicit_acting = m_act.group(1).strip()
+                        idx_line += 1
+                        continue
+
+                    m_narr = re.match(r'^(?:Narration|Thuyết minh|Lời dẫn|Voiceover)[:\s]+(.+)', line, re.IGNORECASE)
+                    if m_narr:
+                        explicit_narration = m_narr.group(1).strip()
+                        idx_line += 1
+                        continue
+
+                    # Check ALL-CAPS speaker line followed by dialogue
+                    m_spk = speaker_re.match(line)
+                    if m_spk and idx_line + 1 < len(content_lines):
+                        spk_name = m_spk.group(1).strip().title()
+                        spk_tone = (m_spk.group(2) or "").strip()
+                        dial_line = content_lines[idx_line + 1].strip(' "“”')
+                        dialogues.append((spk_name, spk_tone, dial_line))
+                        idx_line += 2
+                        continue
+
+                    # Regular narrative action / stage direction line
+                    clean_action = re.sub(r'^(?:Cảnh chuyển|Chuyển cảnh|Cut to)[:\s]+', '', line, flags=re.IGNORECASE).strip()
+                    if clean_action and clean_action.lower().strip(' .') not in section_headers:
+                        narrative_actions.append(clean_action)
+                    idx_line += 1
+
+                # 1. Construct clean visual_prompt (NO speaker headers, NO raw dialogue blocks)
+                vis_parts = list(explicit_visuals)
+                for act_line in narrative_actions:
+                    if len(" ".join(vis_parts).split()) < 45:
+                        vis_parts.append(act_line)
+                visual = " ".join(vis_parts).strip()
+                if not visual:
+                    visual = sc_title
+                if dialogues and "biểu cảm" not in visual.lower():
+                    visual = visual.rstrip(' .') + ". Biểu cảm gương mặt và khẩu hình đối thoại sinh động, ánh mắt giao tiếp tự nhiên, không bong bóng thoại, không chữ."
+
+                # Select the primary dialogue / conversational pair for both narration and acting_prompt
+                selected_pair_idx = 0
+                if len(dialogues) >= 2:
+                    selected_pair_idx = len(dialogues) - 2
+                    best_score = -1
+                    for d_i in range(len(dialogues) - 1):
+                        spk_a, _, line_a = dialogues[d_i]
+                        spk_b, _, line_b = dialogues[d_i + 1]
+                        score = len(line_a.split()) + len(line_b.split())
+                        if spk_a != spk_b:
+                            score += 6
+                        if score > best_score:
+                            best_score = score
+                            selected_pair_idx = d_i
+
+                # 2. Construct acting_prompt with primary dialogue
                 dial_str = ""
-                if dials:
-                    spk, tone, line = dials[0]
-                    clean_spk = spk.strip().title()
-                    clean_tone = f" — {tone.strip()}" if tone else ""
-                    dial_str = f'{clean_spk} nói: "{line.strip()}" (không phụ đề){clean_tone}'
+                if dialogues:
+                    if len(dialogues) == 1:
+                        chosen_spk, chosen_tone, chosen_line = dialogues[0]
+                    else:
+                        f_spk, f_tone, f_line = dialogues[selected_pair_idx]
+                        s_spk, s_tone, s_line = dialogues[selected_pair_idx + 1]
+                        if len(f_line.split()) >= len(s_line.split()):
+                            chosen_spk, chosen_tone, chosen_line = f_spk, f_tone, f_line
+                        else:
+                            chosen_spk, chosen_tone, chosen_line = s_spk, s_tone, s_line
+                    tone_suffix = f" — {chosen_tone}" if chosen_tone else ""
+                    dial_str = f'Character says in an expressive voice: "{chosen_line}" (no subtitles){tone_suffix}'
 
-                arch_match = re.search(r"(?:Archetype|Thể loại cảnh)[:\s]*(.+?)(?=(?:Visual|Acting|Narration|$))", sc_body, re.IGNORECASE | re.DOTALL)
-                if arch_match:
-                    archetype = arch_match.group(1).strip()
-                elif dial_str:
+                if archetype_override:
+                    archetype = archetype_override
+                elif is_final_marker:
+                    archetype = "Resolution"
+                elif dialogues:
                     archetype = "Dialogue Scene"
-                elif i == 1:
+                elif len(scenes) == 0:
                     archetype = "Establishing Shot"
                 else:
                     archetype = "Action Beat"
 
-                acting = (
-                    f"0-3s: {visual[:130]}. "
-                    f"3-6s: {dial_str if dial_str else 'Diễn xuất và chuyển động tự nhiên của nhân vật trong bối cảnh.'} "
-                    f"6-8s: Cảm xúc chuyển biến tự nhiên, ánh mắt kết nối nhịp nhàng sang cảnh tiếp theo. "
-                    f"Camera: zoom_in. Lighting: ánh sáng điện ảnh ấm áp. Negative: subtitles, watermark, text overlay."
-                )
+                acting = explicit_acting
+                if not acting:
+                    # Build clean 0-3s beat using complete sentences (never slicing mid-word)
+                    vis_sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', " ".join(vis_parts).strip()) if s.strip()]
+                    beat1_sents = []
+                    for vs in vis_sents:
+                        if len(" ".join(beat1_sents + [vs]).split()) <= 24 or not beat1_sents:
+                            beat1_sents.append(vs.rstrip('.!?'))
+                        else:
+                            break
+                    beat1_str = ". ".join(beat1_sents).strip(' .') or sc_title
+                    act_beat_3 = narrative_actions[-1].rstrip('.!?') if len(narrative_actions) > 1 else "Cảm xúc chuyển biến tự nhiên, ánh mắt kết nối nhịp nhàng sang cảnh tiếp theo"
+                    acting = (
+                        f"0-3s: {beat1_str}. "
+                        f"3-6s: {dial_str if dial_str else 'Diễn xuất và chuyển động tự nhiên của nhân vật trong bối cảnh.'} "
+                        f"6-8s: {act_beat_3}. "
+                        f"Camera: {motion_cycle[len(scenes) % len(motion_cycle)]}. Lighting: ánh sáng điện ảnh ấm áp. Negative: subtitles, watermark, text overlay."
+                    )
 
-                # Narration: extract voiceover or summarize visual
-                narr_match = re.search(r'(?:Narration|Thuyết minh|Lời dẫn)[:\s]*(.+)', sc_body, re.IGNORECASE | re.DOTALL)
-                if narr_match:
-                    narration = narr_match.group(1).strip()
+                # 3. Construct STORY-TIED Voiceover Narration (`narration`)
+                if explicit_narration:
+                    narration = explicit_narration
                 else:
-                    sentences = re.split(r'[.!?\n]', visual)
-                    narration = sentences[0].strip() if sentences and sentences[0].strip() else visual[:80]
-                    if len(narration.split()) > 18:
-                        narration = " ".join(narration.split()[:16]) + "..."
+                    # Build a true storytelling voiceover that ties together the scene's action, dialogue, and message!
+                    story_parts = []
 
-                scenes.append({
-                    "scene_number": sc_num,
+                    # Combine explicit_visuals and narrative_actions to find the best scene-opening story sentence
+                    all_scene_sents = []
+                    pure_scenery_prefixes = (
+                        "ánh nắng xuyên qua", "cánh đồng lúa chín", "trời nhuộm màu",
+                        "toàn cảnh cánh đồng", "máy gặt đến gần", "thầy giáo đang viết",
+                        "gió lùa tạo", "tí đứng bật dậy", "tí chìa tay ra", "tí cúi đầu", "tí ngẩng lên"
+                    )
+                    for s in (explicit_visuals + narrative_actions):
+                        for sub_s in re.split(r'(?<=[.!?])\s+', s):
+                            sub_s = sub_s.strip()
+                            if not sub_s:
+                                continue
+                            if any(sub_s.lower().startswith(p) for p in pure_scenery_prefixes):
+                                continue
+                            all_scene_sents.append(sub_s)
+
+                    if not all_scene_sents:
+                        for s in (explicit_visuals + narrative_actions):
+                            for sub_s in re.split(r'(?<=[.!?])\s+', s):
+                                if sub_s.strip():
+                                    all_scene_sents.append(sub_s.strip())
+
+                    # Add key opening action/context sentence
+                    if all_scene_sents:
+                        story_parts.append(all_scene_sents[0].rstrip('.!?'))
+
+                    # Weave in key character dialogue(s) so the voiceover tells the actual conversation/plot
+                    if dialogues:
+                        if len(dialogues) == 1:
+                            spk, tone, d_line = dialogues[0]
+                            verb = "hỏi" if d_line.strip().endswith("?") else "nói"
+                            story_parts.append(f'{spk} {verb}: "{d_line}"')
+                        else:
+                            first_spk, _, first_line = dialogues[selected_pair_idx]
+                            second_spk, _, second_line = dialogues[selected_pair_idx + 1]
+                            v1 = "hỏi" if first_line.strip().endswith("?") else "nói"
+                            if first_spk == second_spk:
+                                story_parts.append(f'{first_spk} {v1}: "{second_line}"')
+                            else:
+                                v2 = "hỏi lại" if second_line.strip().endswith("?") else "đáp"
+                                story_parts.append(f'{first_spk} {v1}: "{first_line}", và {second_spk} {v2}: "{second_line}"')
+
+                    # Add closing action turn or on-screen moral if present
+                    if screen_message:
+                        story_parts.append(screen_message.rstrip('.!?'))
+                    elif not dialogues and len(all_scene_sents) > 1:
+                        for extra_s in all_scene_sents[1:]:
+                            clean_extra = extra_s.rstrip('.!?')
+                            if clean_extra not in story_parts and len(" ".join(story_parts + [clean_extra]).split()) <= 32:
+                                story_parts.append(clean_extra)
+                        if all_scene_sents[-1].rstrip('.!?') not in story_parts:
+                            story_parts.append(all_scene_sents[-1].rstrip('.!?'))
+                    elif len(all_scene_sents) > 1 and len(" ".join(story_parts).split()) < 24:
+                        last_act = all_scene_sents[-1].rstrip('.!?')
+                        if last_act not in story_parts:
+                            story_parts.append(last_act)
+
+                    narration = ". ".join(p for p in story_parts if p).strip()
+                    narration = re.sub(r'([.!?]"?)\.', r'\1', narration)
+                    if narration and not narration.endswith(('.', '!', '?', '"', '”', '…')):
+                        narration += "."
+
+                sc_dict = {
+                    "scene_number": len(scenes) + 1,
                     "title": sc_title,
                     "archetype": archetype,
                     "visual_prompt": visual,
                     "acting_prompt": acting,
                     "narration": narration,
-                    "camera_motion": "zoom_in"
-                })
+                    "camera_motion": motion_cycle[len(scenes) % len(motion_cycle)]
+                }
+                sc_dict = ScriptAgent.ensure_separate_prompts(sc_dict)
+                scenes.append(sc_dict)
 
             if scenes:
                 return {
@@ -539,24 +1862,71 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
     async def _generate_with_gemini_cookie(self, prompt: str, cookie_input: str) -> Dict[str, Any]:
         from backend.services.gemini_wrapper import GeminiWebWrapper
         wrapper = GeminiWebWrapper.get_instance()
+        target_model = self.model
+        is_pro = bool(target_model and "pro" in target_model.lower())
+        if not target_model or target_model == "default":
+            target_model = "gemini-pro-advanced" if is_pro else "gemini-flash-advanced"
+        elif is_pro and "advanced" not in target_model.lower():
+            target_model = "gemini-pro-advanced"
+        elif not is_pro and "advanced" not in target_model.lower():
+            target_model = "gemini-flash-advanced"
+
         res = await wrapper.generate_content(
             prompt=prompt,
-            model=self.model,
+            model=target_model,
             cookie_override=cookie_input,
-            extended_thinking=False
+            extended_thinking=is_pro
         )
         return self._clean_json_response(res.text)
 
-    def _generate_with_gemini(self, prompt: str, model: str = "gemini-2.0-flash") -> Dict[str, Any]:
+    async def _generate_with_gemini(self, prompt: str, model: str = "gemini-2.5-flash") -> Dict[str, Any]:
         from google import genai
+        from google.genai import types
         client = genai.Client(api_key=self.api_key)
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt
-        )
-        return self._clean_json_response(response.text)
+        target_model = (model or "gemini-2.5-flash").strip()
+        is_pro = "pro" in target_model.lower()
 
-    def _generate_with_openai_compatible(self, endpoint: str, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
+        config_kwargs = {
+            "response_mime_type": "application/json",
+            "temperature": 0.7
+        }
+        # Turn off thinking delay on Flash models for fast execution
+        if not is_pro and any(tag in target_model.lower() for tag in ["2.5", "flash", "thinking"]):
+            try:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            except Exception:
+                pass
+        elif is_pro and "2.5" in target_model.lower():
+            # Deep reasoning budget for Pro
+            try:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
+            except Exception:
+                pass
+
+        try:
+            config = types.GenerateContentConfig(**config_kwargs)
+            response = await client.aio.models.generate_content(
+                model=target_model,
+                contents=prompt,
+                config=config
+            )
+            return self._clean_json_response(response.text)
+        except Exception as e:
+            # Check if cookie session is available as a fallback
+            try:
+                from backend.config import get_server_credentials
+                creds = get_server_credentials()
+                psid = creds.get("gemini_cookie_psid")
+                psidts = creds.get("gemini_cookie_psidts")
+                if psid:
+                    cookie_token = f"{psid}|{psidts}" if psidts else psid
+                    print(f"⚠️ Google GenAI API returned ({e}). Auto-falling back to persistent Gemini Web Session...")
+                    return await self._generate_with_gemini_cookie(prompt, cookie_token)
+            except Exception:
+                pass
+            raise e
+
+    async def _generate_with_openai_compatible(self, endpoint: str, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
         url = f"{endpoint.rstrip('/')}/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -573,14 +1943,17 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
             ],
             "temperature": 0.7
         }
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(url, headers=headers, json=payload)
+        if any(k in endpoint.lower() or k in model.lower() for k in ["openai", "gpt", "deepseek"]):
+            payload["response_format"] = {"type": "json_object"}
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
             return self._clean_json_response(content)
 
-    def _generate_with_anthropic(self, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
+    async def _generate_with_anthropic(self, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
         url = "https://api.anthropic.com/v1/messages"
         headers = {
             "x-api-key": api_key,
@@ -596,8 +1969,8 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
             ],
             "temperature": 0.7
         }
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(url, headers=headers, json=payload)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
             content = data["content"][0]["text"]
@@ -637,6 +2010,8 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         Guarantees that the storyboard faithfully reflects the user's actual plot and entities.
         """
         is_vi = language.startswith("vi")
+        if not num_scenes or num_scenes <= 0:
+            num_scenes = self.estimate_optimal_scene_count(raw_text)
         total_s = len(sentences)
         chunk_size = max(1, total_s / float(num_scenes))
 
@@ -677,9 +2052,34 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
             chunk_text = " ".join(chunk_sentences)
             arch = archetypes[min(idx, len(archetypes) - 1)]
 
-            clean_words = [w for w in chunk_sentences[0].split() if w]
-            narr_raw = " ".join(clean_words[:15]) if clean_words else "The adventure continues through ancient lands."
-            if not narr_raw.endswith((".", "!", "?")):
+            # Build a complete, story-tied narration from the chunk without mid-sentence truncation
+            narr_parts = []
+            for cs in chunk_sentences:
+                cs_clean = re.sub(r'\s+', ' ', cs).strip()
+                if not cs_clean:
+                    continue
+                if len(" ".join(narr_parts + [cs_clean]).split()) <= 26 or not narr_parts:
+                    narr_parts.append(cs_clean)
+                else:
+                    break
+
+            narr_raw = " ".join(narr_parts).strip()
+            if len(narr_raw.split()) > 28:
+                # Trim cleanly at a clause boundary (comma, semicolon, dash) if overly long
+                clauses = re.split(r'([,;–—:])', narr_raw)
+                acc = ""
+                for c_piece in clauses:
+                    if len((acc + c_piece).split()) <= 24 or not acc:
+                        acc += c_piece
+                    else:
+                        break
+                narr_raw = acc.strip(' ,;–—:')
+                if len(narr_raw.split()) > 26:
+                    narr_raw = " ".join(narr_raw.split()[:24])
+
+            if not narr_raw:
+                narr_raw = "Câu chuyện tiếp tục mở ra những tình tiết bất ngờ." if is_vi else "The adventure continues through ancient lands."
+            if not narr_raw.endswith((".", "!", "?", '"', '”', '…')):
                 narr_raw += "."
 
             if idx == 0:
@@ -692,7 +2092,13 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
                 sc_title = f"The Turn of Fortune" if not is_vi else f"Bước Ngoặt Định Mệnh"
 
             vis_snippet = chunk_text[:200].replace('"', '')
-            vis_prompt = f"{art_style.capitalize()} art style. {vis_snippet}. Cinematic composition, warm atmospheric lighting, high fidelity details."
+            if art_style == "realistic":
+                style_tag = "Photorealistic cinematic live-action"
+            elif art_style == "stick_figure":
+                style_tag = "Minimalist Stick Figure Animation"
+            else:
+                style_tag = f"{art_style.capitalize()} art"
+            vis_prompt = f"{style_tag} style. {vis_snippet}. Cinematic composition, warm atmospheric lighting, high fidelity details."
 
             acting_prompt = (
                 f"0-3s: Character moves with focused intention into the scene. "
@@ -732,6 +2138,8 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
         tailored screenplays and narrative beats tailored to the story topic.
         """
         clean_idea_raw = idea.strip()
+        if not num_scenes or num_scenes <= 0:
+            num_scenes = self.estimate_optimal_scene_count(clean_idea_raw)
         genre = self._detect_genre(clean_idea_raw)
         is_vi = language.startswith("vi")
 
@@ -1101,5 +2509,226 @@ Do NOT wrap the output in markdown code blocks. Return raw JSON only."""
             "title": title,
             "logline": logline,
             "characters": chosen_char,
+            "scenes": scenes
+        }
+
+    def _build_advertisement_prompt(
+        self,
+        product_name: str,
+        description: str,
+        specs: str = "",
+        brand: str = "",
+        target_audience: str = "General",
+        ad_style: str = "cinematic_commercial",
+        call_to_action: str = "Order now!",
+        pricing_offer: str = "",
+        num_scenes: int = 4,
+        target_duration: int = None,
+        art_style: str = "realistic",
+        language: str = "en"
+    ) -> str:
+        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 8)
+        target_scene_sec = max(5, int(calc_duration / max(1, num_scenes)))
+        target_scene_sec = min(target_scene_sec, 8)
+        max_words = min(18, max(12, int((target_scene_sec - 1.0) * 2.4)))
+
+        ad_styles_guide = {
+            "cinematic_commercial": "High-end cinematic broadcast commercial (Apple / Nike style), dramatic rim lighting, 35mm shallow depth of field, sleek and awe-inspiring",
+            "viral_reels": "Fast-paced TikTok / Instagram Reels / YouTube Shorts style, explosive hook, dynamic camera transitions, punchy and trending",
+            "spec_breakdown": "Tech review & feature deep-dive, ultra-sharp macro close-ups, highlighting precise engineering specs and functional superiority",
+            "luxury_macro": "Ultra-luxury premium showcase (Rolex / Porsche aesthetic), slow elegant motion, golden hour or moody studio lighting, velvety textures",
+            "problem_solution": "Relatable problem -> Hero product introduction -> Complete transformation & effortless satisfaction"
+        }
+        chosen_style_desc = ad_styles_guide.get(ad_style, ad_styles_guide["cinematic_commercial"])
+        brand_str = brand.strip() if (brand and brand.strip()) else "Exclusive"
+
+        return f"""You are an elite commercial director and master advertising copywriter from premier global agencies (Apple, Ogilvy, Nike commercials, Wieden+Kennedy).
+Craft an electrifying, high-converting product commercial storyboard tailored for high-impact AI advertising video generation (Google Flow / Google Veo 3 I2V, Midjourney / Imagen 3).
+
+Product Details:
+- Product Name: {product_name}
+- Brand: {brand_str}
+- Overview & Core Benefits: {description}
+- Technical Specs & Features: {specs or "State-of-the-art engineering and craftsmanship"}
+- Target Audience: {target_audience}
+- Commercial Vibe & Style: {chosen_style_desc}
+- Special Offer / Pricing: {pricing_offer or "Limited Time Exclusive Offer"}
+- Call to Action (CTA): {call_to_action}
+- Voiceover Narration Language: {language}
+- Visual Art Style: {art_style} (e.g. realistic 35mm photography)
+
+COMMERCIAL STRUCTURE (Across {num_scenes} scenes):
+- Scene 1 [THE HOOK]: Magnetic visual hook that captures 100% attention in the first 1.5 seconds. Highlights the user desire, curiosity, or dynamic silhouette tease of the product.
+- Scene 2 [THE HERO REVEAL]: Breathtaking reveal of {product_name} in cinematic studio lighting. Sleek angles, pristine reflections, highlighting brand craftsmanship.
+- Scene 3 [TECH SPECS & FEATURES IN ACTION]: Spotlight on core technical specs: {specs}. Show how the engineering specs directly solve customer problems with close-up macro shots.
+- Scene 4 [LIFESTYLE & ELEVATED EXPERIENCE]: A confident, satisfied customer experiencing the joy, performance, and transformative benefits of the product.
+- Scene 5 [IRRESISTIBLE OFFER & CALL TO ACTION]: Grand beauty shot with special offer ({pricing_offer}), brand logo, and urgent call to action ({call_to_action}).
+
+CRITICAL CINEMATIC DIRECTIVES:
+1. SEPARATE PROMPTS (MANDATORY):
+   a) `visual_prompt`: Detailed static photograph description: studio lighting setup, product geometry, materials, 35mm lens, camera angle, atmospheric background in {art_style} style. NO timestamps, NO camera moves, NO dialogue quotes.
+   b) `acting_prompt` (PROFESSIONAL COMMERCIAL VIDEO PROMPT for Google Flow / Veo 3 / Kling):
+      * 8-second commercial camera motion & dynamic movement written as natural, luxury cinematic prose (90-130 words) in ENGLISH only.
+      * Start with camera movement as a dedicated sentence: e.g. "The camera performs a smooth, high-precision motorized slider push-in toward the product hero silhouette."
+      * Detail physically grounded product dynamics across 3 beats:
+        - 0-3s: Fluid camera glide slowly reveals pristine geometric contours and subtle light reflections.
+        - 3-6s: Dynamic tactile interaction highlights responsive controls and fine material craftsmanship.
+        - 6-8s: The composition settles into an authoritative hero angle with ultimate brand prestige.
+      * Studio Lighting & Optics: "Commercial studio softbox key light with crisp edge reflections and immaculate specular highlights, shot on 50mm f/1.8 lens."
+      * Veo 3 Audio & Negative:
+        Audio: upbeat sophisticated ambient electronic rhythm, no lyrics.
+        SFX: subtle tactile click, gentle smooth slider sound.
+        Negative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, jittery motion.
+2. NARRATION:
+   - Punchy, persuasive commercial voiceover in {language}.
+   - STRICT PACING: Strictly 10 to {max_words} words per scene (under 7.2s speaking time).
+3. CAMERA MOTIONS:
+   - Choose kinetic motions: "zoom_in", "pan_right", "pan_left", "subtle_drift", or "zoom_out".
+
+Return ONLY raw JSON matching this structure:
+{{
+  "title": "{product_name} — Official Commercial",
+  "logline": "1-sentence high-converting ad hook",
+  "characters": "Product: {product_name} ({brand_str}) | User: Modern customer enjoying the product",
+  "scenes": [
+    {{
+      "scene_number": 1,
+      "title": "The Hook",
+      "archetype": "The Hook",
+      "visual_prompt": "Detailed commercial photography description of frozen frame in {art_style} style...",
+      "acting_prompt": "The camera performs a smooth, high-precision motorized slider push-in toward {product_name}. 0-3s: Fluid camera glide slowly reveals pristine geometric contours and subtle light reflections. 3-6s: Dynamic tactile interaction highlights responsive controls and fine material craftsmanship. 6-8s: The composition settles into an authoritative hero angle with ultimate brand prestige. Commercial studio softbox key light with crisp edge reflections, shot on 50mm f/1.8 lens.\\n\\nAudio: upbeat sophisticated ambient electronic rhythm, no lyrics.\\nSFX: subtle tactile click, gentle smooth slider sound.\\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, jittery motion.",
+      "narration": "Short, punchy commercial voiceover in {language} (10-{max_words} words)...",
+      "camera_motion": "zoom_in"
+    }}
+  ]
+}}"""
+
+    def _generate_offline_advertisement(
+        self,
+        product_name: str,
+        description: str,
+        specs: str = "",
+        brand: str = "",
+        target_audience: str = "General",
+        ad_style: str = "cinematic_commercial",
+        call_to_action: str = "Order now!",
+        pricing_offer: str = "",
+        num_scenes: int = 4,
+        art_style: str = "realistic",
+        language: str = "en"
+    ) -> Dict[str, Any]:
+        """Built-in offline Commercial Generator for advertising goods."""
+        is_vi = language.startswith("vi")
+        brand_name = brand.strip() if (brand and brand.strip()) else "Official"
+        clean_name = product_name.strip() or "Premium Product"
+        clean_specs = specs.strip() or "Advanced engineering, premium materials, high performance"
+        clean_offer = pricing_offer.strip() or ("Ưu đãi giới hạn hôm nay!" if is_vi else "Limited-time exclusive offer!")
+        clean_cta = call_to_action.strip() or ("Đặt hàng ngay hôm nay!" if is_vi else "Order now to claim your discount!")
+
+        style_prefix = "Photorealistic cinematic 35mm photograph" if art_style == "realistic" else f"{art_style.capitalize()} style"
+
+        ad_templates = [
+            {
+                "archetype": "The Hook",
+                "title_en": "The Hook: Experience Better",
+                "title_vi": "Mở Đầu: Đỉnh Cao Trải Nghiệm",
+                "vis_en": f"{style_prefix}. Dramatic moody studio lighting casting rim reflections across the sleek silhouette of {clean_name}. High-end product photography, shallow depth of field, 8k resolution.",
+                "vis_vi": f"{style_prefix}. Ánh sáng studio điện ảnh tạo viền sáng ấn tượng trên thân máy sang trọng của {clean_name}. Nhiếp ảnh sản phẩm cao cấp, độ phân giải 8k.",
+                "act_en": f"0-3s: Camera glides slowly across the sleek contours of {clean_name}. 3-6s: An elegant sweep of golden rim light reveals the fine surface textures. 6-8s: Camera locks onto the signature silhouette.",
+                "act_vi": f"0-3s: Camera glides slowly across the sleek contours of {clean_name}. 3-6s: An elegant sweep of golden rim light reveals the fine surface textures. 6-8s: Camera locks onto the signature silhouette.",
+                "narr_en": "Are you ready to elevate your daily routine? Discover what you've been missing.",
+                "narr_vi": "Bạn đã sẵn sàng nâng tầm trải nghiệm mỗi ngày? Hãy khám phá sự khác biệt.",
+                "motion": "zoom_in"
+            },
+            {
+                "archetype": "The Product Reveal",
+                "title_en": f"Meet {clean_name}",
+                "title_vi": f"Giới Thiệu {clean_name}",
+                "vis_en": f"{style_prefix}. Hero beauty shot of {clean_name} ({brand_name}), perfectly centered on a minimalist reflective pedestal with soft atmospheric backlight, flawless industrial design.",
+                "vis_vi": f"{style_prefix}. Bức ảnh tôn vinh tuyệt đẹp của {clean_name} ({brand_name}), đặt trên bệ trưng bày tối giản với ánh sáng nền dịu nhẹ, thiết kế hoàn mỹ.",
+                "act_en": f"0-3s: {clean_name} rotates smoothly on an invisible turntable. 3-6s: Sleek accents glow subtly as the device activates. 6-8s: Camera pulls to an authoritative hero angle.",
+                "act_vi": f"0-3s: {clean_name} rotates smoothly on an invisible turntable. 3-6s: Sleek accents glow subtly as the device activates. 6-8s: Camera pulls to an authoritative hero angle.",
+                "narr_en": f"Introducing {clean_name}. Crafted by {brand_name} for those who demand absolute excellence.",
+                "narr_vi": f"Giới thiệu {clean_name}. Được chế tác bởi {brand_name} dành riêng cho những ai yêu thích sự hoàn hảo.",
+                "motion": "pan_right"
+            },
+            {
+                "archetype": "Tech Specs & Features",
+                "title_en": "Precision Engineering & Specs",
+                "title_vi": "Thông Số & Hiệu Năng Đột Phá",
+                "vis_en": f"{style_prefix}. Extreme macro close-up highlighting technical details and materials: {clean_specs}. Pristine textures, precision craftsmanship, 8k uhd clarity.",
+                "vis_vi": f"{style_prefix}. Cận cảnh góc siêu macro thể hiện chi tiết kỹ thuật và vật liệu cao cấp: {clean_specs}. Kết cấu tinh xảo, độ sắc nét 8k.",
+                "act_en": f"0-3s: Camera glides into a high-detail macro shot of the functional interface. 3-6s: Dynamic movement demonstrates responsiveness and flawless build quality. 6-8s: Settle back to three-quarter view.",
+                "act_vi": f"0-3s: Camera glides into a high-detail macro shot of the functional interface. 3-6s: Dynamic movement demonstrates responsiveness and flawless build quality. 6-8s: Settle back to three-quarter view.",
+                "narr_en": f"Engineered with {clean_specs[:55]}. Every millimeter built for uncompromising peak performance.",
+                "narr_vi": f"Tích hợp {clean_specs[:55]}. Từng chi tiết nhỏ nhất đều tối ưu cho hiệu năng đỉnh cao.",
+                "motion": "zoom_in"
+            },
+            {
+                "archetype": "Lifestyle Experience",
+                "title_en": "Elevated Daily Living",
+                "title_vi": "Trải Nghiệm Cuộc Sống Đỉnh Cao",
+                "vis_en": f"{style_prefix}. Elegant lifestyle scene of modern user seamlessly enjoying {clean_name} in an aesthetic contemporary space. Warm golden sunlight streaming in, natural joyful expression.",
+                "vis_vi": f"{style_prefix}. Khung cảnh phong cách sống hiện đại, người dùng thư thái tận hưởng {clean_name} trong không gian sang trọng. Ánh nắng sớm ấm áp, nụ cười hài lòng.",
+                "act_en": f"0-3s: User interacts effortlessly with {clean_name}, feeling immediate tactile delight. 3-6s: Genuine smile and feeling of elevated comfort and confidence. 6-8s: Smooth pan back to the glowing product.",
+                "act_vi": f"0-3s: User interacts effortlessly with {clean_name}, feeling immediate tactile delight. 3-6s: Genuine smile and feeling of elevated comfort and confidence. 6-8s: Smooth pan back to the glowing product.",
+                "narr_en": "Feel the seamless difference every single day. Effortless, intuitive, and truly transformative.",
+                "narr_vi": "Cảm nhận sự tiện nghi vượt trội mỗi ngày. Đơn giản, tinh tế và đầy cảm hứng.",
+                "motion": "subtle_drift"
+            },
+            {
+                "archetype": "Special Offer & CTA",
+                "title_en": "Exclusive Offer & Call to Action",
+                "title_vi": "Ưu Đãi Đặc Biệt & Đặt Hàng",
+                "vis_en": f"{style_prefix}. Grand cinematic finale beauty shot of {clean_name} with official packaging and premium accessories, glowing luxury backdrop, celebratory lighting.",
+                "vis_vi": f"{style_prefix}. Khung hình kết thúc hoành tráng của {clean_name} cùng trọn bộ phụ kiện cao cấp, phông nền tỏa sáng rực rỡ, góc chụp ấn tượng.",
+                "act_en": f"0-3s: Camera pulls back smoothly revealing {clean_name} in its full glory. 3-6s: A celebratory light flare shimmers across the brand emblem. 6-8s: Hero stance settles with ultimate brand prestige.",
+                "act_vi": f"0-3s: Camera pulls back smoothly revealing {clean_name} in its full glory. 3-6s: A celebratory light flare shimmers across the brand emblem. 6-8s: Hero stance settles with ultimate brand prestige.",
+                "narr_en": f"{clean_offer} {clean_cta}",
+                "narr_vi": f"{clean_offer} {clean_cta}",
+                "motion": "zoom_out"
+            }
+        ]
+
+        scenes = []
+        for i in range(num_scenes):
+            template = ad_templates[i % len(ad_templates)]
+            if i == num_scenes - 1 and num_scenes > 1:
+                template = ad_templates[-1]  # Always finish on CTA
+            elif i == 0:
+                template = ad_templates[0]   # Always start on Hook
+            elif i == 1:
+                template = ad_templates[1]   # Always introduce product
+
+            title_s = template["title_vi"] if is_vi else template["title_en"]
+            vis_s = template["vis_vi"] if is_vi else template["vis_en"]
+            act_s = template["act_en"]  # Video prompts must always be in English
+            narr_s = template["narr_vi"] if is_vi else template["narr_en"]
+
+            pro_act = ScriptAgent.professionalize_video_prompt(
+                acting_prompt=act_s,
+                visual_prompt=vis_s,
+                narration=narr_s,
+                camera_motion=template["motion"],
+                title=title_s,
+                art_style=art_style,
+                is_commercial=True
+            )
+
+            scenes.append({
+                "scene_number": i + 1,
+                "title": title_s,
+                "archetype": template["archetype"],
+                "visual_prompt": vis_s,
+                "acting_prompt": pro_act,
+                "narration": narr_s,
+                "camera_motion": template["motion"],
+                "is_product_photo": True
+            })
+
+        return {
+            "title": f"{clean_name} — Commercial",
+            "logline": f"Discover {clean_name} by {brand_name}: {description[:90]}. {clean_offer}",
+            "characters": f"Product: {clean_name} ({brand_name}) | Target: {target_audience}",
             "scenes": scenes
         }

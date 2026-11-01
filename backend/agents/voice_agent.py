@@ -62,20 +62,22 @@ class VoiceAgent:
         t = text.strip() if text else ""
         if not t:
             return "..."
-        # Replace XML characters that break SSML parsing
+        # Replace XML/SSML and prosody-breaking characters that trigger WebSocket disconnections on vi-VN neural voices
         is_vn = any(ord(c) > 127 for c in t)
         t = t.replace("&", " và " if is_vn else " and ")
         t = re.sub(r'[<>]', '', t)
         t = re.sub(r'[*_`#]', '', t)
         t = re.sub(r'[—–]', ', ', t)
-        t = re.sub(r'["“”„]', ' ', t)
-        t = re.sub(r"['‘’]", "'", t)
+        t = re.sub(r'["“”„\'‘’]', ' ', t)
+        t = re.sub(r'\s*[:;]\s*', ', ', t)
+        t = re.sub(r'…+|\.{2,}', '. ', t)
         t = re.sub(r',\s*,+', ', ', t)
+        t = re.sub(r'\.\s*\.+', '. ', t)
         t = re.sub(r'\s+', ' ', t).strip()
         if t and t[0].isalpha() and t[0].islower():
             t = t[0].upper() + t[1:]
-        if t and not t.endswith(('.', '!', '?', ';', ':', '...')):
-            t += "."
+        if t and not t.endswith(('.', '!', '?')):
+            t = t.rstrip(',;:') + "."
         return t
 
     @staticmethod
@@ -90,25 +92,98 @@ class VoiceAgent:
                 return "vi-VN-HoaiMyNeural"
             elif "kore" in voice_lower:
                 return "vi-VN-HoaiMyNeural-story"
+            elif "leda" in voice_lower:
+                return "vi-VN-HoaiMyNeural-sweet"
+            elif "zephyr" in voice_lower:
+                return "vi-VN-HoaiMyNeural-energetic"
+            elif "callirrhoe" in voice_lower:
+                return "vi-VN-HoaiMyNeural-drama"
             elif "puck" in voice_lower:
-                return "vi-VN-NamMinhNeural"
+                return "vi-VN-NamMinhNeural-energetic"
             elif "charon" in voice_lower:
                 return "vi-VN-NamMinhNeural-story"
             elif "fenrir" in voice_lower:
                 return "vi-VN-NamMinhNeural-heroic"
+            elif "orus" in voice_lower:
+                return "vi-VN-NamMinhNeural-documentary"
+            elif "enceladus" in voice_lower:
+                return "vi-VN-NamMinhNeural"
             return "vi-VN-HoaiMyNeural"
         else:
             if "aoede" in voice_lower:
                 return "en-US-JennyNeural"
-            elif "kore" in voice_lower:
+            elif "kore" in voice_lower or "leda" in voice_lower or "callirrhoe" in voice_lower:
                 return "en-US-AriaNeural"
+            elif "zephyr" in voice_lower:
+                return "en-GB-SoniaNeural"
             elif "puck" in voice_lower:
                 return "en-US-GuyNeural"
-            elif "charon" in voice_lower:
+            elif "charon" in voice_lower or "orus" in voice_lower or "enceladus" in voice_lower:
                 return "en-US-ChristopherNeural"
             elif "fenrir" in voice_lower:
                 return "en-GB-RyanNeural"
             return "en-US-JennyNeural"
+
+    def _apply_voice_persona_dsp(self, audio_path: str, persona_suffix: str, boundaries: list) -> None:
+        """
+        Applies high-precision FFmpeg acoustic formant/pitch/tempo shaping (`asetrate` + `aresample` + `atempo`)
+        after synthesis so each Vietnamese voice persona (-story, -energetic, -heroic, -sweet, -drama,
+        -documentary, -commercial, -elder, -fast) has a distinct, natural vocal timbre and pacing
+        without triggering Microsoft SSML prosody rejections.
+        """
+        if not persona_suffix or not os.path.exists(audio_path):
+            return
+
+        # Define pitch_ratio (1.0 = original pitch) and speed_ratio (1.0 = original speed)
+        # In FFmpeg: asetrate=24000*pitch_ratio shifts pitch AND speed by pitch_ratio;
+        # then atempo=speed_ratio/pitch_ratio restores/sets exact final speaking tempo!
+        profiles = {
+            "-story":       {"pitch": 0.965, "speed": 0.93, "eq": "bass=g=2.5:f=140"},
+            "-energetic":   {"pitch": 1.075, "speed": 1.06, "eq": "treble=g=2.0:f=3500"},
+            "-heroic":      {"pitch": 0.905, "speed": 0.95, "eq": "bass=g=4.0:f=120"},
+            "-sweet":       {"pitch": 1.045, "speed": 0.97, "eq": "treble=g=2.5:f=4000"},
+            "-drama":       {"pitch": 0.945, "speed": 0.92, "eq": "bass=g=3.0:f=130"},
+            "-documentary": {"pitch": 0.950, "speed": 0.98, "eq": "bass=g=2.0:f=150,treble=g=1.5:f=3500"},
+            "-commercial":  {"pitch": 1.020, "speed": 1.12, "eq": "treble=g=2.5:f=3200"},
+            "-elder":       {"pitch": 0.885, "speed": 0.89, "eq": "bass=g=3.5:f=130"},
+            "-fast":        {"pitch": 1.010, "speed": 1.16, "eq": "treble=g=1.5:f=3500"},
+        }
+        prof = profiles.get(persona_suffix)
+        if not prof:
+            return
+
+        pitch_r = prof["pitch"]
+        speed_r = prof["speed"]
+        atempo_r = round(speed_r / pitch_r, 4)
+        atempo_r = max(0.5, min(2.0, atempo_r))
+        new_srate = int(24000 * pitch_r)
+        af_chain = f"asetrate={new_srate},aresample=24000,atempo={atempo_r}"
+        if prof.get("eq"):
+            af_chain += f",{prof['eq']}"
+
+        dsp_out = f"{audio_path}.persona.mp3"
+        cmd = [
+            FFMPEG_PATH, "-y",
+            "-i", str(audio_path),
+            "-filter:a", af_chain,
+            "-ar", "24000",
+            "-ac", "1",
+            "-b:a", "48k",
+            str(dsp_out)
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode == 0 and os.path.exists(dsp_out) and os.path.getsize(dsp_out) > 500:
+            shutil.move(dsp_out, audio_path)
+            if boundaries and abs(speed_r - 1.0) > 0.005:
+                for b in boundaries:
+                    b["start"] = round(b["start"] / speed_r, 2)
+                    b["end"] = round(b["end"] / speed_r, 2)
+        else:
+            if os.path.exists(dsp_out):
+                try:
+                    os.remove(dsp_out)
+                except Exception:
+                    pass
 
     async def _try_edge_tts(self, text: str, output_audio_path: str, voice: str, rate: str, pitch: str, max_retries: int = 5):
         """Attempts Edge-TTS synthesis for the specified voice with robust retry, backoff, and pitch normalization."""
@@ -170,12 +245,16 @@ class VoiceAgent:
 
     async def _synthesize_by_sentences(self, text: str, output_audio_path: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> list:
         """
-        Splits text into individual sentences and synthesizes each separately,
-        then stitches them using FFmpeg. Resolves buffer drops on long narration paragraphs.
+        Splits text into individual sentences (or clauses) and synthesizes each separately
+        on the EXACT SAME voice, then stitches them using FFmpeg.
+        Resolves buffer drops on long narration paragraphs while guaranteeing 100% voice consistency.
         """
         raw_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
         if len(raw_sentences) <= 1:
-            return []
+            # Also split on commas if it's a single multi-clause sentence
+            raw_sentences = [s.strip() for s in re.split(r',\s+', text) if s.strip()]
+            if len(raw_sentences) <= 1:
+                return []
 
         temp_files = []
         all_boundaries = []
@@ -183,9 +262,11 @@ class VoiceAgent:
 
         try:
             for s_idx, sent in enumerate(raw_sentences):
+                if not sent.endswith(('.', '!', '?')):
+                    sent = sent.rstrip(',;:') + "."
                 temp_s_path = f"{output_audio_path}.part_{s_idx}.mp3"
                 temp_files.append(temp_s_path)
-                s_bounds = await self._try_edge_tts(sent, temp_s_path, voice, rate, pitch, max_retries=3)
+                s_bounds = await self._try_edge_tts(sent, temp_s_path, voice, rate, pitch, max_retries=6)
                 sent_dur = self.get_audio_duration(temp_s_path)
                 for b in s_bounds:
                     all_boundaries.append({
@@ -350,34 +431,32 @@ class VoiceAgent:
                 print(f"Gemini voice synthesis notice ({selected_voice}): {e_gemini}. Using matched voice '{matched_voice}'...")
                 selected_voice = matched_voice
 
-        # Extract tuning variants if any
+        # Extract tuning variants / Vietnamese persona suffixes if any
         actual_voice = selected_voice
         actual_rate = rate
         actual_pitch = pitch
+        persona_suffix = None
 
-        if selected_voice == "gtts-vi":
+        if selected_voice in ("gtts-vi", "gtts-vi-fast"):
             try:
                 self._synthesize_with_gtts(clean_text, output_audio_path, "vi")
+                if selected_voice == "gtts-vi-fast":
+                    persona_suffix = "-fast"
                 success = True
                 boundaries = []
             except Exception as e_gtts:
                 print(f"gTTS error: {e_gtts}")
-        elif "-story" in selected_voice:
-            actual_voice = selected_voice.replace("-story", "")
-            actual_rate = "-10%"
-            actual_pitch = "-1Hz"
-        elif "-energetic" in selected_voice:
-            actual_voice = selected_voice.replace("-energetic", "")
-            actual_rate = "+12%"
-            actual_pitch = "+3Hz"
-        elif "-heroic" in selected_voice:
-            actual_voice = selected_voice.replace("-heroic", "")
-            actual_rate = "-5%"
-            actual_pitch = "-3Hz"
+        else:
+            for sfx in ("-story", "-energetic", "-heroic", "-sweet", "-drama", "-documentary", "-commercial", "-elder"):
+                if selected_voice and selected_voice.endswith(sfx):
+                    actual_voice = selected_voice[:-len(sfx)]
+                    persona_suffix = sfx
+                    break
 
         # Vietnamese neural voices (vi-VN-*) do not support custom pitch or rate modifications
         # on Microsoft's servers and will fail with "No audio was received".
-        # Enforce neutral rate and pitch for Vietnamese to ensure 100% reliable synthesis.
+        # Enforce neutral rate and pitch for Vietnamese during Edge-TTS streaming,
+        # then apply acoustic persona DSP shaping post-synthesis.
         if "vi-" in actual_voice.lower():
             actual_rate = "+0%"
             actual_pitch = "+0Hz"
@@ -385,11 +464,11 @@ class VoiceAgent:
         # Attempt 1: Requested Voice via Edge-TTS (with robust retries on the SAME voice)
         if not success:
             try:
-                boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch, max_retries=5)
+                boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch, max_retries=8)
                 success = True
             except Exception as e:
                 print(f"Edge-TTS primary voice '{actual_voice}' full text retry exhausted: {e}.")
-                # Attempt 1b: Try sentence-by-sentence synthesis on the exact SAME voice
+                # Attempt 1b: Try sentence/clause synthesis on the exact SAME voice
                 try:
                     print(f"Attempting sentence-by-sentence synthesis on '{actual_voice}' to preserve character voice...")
                     boundaries = await self._synthesize_by_sentences(clean_text, output_audio_path, actual_voice, actual_rate, actual_pitch)
@@ -399,7 +478,16 @@ class VoiceAgent:
                 except Exception as e_sent:
                     print(f"Sentence-by-sentence synthesis failed: {e_sent}")
 
-        # If allow_voice_fallback is explicitly enabled (e.g. audition probe or emergency recovery)
+        # Attempt 1c: Cooldown retry on the EXACT SAME voice (never switch to an alternate gender/robotic voice during scene narration!)
+        if not success:
+            try:
+                await asyncio.sleep(2.0)
+                boundaries = await self._try_edge_tts(clean_text, output_audio_path, actual_voice, "+0%", "+0Hz", max_retries=6)
+                success = True
+            except Exception as e_cooldown:
+                print(f"Cooldown retry on '{actual_voice}' failed: {e_cooldown}")
+
+        # If allow_voice_fallback is explicitly enabled (e.g. audition probe only)
         if not success and allow_voice_fallback:
             alt_voice = None
             voice_lower = selected_voice.lower()
@@ -433,26 +521,12 @@ class VoiceAgent:
                 except Exception as e3:
                     raise RuntimeError(f"All TTS voice engines failed: {e3}")
 
-        # Emergency safety net: if primary voice failed and allow_voice_fallback was False,
-        # fallback to prevent fatal render crashes
         if not success:
-            try:
-                print(f"Warning: Primary voice '{actual_voice}' unavailable after retries. Engaging emergency safety net...")
-                is_vn = "vi-" in actual_voice.lower()
-                alt_voice = "vi-VN-NamMinhNeural" if ("hoaimy" in actual_voice.lower()) else ("vi-VN-HoaiMyNeural" if is_vn else "en-US-JennyNeural")
-                boundaries = await self._try_edge_tts(clean_text, output_audio_path, alt_voice, "+0%", "+0Hz", max_retries=2)
-                selected_voice = alt_voice
-                success = True
-                is_fallback = True
-            except Exception:
-                try:
-                    self._synthesize_with_gtts(clean_text, output_audio_path, lang_code)
-                    selected_voice = f"gtts-{lang_code}"
-                    success = True
-                    is_fallback = True
-                    boundaries = []
-                except Exception as e_last:
-                    raise RuntimeError(f"Voice synthesis failed for voice '{selected_voice}': {e_last}")
+            raise RuntimeError(f"Voice synthesis failed for voice '{selected_voice}' after all retries.")
+
+        # Apply acoustic persona DSP shaping if a persona variant (-story, -energetic, -heroic, -sweet, -elder, etc.) was selected
+        if persona_suffix:
+            self._apply_voice_persona_dsp(output_audio_path, persona_suffix, boundaries)
 
         duration = self.get_audio_duration(output_audio_path)
 

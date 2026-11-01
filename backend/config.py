@@ -71,41 +71,66 @@ ART_STYLES = {
         "description": "Bold ink contours, dynamic halftone shading, expressive comic panels",
         "prompt_suffix": ", modern graphic novel illustration, bold inked outlines, vibrant colors, dynamic cinematic framing, into the spiderverse comic book style, highly detailed",
         "icon": "💥"
+    },
+    "stick_figure": {
+        "name": "Stick Figure Animation",
+        "description": "Minimalist stickman figures, clean line art, dynamic action choreography (Alan Becker / Xiao Xiao style)",
+        "prompt_suffix": ", minimalist stick figure animation style, iconic stickman character design, simple circular head, clean bold line-drawn limbs and torso, expressive stick figure posing and energetic action choreography, Alan Becker Animation vs Animator aesthetic, clean high-contrast minimalist background, crisp 2D vector lineart, action silhouette, textless, no photorealistic human faces, no detailed human skin, no complex rendered clothing, classic stickman animation masterpiece",
+        "icon": "🏃"
+    },
+    "realistic": {
+        "name": "Realistic / Live-Action Cinema",
+        "description": "Hyper-realistic cinema, 35mm photography, natural lighting & lifelike textures",
+        "prompt_suffix": ", photorealistic RAW photograph, cinematic live-action film still, shot on 35mm lens, 8k resolution, ultra-detailed textures, natural dramatic lighting, shallow depth of field, sharp focus, masterpiece photography, lifelike realism",
+        "icon": "📸"
     }
 }
 
-# Voices available (Google Gemini Native Neural Voices & Edge-TTS)
+# Voices available (Vietnamese Dedicated Neural Personas, Google Gemini Multimodal Voices & International)
 VOICES = [
-    # Google Gemini Native Multimodal Voices (Fluent in Vietnamese & English)
-    {"id": "gemini-Aoede", "name": "✨ Gemini Aoede (Nữ truyền cảm - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini"},
-    {"id": "gemini-Kore", "name": "✨ Gemini Kore (Nữ nhẹ nhàng kể chuyện - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini"},
-    {"id": "gemini-Puck", "name": "✨ Gemini Puck (Nam hoạt bát, sinh động - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini"},
-    {"id": "gemini-Charon", "name": "✨ Gemini Charon (Nam trầm ấm điện ảnh - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini"},
-    {"id": "gemini-Fenrir", "name": "✨ Gemini Fenrir (Nam hào hùng, lôi cuốn - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini"},
+    # 1. Vietnamese Dedicated Neural Voices & Character Personas (Microsoft Edge Neural — 100% Free & Consistent)
+    {"id": "vi-VN-HoaiMyNeural", "name": "Hoài My (Việt Nam - Nữ chuẩn dịu dàng, tự nhiên)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
+    {"id": "vi-VN-NamMinhNeural", "name": "Nam Minh (Việt Nam - Nam chuẩn truyền cảm, ấm áp)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
+    {"id": "vi-VN-HoaiMyNeural-story", "name": "Thanh Hà Kể Chuyện (Việt Nam - Nữ êm đềm, sâu lắng, cổ tích)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
+    {"id": "vi-VN-NamMinhNeural-story", "name": "Bác Ba Kể Chuyện (Việt Nam - Nam trầm ấm, dân gian & hồi ức)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
+    {"id": "vi-VN-HoaiMyNeural-energetic", "name": "Linh Đan Hoạt Bát (Việt Nam - Nữ vui tươi, nhí nhảnh, thiếu nhi)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
+    {"id": "vi-VN-NamMinhNeural-energetic", "name": "Tí Hon / Minh Khôi (Việt Nam - Nam hài hước, lém lỉnh, truyện cười)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
+    {"id": "vi-VN-NamMinhNeural-heroic", "name": "Quan Đại Nhân / Hùng Dũng (Việt Nam - Nam uy nghiêm, cổ trang & sử thi)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
+    {"id": "vi-VN-HoaiMyNeural-sweet", "name": "Ngọc Lan Ngọt Ngào (Việt Nam - Nữ trong trẻo, thơ mộng & cảm xúc)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
+    {"id": "vi-VN-HoaiMyNeural-drama", "name": "Mai Phương Điện Ảnh (Việt Nam - Nữ kịch tính, sâu sắc & tâm lý)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
+    {"id": "vi-VN-NamMinhNeural-documentary", "name": "Hoàng Quân Thuyết Minh (Việt Nam - Nam điềm đạm, chững chạc, tài liệu)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
+    {"id": "vi-VN-HoaiMyNeural-commercial", "name": "Minh Anh Review (Việt Nam - Nữ năng động, sắc nét, Quảng cáo & Reels)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
+    {"id": "vi-VN-NamMinhNeural-commercial", "name": "Quốc Khánh Review (Việt Nam - Nam hiện đại, cuốn hút, Quảng cáo & TikTok)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
+    {"id": "vi-VN-HoaiMyNeural-elder", "name": "Bà Tiên / Bà Ngoại (Việt Nam - Nữ hiền từ, chậm rãi, cổ tích)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
+    {"id": "vi-VN-NamMinhNeural-elder", "name": "Ông Bụt / Cụ Già Làng (Việt Nam - Nam trầm khàn, thông thái, dân gian)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
 
-    # Vietnamese Dedicated Voices (Microsoft Edge Neural & Google)
-    {"id": "vi-VN-HoaiMyNeural", "name": "Hoài My (Việt Nam - Nữ dịu dàng miền Bắc)", "lang": "vi", "gender": "Female"},
-    {"id": "vi-VN-NamMinhNeural", "name": "Nam Minh (Việt Nam - Nam truyền cảm miền Bắc)", "lang": "vi", "gender": "Male"},
-    {"id": "vi-VN-HoaiMyNeural-story", "name": "Hoài My Kể Chuyện (Việt Nam - Nữ êm đềm, chậm rãi)", "lang": "vi", "gender": "Female"},
-    {"id": "vi-VN-NamMinhNeural-story", "name": "Nam Minh Thuyết Minh (Việt Nam - Nam sâu lắng, ấm áp)", "lang": "vi", "gender": "Male"},
-    {"id": "vi-VN-HoaiMyNeural-energetic", "name": "Hoài My Hoạt Bát (Việt Nam - Nữ vui tươi, nhí nhảnh)", "lang": "vi", "gender": "Female"},
-    {"id": "vi-VN-NamMinhNeural-heroic", "name": "Nam Minh Khí Thế (Việt Nam - Nam mạnh mẽ, dứt khoát)", "lang": "vi", "gender": "Male"},
-    {"id": "gtts-vi", "name": "Google Voice VN (Việt Nam - Nữ chuẩn Google TTS)", "lang": "vi", "gender": "Female"},
+    # 2. Google Gemini Native Multimodal Voices (Fluent in Vietnamese & English)
+    {"id": "gemini-Aoede", "name": "✨ Gemini Aoede (Nữ truyền cảm - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Kore", "name": "✨ Gemini Kore (Nữ nhẹ nhàng kể chuyện - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Leda", "name": "✨ Gemini Leda (Nữ trẻ trung, trong sáng - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Zephyr", "name": "✨ Gemini Zephyr (Nữ tươi sáng, năng động - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Callirrhoe", "name": "✨ Gemini Callirrhoe (Nữ dịu dàng, sâu lắng - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Puck", "name": "✨ Gemini Puck (Nam hoạt bát, hài hước - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Charon", "name": "✨ Gemini Charon (Nam trầm ấm điện ảnh - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Fenrir", "name": "✨ Gemini Fenrir (Nam hào hùng, uy lực - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Orus", "name": "✨ Gemini Orus (Nam điềm đạm, chững chạc - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
+    {"id": "gemini-Enceladus", "name": "✨ Gemini Enceladus (Nam truyền cảm, sâu sắc - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
 
-    # English (Edge-TTS)
-    {"id": "en-US-ChristopherNeural", "name": "Christopher (US - Storyteller Male)", "lang": "en", "gender": "Male"},
-    {"id": "en-US-JennyNeural", "name": "Jenny (US - Warm Expressive Female)", "lang": "en", "gender": "Female"},
-    {"id": "en-US-GuyNeural", "name": "Guy (US - Casual Friendly Male)", "lang": "en", "gender": "Male"},
-    {"id": "en-US-AriaNeural", "name": "Aria (US - Clear Narrator Female)", "lang": "en", "gender": "Female"},
-    {"id": "en-GB-SoniaNeural", "name": "Sonia (British - Elegant Female)", "lang": "en", "gender": "Female"},
-    {"id": "en-GB-RyanNeural", "name": "Ryan (British - Documentary Male)", "lang": "en", "gender": "Male"},
-    # Japanese
-    {"id": "ja-JP-NanamiNeural", "name": "Nanami (Japanese - Female)", "lang": "ja", "gender": "Female"},
-    {"id": "ja-JP-KeitaNeural", "name": "Keita (Japanese - Male)", "lang": "ja", "gender": "Male"},
-    # French
-    {"id": "fr-FR-DeniseNeural", "name": "Denise (French - Female)", "lang": "fr", "gender": "Female"},
-    # Spanish
-    {"id": "es-ES-ElviraNeural", "name": "Elvira (Spanish - Female)", "lang": "es", "gender": "Female"},
+    # 3. Google Translate TTS Vietnamese Voices
+    {"id": "gtts-vi", "name": "Google Voice VN (Việt Nam - Nữ chuẩn Google TTS)", "lang": "vi", "gender": "Female", "group": "vn_gtts"},
+    {"id": "gtts-vi-fast", "name": "Google Voice VN Nhanh (Việt Nam - Nữ đọc nhanh Review / Shorts)", "lang": "vi", "gender": "Female", "group": "vn_gtts"},
+
+    # 4. International Voices (English, Japanese, French, Spanish)
+    {"id": "en-US-ChristopherNeural", "name": "Christopher (US - Storyteller Male)", "lang": "en", "gender": "Male", "group": "intl"},
+    {"id": "en-US-JennyNeural", "name": "Jenny (US - Warm Expressive Female)", "lang": "en", "gender": "Female", "group": "intl"},
+    {"id": "en-US-GuyNeural", "name": "Guy (US - Casual Friendly Male)", "lang": "en", "gender": "Male", "group": "intl"},
+    {"id": "en-US-AriaNeural", "name": "Aria (US - Clear Narrator Female)", "lang": "en", "gender": "Female", "group": "intl"},
+    {"id": "en-GB-SoniaNeural", "name": "Sonia (British - Elegant Female)", "lang": "en", "gender": "Female", "group": "intl"},
+    {"id": "en-GB-RyanNeural", "name": "Ryan (British - Documentary Male)", "lang": "en", "gender": "Male", "group": "intl"},
+    {"id": "ja-JP-NanamiNeural", "name": "Nanami (Japanese - Female)", "lang": "ja", "gender": "Female", "group": "intl"},
+    {"id": "ja-JP-KeitaNeural", "name": "Keita (Japanese - Male)", "lang": "ja", "gender": "Male", "group": "intl"},
+    {"id": "fr-FR-DeniseNeural", "name": "Denise (French - Female)", "lang": "fr", "gender": "Female", "group": "intl"},
+    {"id": "es-ES-ElviraNeural", "name": "Elvira (Spanish - Female)", "lang": "es", "gender": "Female", "group": "intl"},
 ]
 
 # Camera Motion presets for Ken Burns effect
@@ -171,18 +196,6 @@ AI_PROVIDERS = {
 
 # Image Painting Engine Modes
 IMAGE_MODES = {
-    "manual": {
-        "id": "manual",
-        "name": "Storyboard Only (No AI Painting)",
-        "description": "Zero image AI tokens consumed — uses clean SVG storyboard placeholders and manual user image uploads",
-        "icon": "📝"
-    },
-    "server": {
-        "id": "server",
-        "name": "Free Neural AI (Flux / SDXL)",
-        "description": "Free unlimited neural generation with Flux & SDXL (Zero cost & no rate limits)",
-        "icon": "🌐"
-    },
     "gemini": {
         "id": "gemini",
         "name": "Google Gemini / Imagen 3",
@@ -200,6 +213,12 @@ IMAGE_MODES = {
         "name": "In-Browser Puter.js",
         "description": "Direct in-browser generation using Puter.js cloud balance",
         "icon": "🖌️"
+    },
+    "manual": {
+        "id": "manual",
+        "name": "Storyboard Only (No AI Painting)",
+        "description": "Zero image AI tokens consumed — uses clean SVG storyboard placeholders and manual user image uploads",
+        "icon": "📝"
     }
 }
 

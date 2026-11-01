@@ -10,9 +10,14 @@ AniStory AI is an agentic animation system built with Python, FastAPI, Edge-TTS,
 
 * **🎭 Multi-Agent Creative Workflow**:
   * **Screenwriter Agent**: Transforms rough ideas into structured 3-act narrative storyboards (acts, characters, visual scene prompts, and voice scripts).
-  * **Visual Artist Agent**: Crafts cohesive visual prompts and renders high-definition keyframes via Pollinations AI (FLUX model) with zero API keys required, plus offline procedural fallbacks.
+  * **Visual Artist Agent**: Crafts cohesive visual prompts and renders high-definition cinematic keyframes via Google Gemini Imagen 3 (API Key or Web Session Cookies) with character consistency anchors.
   * **Voice Actor Agent**: Synthesizes natural, human-like voiceovers in English, Vietnamese, Japanese, French, and Spanish via Microsoft Edge-TTS with microsecond timestamp alignment.
   * **Cinematographer & Compositor Engine**: Applies cinematic 2.5D Ken Burns camera motions (zoom-in, zoom-out, pan-left, pan-right), burns high-contrast subtitles, synthesizes ambient musical chords, and exports a broadcast-ready `.mp4` video.
+* **🛍️ Goods Advertisement Video Mode (Commercial Advertising)**:
+  * **Product Photo & Asset Ingestion**: Drag-and-drop multiple high-res product photos; automatically fits images to 16:9, 9:16, 1:1, or 4:3 without stretching or letterbox distortion.
+  * **Commercial Director AI**: Generates high-converting commercial storyboards structured with Hook -> Hero Reveal -> Tech Specs in Action -> Lifestyle/Benefit -> Offer & CTA.
+  * **Technical Specs & Pricing Integration**: Weaves technical specifications, pricing promotions, and call-to-actions directly into the voiceover script and acting prompts.
+  * **1-Click Scene Photo Assignment**: Direct product photo binding per scene with instant cycling and switching directly on the Director's Board.
 * **🎨 Multiple Animation Art Styles**:
   * 🍃 **Studio Ghibli 2D Anime** (Warm watercolor, lush whimsical aesthetic)
   * 🧸 **3D Pixar / Disney** (Soft volumetric lighting, 3D character design)
@@ -20,6 +25,7 @@ AniStory AI is an agentic animation system built with Python, FastAPI, Edge-TTS,
   * ✨ **Cinematic Shonen / Makoto Shinkai** (Breathtaking skies, lens flares)
   * 🏙️ **Cyberpunk Neon Sci-Fi** (Futuristic holographic glows, rain reflections)
   * 💥 **Graphic Novel / Comic** (Bold inked outlines, dynamic comic framing)
+  * 📸 **Realistic / Live-Action Cinema** (Hyper-realistic cinema, 35mm photography, natural lighting & lifelike textures)
 * **💻 Interactive Director's Web UI**:
   * Glassmorphism dark-mode interface built with Vanilla CSS and Google Fonts.
   * Live scene editing (tweak visual prompts, rewrite narration, change camera movements).
@@ -63,7 +69,7 @@ f:\AI\agents\
 │   │   ├── script_agent.py   # Screenwriting & narrative structure agent
 │   │   └── voice_agent.py    # Edge-TTS speech synthesis & SRT generator
 │   ├── services/
-│   │   ├── image_service.py  # Pollinations FLUX generator & procedural fallback
+│   │   ├── image_service.py  # Google Gemini Imagen 3 visual generator & styles
 │   │   ├── music_service.py  # Ambient procedural acoustic musical tracks
 │   │   └── video_engine.py   # FFmpeg Ken Burns camera motions & video rendering
 │   ├── pipeline.py           # Master Pipeline Orchestrator Agent

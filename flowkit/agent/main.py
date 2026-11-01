@@ -15,6 +15,8 @@ import signal
 from contextlib import asynccontextmanager
 
 import websockets
+from websockets.http11 import Response as _WSResponse
+from websockets.datastructures import Headers as _WSHeaders
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -70,9 +72,25 @@ async def ws_handler(websocket):
         logger.info("Extension disconnected")
 
 
+def _ws_process_request(connection, request):
+    """Handle non-WebSocket HTTP probes or pings cleanly without throwing handshake errors."""
+    upgrade = request.headers.get("Upgrade", "")
+    if upgrade.lower() != "websocket":
+        return _WSResponse(
+            200,
+            "OK",
+            _WSHeaders([
+                ("Content-Type", "application/json"),
+                ("Connection", "close"),
+            ]),
+            b'{"status": "ok", "service": "flowkit-websocket"}\n',
+        )
+    return None
+
+
 async def run_ws_server():
     """Run WebSocket server for extension connections."""
-    async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
+    async with websockets.serve(ws_handler, WS_HOST, WS_PORT, process_request=_ws_process_request):
         logger.info("WebSocket server listening on ws://%s:%d", WS_HOST, WS_PORT)
         await asyncio.Future()  # run forever
 

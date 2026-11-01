@@ -3,6 +3,21 @@
  */
 
 class AniStoryApp {
+  static async parseErrorResponse(resp, fallbackMsg = "Request failed") {
+    try {
+      const raw = await resp.text();
+      if (!raw) return `${fallbackMsg} (HTTP ${resp.status})`;
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed.detail || parsed.message || parsed.error || raw.slice(0, 300);
+      } catch {
+        return raw.slice(0, 300);
+      }
+    } catch {
+      return `${fallbackMsg} (HTTP ${resp.status}: ${resp.statusText || 'Error'})`;
+    }
+  }
+
   constructor() {
     this.currentProject = null;
     this.config = null;
@@ -84,7 +99,9 @@ class AniStoryApp {
   }
 
   async restoreActiveProject() {
-    const savedProjectId = localStorage.getItem("anistory_active_project_id");
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramProjectId = urlParams.get("project") || urlParams.get("load");
+    const savedProjectId = paramProjectId || localStorage.getItem("anistory_active_project_id");
     if (!savedProjectId) return;
 
     try {
@@ -178,6 +195,8 @@ class AniStoryApp {
     this.btnOpenGoogleFlow = document.getElementById("btnOpenGoogleFlow");
     this.btnExportStoryboard = document.getElementById("btnExportStoryboard");
     this.btnExportScript = document.getElementById("btnExportScript");
+    this.btnRefineAllPrompts = document.getElementById("btnRefineAllPrompts");
+    this.btnSyncDialogues = document.getElementById("btnSyncDialogues");
     this.inputCharacterConsistency = document.getElementById("inputCharacterConsistency");
     this.btnLockCharacter = document.getElementById("btnLockCharacter");
 
@@ -239,6 +258,24 @@ class AniStoryApp {
     this.btnDirectLoadStoryboard = document.getElementById("btnDirectLoadStoryboard");
     this.groupSceneCount = document.getElementById("groupSceneCount");
 
+    // Stage 1 Goods Advertisement Mode Elements
+    this.tabModeAd = document.getElementById("tabModeAd");
+    this.panelAdMode = document.getElementById("panelAdMode");
+    this.inputAdProductName = document.getElementById("inputAdProductName");
+    this.inputAdBrand = document.getElementById("inputAdBrand");
+    this.selectAdStyle = document.getElementById("selectAdStyle");
+    this.selectAdAudience = document.getElementById("selectAdAudience");
+    this.textareaAdDesc = document.getElementById("textareaAdDesc");
+    this.textareaAdSpecs = document.getElementById("textareaAdSpecs");
+    this.inputAdOffer = document.getElementById("inputAdOffer");
+    this.inputAdCTA = document.getElementById("inputAdCTA");
+    this.dropzoneAdImages = document.getElementById("dropzoneAdImages");
+    this.inputAdImages = document.getElementById("inputAdImages");
+    this.adImagesPreviewContainer = document.getElementById("adImagesPreviewContainer");
+    this.adImagesCountBadge = document.getElementById("adImagesCountBadge");
+    this.btnGenerateAdVideo = document.getElementById("btnGenerateAdVideo");
+    this.adUploadedFiles = [];
+
     // Import from Gemini Modal elements
     this.modalImport = document.getElementById("modalImport");
     this.btnOpenImportModal = document.getElementById("btnOpenImportModal");
@@ -269,6 +306,7 @@ class AniStoryApp {
     // Video Dimensions & Multi-Provider AI Elements
     this.selectAspectRatio = document.getElementById("selectAspectRatio");
     this.badgeStoryboardAspectRatio = document.getElementById("badgeStoryboardAspectRatio");
+    this.badgeStoryboardAdMode = document.getElementById("badgeStoryboardAdMode");
     this.specResolution = document.getElementById("specResolution");
     this.selectAiProvider = document.getElementById("selectAiProvider");
     this.selectAiModel = document.getElementById("selectAiModel");
@@ -287,6 +325,9 @@ class AniStoryApp {
     this.btnToggleVoiceoverStage2 = document.getElementById("btnToggleVoiceoverStage2");
     this.iconVoiceoverStage2 = document.getElementById("iconVoiceoverStage2");
     this.textVoiceoverStage2 = document.getElementById("textVoiceoverStage2");
+    this.selectVoiceStage2 = document.getElementById("selectVoiceStage2");
+    this.btnAuditionVoiceStage2 = document.getElementById("btnAuditionVoiceStage2");
+    this.iconAuditionVoiceStage2 = document.getElementById("iconAuditionVoiceStage2");
     this.btnToggleSubtitlesStage2 = document.getElementById("btnToggleSubtitlesStage2");
     this.iconSubtitlesStage2 = document.getElementById("iconSubtitlesStage2");
     this.textSubtitlesStage2 = document.getElementById("textSubtitlesStage2");
@@ -324,6 +365,12 @@ class AniStoryApp {
     this.modelExplorerStatusText = document.getElementById("modelExplorerStatusText");
     this.modelExplorerStatusBadge = document.getElementById("modelExplorerStatusBadge");
     this.modelExplorerStatusIcon = document.getElementById("modelExplorerStatusIcon");
+
+    // Quick-Jump Navigation Ribbon & Floating Director Controls
+    this.sceneQuickJumpBar = document.getElementById("sceneQuickJumpBar");
+    this.floatingDirectorWidget = document.getElementById("floatingDirectorWidget");
+    this.btnFloatingScrollTop = document.getElementById("btnFloatingScrollTop");
+    this.btnFloatingRenderFilm = document.getElementById("btnFloatingRenderFilm");
 
     this.detectedModelsData = null;
     this.activeModelFilter = "all";
@@ -397,6 +444,30 @@ class AniStoryApp {
       });
     }
 
+    // Floating director navigation widget actions
+    if (this.btnFloatingScrollTop) {
+      this.btnFloatingScrollTop.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    }
+    if (this.btnFloatingRenderFilm) {
+      this.btnFloatingRenderFilm.addEventListener("click", () => {
+        if (this.btnProceedToRender) this.btnProceedToRender.click();
+      });
+    }
+
+    // Show floating widget only when scrolling past 320px in Stage 2
+    window.addEventListener("scroll", () => {
+      if (this.floatingDirectorWidget) {
+        const isStage2 = this.stages[1] && this.stages[1].classList.contains("active");
+        if (isStage2 && window.scrollY > 320) {
+          this.floatingDirectorWidget.style.display = "flex";
+        } else {
+          this.floatingDirectorWidget.style.display = "none";
+        }
+      }
+    }, { passive: true });
+
     // Browser back/forward button history support
     window.addEventListener("popstate", (e) => {
       const targetStage = (e.state && e.state.stage) ? e.state.stage : 1;
@@ -416,11 +487,14 @@ class AniStoryApp {
         this.tabModePrompt.classList.add("active");
         if (this.tabModePaste) this.tabModePaste.classList.remove("active");
         if (this.tabModeLoad) this.tabModeLoad.classList.remove("active");
+        if (this.tabModeAd) this.tabModeAd.classList.remove("active");
         if (this.panelPromptMode) this.panelPromptMode.style.display = "block";
         if (this.panelPasteMode) this.panelPasteMode.style.display = "none";
         if (this.panelLoadMode) this.panelLoadMode.style.display = "none";
+        if (this.panelAdMode) this.panelAdMode.style.display = "none";
         if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "inline-flex";
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
+        if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "none";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
         if (configGrid) configGrid.style.display = "";
         if (aiProviderPanel) aiProviderPanel.style.display = "";
@@ -434,11 +508,14 @@ class AniStoryApp {
         this.tabModePaste.classList.add("active");
         if (this.tabModePrompt) this.tabModePrompt.classList.remove("active");
         if (this.tabModeLoad) this.tabModeLoad.classList.remove("active");
+        if (this.tabModeAd) this.tabModeAd.classList.remove("active");
         if (this.panelPromptMode) this.panelPromptMode.style.display = "none";
         if (this.panelPasteMode) this.panelPasteMode.style.display = "block";
         if (this.panelLoadMode) this.panelLoadMode.style.display = "none";
+        if (this.panelAdMode) this.panelAdMode.style.display = "none";
         if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "inline-flex";
+        if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "none";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
         if (configGrid) configGrid.style.display = "";
         if (aiProviderPanel) aiProviderPanel.style.display = "";
@@ -452,17 +529,147 @@ class AniStoryApp {
         this.tabModeLoad.classList.add("active");
         if (this.tabModePrompt) this.tabModePrompt.classList.remove("active");
         if (this.tabModePaste) this.tabModePaste.classList.remove("active");
+        if (this.tabModeAd) this.tabModeAd.classList.remove("active");
         if (this.panelPromptMode) this.panelPromptMode.style.display = "none";
         if (this.panelPasteMode) this.panelPasteMode.style.display = "none";
         if (this.panelLoadMode) this.panelLoadMode.style.display = "block";
+        if (this.panelAdMode) this.panelAdMode.style.display = "none";
         if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
+        if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "none";
         if (configGrid) configGrid.style.display = "none";
         if (aiProviderPanel) aiProviderPanel.style.display = "none";
         if (actionFooter) actionFooter.style.display = "none";
         localStorage.setItem("anistory_cfg_creation_mode", "load");
         this.loadProjectsIntoContainer(this.stage1ProjectsList);
       });
+    }
+
+    if (this.tabModeAd) {
+      this.tabModeAd.addEventListener("click", () => {
+        this.tabModeAd.classList.add("active");
+        if (this.tabModePrompt) this.tabModePrompt.classList.remove("active");
+        if (this.tabModePaste) this.tabModePaste.classList.remove("active");
+        if (this.tabModeLoad) this.tabModeLoad.classList.remove("active");
+        if (this.panelPromptMode) this.panelPromptMode.style.display = "none";
+        if (this.panelPasteMode) this.panelPasteMode.style.display = "none";
+        if (this.panelLoadMode) this.panelLoadMode.style.display = "none";
+        if (this.panelAdMode) this.panelAdMode.style.display = "block";
+        if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
+        if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
+        if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "inline-flex";
+        if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
+        if (configGrid) configGrid.style.display = "";
+        if (aiProviderPanel) aiProviderPanel.style.display = "";
+        if (actionFooter) actionFooter.style.display = "";
+        // Auto-select realistic style if none set or if default
+        document.querySelectorAll(".style-card-item").forEach(card => {
+          if (card.textContent.includes("Realistic") || card.textContent.includes("Photorealistic")) {
+            card.click();
+          }
+        });
+        localStorage.setItem("anistory_cfg_creation_mode", "advertisement");
+      });
+    }
+
+    // Goods Dropzone & Image Selection
+    if (this.dropzoneAdImages && this.inputAdImages) {
+      this.dropzoneAdImages.addEventListener("click", () => this.inputAdImages.click());
+      this.dropzoneAdImages.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        this.dropzoneAdImages.classList.add("dragover");
+      });
+      this.dropzoneAdImages.addEventListener("dragleave", () => {
+        this.dropzoneAdImages.classList.remove("dragover");
+      });
+      this.dropzoneAdImages.addEventListener("drop", (e) => {
+        e.preventDefault();
+        this.dropzoneAdImages.classList.remove("dragover");
+        if (e.dataTransfer && e.dataTransfer.files) {
+          this.handleAddAdImages(Array.from(e.dataTransfer.files));
+        }
+      });
+      this.inputAdImages.addEventListener("change", (e) => {
+        if (e.target.files) {
+          this.handleAddAdImages(Array.from(e.target.files));
+          this.inputAdImages.value = "";
+        }
+      });
+    }
+
+    // Goods Example Sparks Templates
+    const adSparks = {
+      headphones: {
+        name: "AeroPulse Pro Wireless Headphones",
+        brand: "Apex Audio",
+        desc: "Ultra-lightweight wireless noise-cancelling headphones crafted from aerospace titanium. Studio-grade acoustic fidelity with all-day cloud comfort.",
+        specs: "• 45dB Dual-Processor Hybrid ANC\n• 40-Hour Battery Life + Fast Charge (10min = 5hrs)\n• 40mm Beryllium Acoustic Drivers\n• Ultra-light 185g Titanium Frame • Bluetooth 5.4 Low-Latency",
+        offer: "Special Launch Price: $149 (Regular $249 — 40% OFF)",
+        cta: "Order now with Free Worldwide Express Shipping! 30-Day Money-Back Guarantee.",
+        style: "cinematic_commercial",
+        audience: "Tech Enthusiasts & Professionals"
+      },
+      espresso: {
+        name: "BaristaGlow Smart Espresso Machine",
+        brand: "AromaCraft",
+        desc: "Commercial-grade compact smart espresso machine for cafe-quality coffee at home in under 45 seconds.",
+        specs: "• 20-Bar Italian High-Pressure Pump\n• Dual Thermo-Block Heating System\n• Microfoam Steam Wand\n• Smart Touchscreen & Brew App Control",
+        offer: "Bundle Deal: Get 2 Free Bags of Artisanal Beans + 20% OFF",
+        cta: "Claim your special bundle today! Limited stock available.",
+        style: "luxury_macro",
+        audience: "Families & Homeowners"
+      },
+      serum: {
+        name: "Lumière Youth Peptide Facial Serum",
+        brand: "Éclat Botanicals",
+        desc: "Clinically proven anti-aging glow serum infused with 5 bio-active peptides and plant collagen to restore youthful elasticity in 7 days.",
+        specs: "• 5-Peptide Multi-Complex + Niacinamide\n• 100% Vegan & Cruelty-Free\n• Dermatologist Tested & Fragrance-Free\n• Visible Firming in 7 Days",
+        offer: "Buy 1 Get 1 50% OFF + Free Jade Roller with Code GLOW50",
+        cta: "Transform your skincare ritual today. Order now!",
+        style: "luxury_macro",
+        audience: "Affluent & Luxury Buyers"
+      },
+      smartwatch: {
+        name: "TitanApex Rugged GPS Smartwatch",
+        brand: "Vanguard Tech",
+        desc: "Military-grade ultra-durable multisport smartwatch engineered for extreme exploration, endurance, and 24/7 biometric health tracking.",
+        specs: "• Grade-5 Titanium Bezel & Sapphire Glass\n• 21-Day Battery Life in Smartwatch Mode\n• 100M Water-Resistant (10 ATM)\n• Multi-Band Dual-Frequency GPS & Offline Topo Maps",
+        offer: "Early Explorer Discount: $299 (Save $100 This Week Only)",
+        cta: "Gear up for your next adventure. Order yours now!",
+        style: "spec_breakdown",
+        audience: "Fitness & Active Lifestyle"
+      },
+      shoes: {
+        name: "HyperStride Carbon Road Running Shoes",
+        brand: "AeroForm Athletics",
+        desc: "Super-responsive elite marathon racing shoes featuring full-length carbon fiber propulsion plate and featherlight energy foam.",
+        specs: "• Full-Length Curved Carbon Fiber Plate\n• Ultra-Rebound Pebax Supercritical Foam\n• Breathable Monomesh Upper (168g per shoe)\n• Anti-Slip Wet/Dry Continental Rubber Outsole",
+        offer: "Free Ergonomic Socks + Free Returns on All Shoe Orders",
+        cta: "Feel the speed. Order your size today before stock runs out!",
+        style: "viral_reels",
+        audience: "Fitness & Active Lifestyle"
+      }
+    };
+
+    document.querySelectorAll("#adSparksChips button[data-ad]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.ad;
+        const item = adSparks[key];
+        if (!item) return;
+        if (this.inputAdProductName) this.inputAdProductName.value = item.name;
+        if (this.inputAdBrand) this.inputAdBrand.value = item.brand;
+        if (this.textareaAdDesc) this.textareaAdDesc.value = item.desc;
+        if (this.textareaAdSpecs) this.textareaAdSpecs.value = item.specs;
+        if (this.inputAdOffer) this.inputAdOffer.value = item.offer;
+        if (this.inputAdCTA) this.inputAdCTA.value = item.cta;
+        if (this.selectAdStyle) this.selectAdStyle.value = item.style;
+        if (this.selectAdAudience) this.selectAdAudience.value = item.audience;
+        this.showToast(`✨ Pre-filled "${item.name}"!`);
+      });
+    });
+
+    if (this.btnGenerateAdVideo) {
+      this.btnGenerateAdVideo.addEventListener("click", () => this.handleGenerateAdvertisementVideo());
     }
 
     // Stage 1 existing projects handlers
@@ -523,8 +730,8 @@ class AniStoryApp {
       this.btnCopyGeminiPromptDirect.addEventListener("click", () => {
         const promptText = this.buildGeminiPrompt();
         navigator.clipboard.writeText(promptText);
-        const count = this.selectSceneCount ? this.selectSceneCount.value : 4;
-        this.showToast(`Prompt for ${count} scenes copied to clipboard! Paste it into Gemini Pro 📑`);
+        const count = this.getSceneCountLabel();
+        this.showToast(`Prompt for ${count} copied to clipboard! Paste it into Gemini Pro 📑`);
       });
     }
 
@@ -561,6 +768,12 @@ class AniStoryApp {
     }
     if (this.btnExportScript) {
       this.btnExportScript.addEventListener("click", () => this.exportFullScript());
+    }
+    if (this.btnRefineAllPrompts) {
+      this.btnRefineAllPrompts.addEventListener("click", () => this.refineAllVideoPrompts(this.btnRefineAllPrompts));
+    }
+    if (this.btnSyncDialogues) {
+      this.btnSyncDialogues.addEventListener("click", () => this.syncStoryDialogues(null, "all", this.btnSyncDialogues));
     }
     if (this.btnPaintAllImages) {
       this.btnPaintAllImages.addEventListener("click", () => this.paintAllSceneImages(true));
@@ -606,7 +819,7 @@ class AniStoryApp {
       if (this.inputClaudeApiKey) this.inputClaudeApiKey.value = localStorage.getItem("anistory_key_claude") || "";
       if (this.inputDeepSeekApiKey) this.inputDeepSeekApiKey.value = localStorage.getItem("anistory_key_deepseek") || "";
       if (this.inputNvidiaApiKey) this.inputNvidiaApiKey.value = localStorage.getItem("anistory_key_nvidia") || "";
-      if (this.selectSettingsImageMode) this.selectSettingsImageMode.value = this.imageMode || "server";
+      if (this.selectSettingsImageMode) this.selectSettingsImageMode.value = (this.imageMode === "server" ? "gemini" : (this.imageMode || "gemini"));
       if (this.checkSettingsAutoPaint) {
         this.checkSettingsAutoPaint.checked = localStorage.getItem("anistory_autopaint") === "true";
       }
@@ -672,13 +885,13 @@ class AniStoryApp {
       }
     });
 
-    // Image Painting Mode Toggles (Storyboard Only vs Server API vs Neural.love vs Gemini Imagen 3 vs Puter.js)
+    // Image Painting Mode Toggles (Google Gemini Imagen 3 vs Neural.love vs Puter.js vs Storyboard Only)
     const toggleImageModeHandler = () => {
-      const modes = ["manual", "server", "neural_love", "gemini", "puter"];
+      const modes = ["gemini", "neural_love", "puter", "manual"];
       const currentIdx = Math.max(0, modes.indexOf(this.imageMode));
       const nextMode = modes[(currentIdx + 1) % modes.length];
       this.setImageMode(nextMode);
-      const label = nextMode === "manual" ? "📝 Storyboard Only (No AI Paint)" : (nextMode === "gemini" ? "✨ Google Gemini / Imagen 3" : (nextMode === "neural_love" ? "💖 Neural.love AI Art" : (nextMode === "puter" ? "🖌️ In-Browser Puter.js" : "🌐 Free Neural AI")));
+      const label = nextMode === "gemini" ? "✨ Google Gemini / Imagen 3" : (nextMode === "neural_love" ? "💖 Neural.love AI Art" : (nextMode === "puter" ? "🖌️ In-Browser Puter.js" : "📝 Storyboard Only (No AI Paint)"));
       this.showToast(`Switched Image Mode to: ${label}`);
     };
 
@@ -725,18 +938,109 @@ class AniStoryApp {
     if (this.btnToggleVoiceoverStage2) {
       this.btnToggleVoiceoverStage2.addEventListener("click", async () => {
         if (!this.currentProject) return;
+        const oldState = this.currentProject.enable_voiceover !== false;
+        const newState = !oldState;
+        this.updateVoiceoverUI(newState);
+        this.showToast(newState ? "🎙️ Enabling voiceover & updating clips... ⏳" : "🔇 Disabling voiceover & updating clips... ⏳");
         try {
           const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-voiceover`, { method: "POST" });
           if (resp.ok) {
             const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            }
             this.currentProject.enable_voiceover = data.enable_voiceover;
             this.enableVoiceover = data.enable_voiceover;
             localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
+            this.saveActiveProjectState();
             this.updateVoiceoverUI(this.currentProject.enable_voiceover);
-            this.showToast(data.enable_voiceover ? "🎙️ Voiceover enabled" : "🔇 Voiceover disabled (re-render scenes for clean audio)");
+            this.renderStoryboardView();
+            this.showToast(data.enable_voiceover ? "🎙️ Voiceover enabled" : "🔇 Voiceover disabled (clips updated with clean audio)");
           }
         } catch (e) {
           console.error(e);
+          this.updateVoiceoverUI(oldState);
+          this.showToast("Failed to toggle voiceover: " + e.message, true);
+        }
+      });
+    }
+
+    // Change Narrator Voice in Stage 2
+    if (this.selectVoiceStage2) {
+      this.selectVoiceStage2.addEventListener("change", async () => {
+        const newVoice = this.selectVoiceStage2.value;
+        localStorage.setItem("anistory_cfg_voice", newVoice);
+        if (this.selectVoice) this.selectVoice.value = newVoice;
+        if (!this.currentProject) return;
+        try {
+          const resp = await fetch(`/api/projects/${this.currentProject.id}/set-voice`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ voice: newVoice })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            } else {
+              this.currentProject.voice = newVoice;
+            }
+            this.saveActiveProjectState();
+            this.showToast(`🎙️ Đã đổi giọng đọc sang: ${newVoice}. Nhấn Animate Clip hoặc Render Full Film để áp dụng!`);
+          }
+        } catch (e) {
+          console.error(e);
+          this.showToast("Không thể đổi giọng đọc: " + e.message, true);
+        }
+      });
+    }
+
+    // Audition Voice in Stage 2
+    if (this.btnAuditionVoiceStage2 && this.audioAuditionPlayer) {
+      this.btnAuditionVoiceStage2.addEventListener("click", async (e) => {
+        e.preventDefault();
+        if (!this.audioAuditionPlayer.paused && this.audioAuditionPlayer.currentTime > 0) {
+          this.audioAuditionPlayer.pause();
+          this.audioAuditionPlayer.currentTime = 0;
+          if (this.iconAuditionVoiceStage2) this.iconAuditionVoiceStage2.textContent = "🔊";
+          this.showToast("Đã dừng nghe thử ⏹️");
+          return;
+        }
+        const selectedVoice = this.selectVoiceStage2?.value || this.currentProject?.voice || "vi-VN-HoaiMyNeural";
+        const selectedLang = this.currentProject?.language || (this.selectLanguage ? this.selectLanguage.value : "vi");
+        const curProvider = this.selectAiProvider?.value || "gemini";
+        const curKey = this.getEffectiveApiKey(curProvider);
+
+        this.btnAuditionVoiceStage2.disabled = true;
+        if (this.iconAuditionVoiceStage2) this.iconAuditionVoiceStage2.textContent = "⏳";
+        this.showToast(`Đang tạo mẫu thử giọng: ${selectedVoice}... 🎙️`);
+        try {
+          const resp = await fetch("/api/audition-voice", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ voice: selectedVoice, language: selectedLang, api_key: curKey })
+          });
+          if (!resp.ok) throw new Error("Voice audition failed");
+          const data = await resp.json();
+          if (data.audio_url) {
+            this.audioAuditionPlayer.src = `${data.audio_url}?t=${Date.now()}`;
+            this.audioAuditionPlayer.volume = 1.0;
+            this.audioAuditionPlayer.muted = false;
+            if (this.iconAuditionVoiceStage2) this.iconAuditionVoiceStage2.textContent = "⏹️";
+            this.btnAuditionVoiceStage2.disabled = false;
+            const onEnd = () => {
+              if (this.iconAuditionVoiceStage2) this.iconAuditionVoiceStage2.textContent = "🔊";
+              this.audioAuditionPlayer.removeEventListener("ended", onEnd);
+            };
+            this.audioAuditionPlayer.addEventListener("ended", onEnd);
+            await this.audioAuditionPlayer.play();
+            this.showToast(`Đang phát mẫu giọng: ${selectedVoice} 🔊`);
+          }
+        } catch (err) {
+          console.error(err);
+          if (this.iconAuditionVoiceStage2) this.iconAuditionVoiceStage2.textContent = "🔊";
+          this.btnAuditionVoiceStage2.disabled = false;
+          this.showToast("Không thể nghe thử giọng: " + err.message, true);
         }
       });
     }
@@ -745,16 +1049,29 @@ class AniStoryApp {
     if (this.btnToggleSubtitlesStage2) {
       this.btnToggleSubtitlesStage2.addEventListener("click", async () => {
         if (!this.currentProject) return;
+        const oldState = this.currentProject.enable_subtitles !== false;
+        const newState = !oldState;
+        this.updateSubtitlesUI(newState);
+        this.showToast(newState ? "💬 Enabling subtitles & updating clips... ⏳" : "🚫 Disabling subtitles & updating clips... ⏳");
         try {
           const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-subtitles`, { method: "POST" });
           if (resp.ok) {
             const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            }
             this.currentProject.enable_subtitles = data.enable_subtitles;
+            this.enableSubtitles = data.enable_subtitles;
+            localStorage.setItem("anistory_cfg_enable_subtitles", this.enableSubtitles ? "true" : "false");
+            this.saveActiveProjectState();
             this.updateSubtitlesUI(this.currentProject.enable_subtitles);
+            this.renderStoryboardView();
             this.showToast(data.enable_subtitles ? "💬 Captions enabled" : "🔇 Captions disabled (clean video)");
           }
         } catch (e) {
           console.error(e);
+          this.updateSubtitlesUI(oldState);
+          this.showToast("Failed to toggle subtitles: " + e.message, true);
         }
       });
     }
@@ -938,8 +1255,8 @@ class AniStoryApp {
       this.btnCopyGeminiPrompt.addEventListener("click", () => {
         const promptText = this.buildGeminiPrompt();
         navigator.clipboard.writeText(promptText);
-        const count = this.selectSceneCount ? this.selectSceneCount.value : 4;
-        this.showToast(`Prompt for ${count} scenes copied to clipboard! Paste it into Gemini Pro 📑`);
+        const count = this.getSceneCountLabel();
+        this.showToast(`Prompt for ${count} copied to clipboard! Paste it into Gemini Pro 📑`);
       });
     }
     if (this.btnSubmitImport) {
@@ -1029,11 +1346,14 @@ class AniStoryApp {
   }
 
   initImageMode() {
-    this.imageMode = localStorage.getItem("anistory_image_mode") || "manual";
+    let mode = localStorage.getItem("anistory_image_mode") || "gemini";
+    if (mode === "server") mode = "gemini";
+    this.imageMode = mode;
     this.applyImageModeUI(this.imageMode);
   }
 
   setImageMode(mode) {
+    if (mode === "server") mode = "gemini";
     this.imageMode = mode;
     localStorage.setItem("anistory_image_mode", mode);
     this.applyImageModeUI(mode);
@@ -1045,10 +1365,6 @@ class AniStoryApp {
         this.badgeImageMode.textContent = "📝 Storyboard Only (No AI Painting)";
         this.badgeImageMode.style.background = "rgba(16, 185, 129, 0.2)";
         this.badgeImageMode.style.color = "#6ee7b7";
-      } else if (mode === "gemini") {
-        this.badgeImageMode.textContent = "✨ Google Gemini / Imagen 3";
-        this.badgeImageMode.style.background = "rgba(245, 158, 11, 0.2)";
-        this.badgeImageMode.style.color = "#fbbf24";
       } else if (mode === "neural_love") {
         this.badgeImageMode.textContent = "💖 Neural.love AI Art";
         this.badgeImageMode.style.background = "rgba(236, 72, 153, 0.2)";
@@ -1058,47 +1374,40 @@ class AniStoryApp {
         this.badgeImageMode.style.background = "rgba(16, 185, 129, 0.2)";
         this.badgeImageMode.style.color = "#34d399";
       } else {
-        this.badgeImageMode.textContent = "🌐 Free Neural AI (Flux / SDXL)";
-        this.badgeImageMode.style.background = "rgba(139, 92, 246, 0.2)";
-        this.badgeImageMode.style.color = "#c4b5fd";
+        this.badgeImageMode.textContent = "✨ Google Gemini / Imagen 3";
+        this.badgeImageMode.style.background = "rgba(245, 158, 11, 0.2)";
+        this.badgeImageMode.style.color = "#fbbf24";
       }
     }
     if (this.descImageMode) {
       if (mode === "manual") {
         this.descImageMode.textContent = "AI is dedicated exclusively to the storyboard. Scenes use SVG placeholders and user-uploaded media.";
-      } else if (mode === "gemini") {
-        this.descImageMode.textContent = "High-fidelity Google Imagen 3 visuals powered by your Gemini API Key or Web Cookie";
       } else if (mode === "neural_love") {
         this.descImageMode.textContent = "High-fidelity artistic anime & fantasy illustrations via your Neural.love API Key";
       } else if (mode === "puter") {
         this.descImageMode.textContent = "In-browser Puter.js AI Paint (subject to Puter balance/quota)";
       } else {
-        this.descImageMode.textContent = "Free unlimited Neural AI generation (Flux / SDXL) with zero quota limits";
+        this.descImageMode.textContent = "High-fidelity Google Imagen 3 visuals powered by your Gemini API Key or Web Cookie";
       }
     }
     if (this.btnToggleImageMode) {
-      if (mode === "manual") {
-        this.btnToggleImageMode.innerHTML = `<span>🌐</span> Switch to Free Neural AI (Flux)`;
-      } else if (mode === "server") {
+      if (mode === "gemini") {
         this.btnToggleImageMode.innerHTML = `<span>💖</span> Switch to Neural.love AI Art`;
       } else if (mode === "neural_love") {
-        this.btnToggleImageMode.innerHTML = `<span>✨</span> Switch to Google Gemini Imagen 3`;
-      } else if (mode === "gemini") {
         this.btnToggleImageMode.innerHTML = `<span>🖌️</span> Switch to In-Browser Puter.js`;
-      } else {
+      } else if (mode === "puter") {
         this.btnToggleImageMode.innerHTML = `<span>📝</span> Switch to Storyboard Only`;
+      } else {
+        this.btnToggleImageMode.innerHTML = `<span>✨</span> Switch to Google Gemini Imagen 3`;
       }
     }
     if (this.selectSettingsImageMode) {
-      this.selectSettingsImageMode.value = mode;
+      this.selectSettingsImageMode.value = (mode === "server") ? "gemini" : mode;
     }
     if (this.textImageModeStage2 && this.iconImageModeStage2) {
       if (mode === "manual") {
         this.iconImageModeStage2.textContent = "📝";
         this.textImageModeStage2.textContent = "Paint: Storyboard Only";
-      } else if (mode === "gemini") {
-        this.iconImageModeStage2.textContent = "✨";
-        this.textImageModeStage2.textContent = "Paint: Gemini Imagen 3";
       } else if (mode === "neural_love") {
         this.iconImageModeStage2.textContent = "💖";
         this.textImageModeStage2.textContent = "Paint: Neural.love AI";
@@ -1106,8 +1415,8 @@ class AniStoryApp {
         this.iconImageModeStage2.textContent = "🖌️";
         this.textImageModeStage2.textContent = "Paint: In-Browser Puter";
       } else {
-        this.iconImageModeStage2.textContent = "🌐";
-        this.textImageModeStage2.textContent = "Paint: Free Neural AI";
+        this.iconImageModeStage2.textContent = "✨";
+        this.textImageModeStage2.textContent = "Paint: Gemini Imagen 3";
       }
     }
   }
@@ -1171,9 +1480,54 @@ class AniStoryApp {
     }
   }
 
+  /** Returns true when the Scenes Count selector is set to "Auto (Agent Decides)". */
+  isAutoSceneCount() {
+    return !this.selectSceneCount || this.selectSceneCount.value === "auto";
+  }
+
+  /**
+   * Client-side estimate of the optimal scene count (mirrors ScriptAgent.estimate_optimal_scene_count).
+   * Used only for the copy-to-Gemini prompt skeleton; the backend agent decides the final count.
+   */
+  estimateAutoSceneCount(idea, targetDuration = 0) {
+    if (targetDuration && targetDuration > 0) {
+      return Math.max(3, Math.min(16, Math.round(targetDuration / 8)));
+    }
+    const clean = (idea || "").trim();
+    if (!clean) return 4;
+    const headers = clean.match(/(?:^|\n)\s*(?:Scene|Cảnh|Phân cảnh)\s*\d+/gi) || [];
+    if (headers.length >= 2) return Math.max(2, Math.min(24, headers.length));
+    const wordCount = clean.split(/\s+/).filter(Boolean).length;
+    const paragraphs = clean.split(/\n\s*\n/).filter(p => p.trim().length > 10);
+    const sentences = clean.split(/(?<=[.!?…])\s+|\n+/).filter(s => s.trim().length > 8);
+    const dialogues = clean.match(/(?:^|\n)\s*[–\-—]\s*[^\n]+|["“][^"”\n]{4,}["”]/g) || [];
+    if (wordCount <= 25 && dialogues.length <= 1) return 4;
+    if (wordCount <= 45 && dialogues.length <= 2) return 5;
+    const est = Math.max(
+      4,
+      Math.round(wordCount / 20),
+      Math.round(sentences.length * 0.75),
+      dialogues.length + 2,
+      paragraphs.length >= 3 ? paragraphs.length + 1 : 4
+    );
+    return Math.max(4, Math.min(16, est));
+  }
+
+  /** Human-readable scene count label for toasts. */
+  getSceneCountLabel() {
+    if (this.isAutoSceneCount()) return "an auto-determined number of scenes 🤖";
+    const n = parseInt(this.selectSceneCount.value, 10) || 4;
+    return `${n} scene${n === 1 ? "" : "s"}`;
+  }
+
   buildGeminiPrompt() {
     const idea = this.inputIdeaPrompt?.value?.trim() || "A humble, gentle youth protected by a magical golden carp";
-    const numScenes = this.selectSceneCount ? (parseInt(this.selectSceneCount.value, 10) || 4) : 4;
+    const isAutoScenes = this.isAutoSceneCount();
+    const numScenes = isAutoScenes
+      ? this.estimateAutoSceneCount(idea)
+      : (parseInt(this.selectSceneCount.value, 10) || 4);
+    const minAuto = Math.max(3, numScenes - 1);
+    const maxAuto = Math.min(20, numScenes + 2);
     const targetSceneSec = 15;
     const targetDuration = targetSceneSec * numScenes;
     const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
@@ -1186,14 +1540,27 @@ class AniStoryApp {
     const styleName = styleInfo ? styleInfo.name : "Studio Ghibli 2D";
 
     const motionCycles = ["zoom_in", "pan_right", "pan_left", "subtle_drift", "zoom_out"];
+    const cameraProseMap = {
+      zoom_in: "The camera executes a smooth slow dolly push-in toward the subject at eye level with fluid stabilization.",
+      zoom_out: "The camera smoothly dollies out with a steady pedestal pull-back, revealing the expansive atmospheric environment.",
+      pan_left: "The camera performs a graceful horizontal tracking pan to the left, following the subject's eyeline.",
+      pan_right: "The camera glides in a smooth cinematic tracking pan to the right with fluid stabilization.",
+      subtle_drift: "A steady locked-off medium shot with subtle organic handheld drift and shallow depth of field."
+    };
     const scenesSkeleton = [];
     for (let i = 1; i <= numScenes; i++) {
       const motion = motionCycles[(i - 1) % motionCycles.length];
+      const camSentence = cameraProseMap[motion] || cameraProseMap.zoom_in;
+      const dialSample = isVi
+        ? `Character says in a clear voice: \\"Lời thoại cảnh ${i}\\" (no subtitles)`
+        : `Character says in a calm voice: \\"Dialogue line for scene ${i}\\" (no subtitles)`;
       scenesSkeleton.push(`    {
       "scene_number": ${i},
       "title": "Scene ${i} Title in ${langStr}",
-      "visual_prompt": "Ultra-detailed visual image description for an AI artist in ${styleName}, ${aspectRatio} cinematic framing",
-      "narration": "Evocative voiceover narration in ${langStr} (~${targetWords} words, paced for ~${targetSceneSec} seconds)",
+      "archetype": "Establishing Shot / Action Beat / Climax",
+      "visual_prompt": "Ultra-detailed static visual image description for an AI artist in ${styleName}: frozen frame composition, character visual anchors (hair, outfit, features), environment, color palette, lighting, ${aspectRatio} cinematic framing. (NO timing, NO camera moves, NO speech bubbles)",
+      "acting_prompt": "Medium wide shot of character in setting. ${camSentence} 0-3s: Initial measured movement starting from keyframe pose as ambient wind stirs clothing. 3-6s: Core emotional performance beat / ${dialSample}. 6-8s: The character takes a steady breath as the scene holds composition. Atmospheric volumetric lighting, 35mm depth of field.\\n\\nAudio: natural atmospheric ambient soundscape, gentle ambient breeze, no background music.\\nSFX: subtle realistic footsteps, cloth movement.\\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.",
+      "narration": "Story-driven voiceover narration in ${langStr} that directly narrates the plot action, character interaction, and key dialogue/punchline of Scene ${i} (~${targetWords} words)",
       "camera_motion": "${motion}"
     }`);
     }
@@ -1203,7 +1570,9 @@ Create a rich, emotionally captivating animated short film screenplay based on t
 Idea: "${idea}"
 
 Film Specifications:
-- Number of Scenes: EXACTLY ${numScenes} SCENES (Must have all scenes 1 through ${numScenes}).
+${isAutoScenes
+  ? `- Number of Scenes: AUTO — YOU decide the optimal number of scenes (recommended ${minAuto} to ${maxAuto}) based on the story's natural plot beats, setting changes, dialogue exchanges, and final twist/punchline. Give each distinct beat its own 8-second scene; never cram multiple beats into one scene. (The skeleton below shows ${numScenes} scenes as an example — add or remove scenes as the story requires.)`
+  : `- Number of Scenes: EXACTLY ${numScenes} SCENES (Must have all scenes 1 through ${numScenes}).`}
 - Target Total Duration: ${targetDuration} seconds (~${targetSceneSec} seconds per scene).
 - Language: Titles and Narration MUST be written in ${langStr}.
 - Visual Art Style: ${styleName}.
@@ -1211,17 +1580,39 @@ Film Specifications:
 - Target Audience: ${audience}.
 - Narration Pacing: Approximately ${targetWords} words per scene in ${langStr}.
 
+CRITICAL INSTRUCTION 1 - VOICEOVER NARRATION MUST TIE DIRECTLY TO THE STORY:
+- "narration" is the primary storytelling audio and subtitle track of the film.
+- Every scene's "narration" MUST directly narrate the concrete plot event, character action, and emotional progression happening in that exact scene.
+- When read sequentially from Scene 1 to Scene ${numScenes}, "narration" MUST tell the complete, coherent story from start to finish.
+- If the story includes key character dialogue, questions, reveals, or a climactic punchline, "narration" MUST explicitly include/quote those key lines so the listener hears the full story and punchline—never replace key dialogue with vague third-person meta-summaries or disconnected scenery fragments.
+
+CRITICAL INSTRUCTION 2 - SEPARATE PROMPTS FOR IMAGE & VIDEO:
+Every scene MUST have TWO SEPARATE, DISTINCT prompts:
+1. "visual_prompt" (STILL IMAGE PROMPT for Midjourney / Google Imagen 3 / Puter):
+   - Detailed visual description of the frozen single frame in ${styleName} art style.
+   - Describe character visual features & outfit consistently, environment setting, color palette, lighting atmosphere, and composition.
+   - Do NOT include time ranges (like 0-3s), camera moves, speech text, or negative prompts.
+2. "acting_prompt" (PROFESSIONAL CINEMATIC VIDEO PROMPT for Google Flow / Veo 3 / Kling / Sora):
+   - Natural director-grade cinematic prose (90-140 words) in ENGLISH only.
+   - Dedicated camera sentence (e.g. "The camera executes a smooth slow dolly push-in..."), NEVER "Camera: zoom_in".
+   - Grounded, physically reasonable 8-second motion across 3 beats (0-3s initiation, 3-6s core action / concise dialogue, 6-8s steady landing).
+   - Dialogue under 5 words: Character says in a [tone] voice: "..." (no subtitles).
+   - Complete Audio, SFX, and Negative prompt block for Veo 3.
+   - "visual_prompt" and "acting_prompt" MUST NOT be identical!
+
 Return ONLY valid JSON matching this exact structure:
 {
   "title": "Creative Film Title in ${langStr}",
   "logline": "1-sentence synopsis in ${langStr}",
-  "characters": "Brief character description",
+  "characters": "Protagonist: [Name & visual traits] | Companion: [Name & visual traits]",
   "scenes": [
 ${scenesSkeleton.join(",\n")}
   ]
 }
 
-CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do not stop at 4. Return raw valid JSON only.`;
+${isAutoScenes
+  ? `CRITICAL: Choose the scene count that best fits the story (${minAuto}-${maxAuto} recommended), number scenes sequentially from 1, and make sure the final scene delivers the ending/punchline. Return raw valid JSON only.`
+  : `CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do not stop at 4. Return raw valid JSON only.`}`;
   }
 
   openModelExplorer() {
@@ -1367,26 +1758,26 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     if (!this.selectAiModel) return;
     const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
     const savedModel = localStorage.getItem("anistory_cfg_model") || localStorage.getItem("anistory_model_gemini");
-    const selected = currentSelected || savedModel || this.selectAiModel.value || (provider === "gemini_cookie" ? "gemini-pro-advanced" : "gemini-2.5-flash");
+    const selected = currentSelected || savedModel || this.selectAiModel.value || (provider === "gemini_cookie" ? "gemini-flash-advanced" : "gemini-2.5-flash");
 
     if (provider !== "gemini" && provider !== "gemini_cookie") return;
 
     this.selectAiModel.innerHTML = "";
 
     const apiModels = (data && data.api_models && data.api_models.length > 0) ? data.api_models : [
-      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", badge: "✨ Recommended / Fast" },
-      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", badge: "🧠 Deep Reasoning" },
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", badge: "⚡ High Throughput" },
-      { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash-Lite", badge: "💨 Ultra Fast" },
-      { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", badge: "📚 Long Context" },
-      { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", badge: "⚡ Standard Flash" }
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", badge: "✨ Recommended (~2s)" },
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", badge: "⚡ Ultra Fast (~1.5s)" },
+      { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash-Lite", badge: "💨 Sub-Second" },
+      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", badge: "🧠 Deep Reasoning (~30s)" },
+      { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", badge: "⚡ Standard Flash" },
+      { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", badge: "📚 Long Context" }
     ];
 
     const cookieModels = (data && data.cookie_models && data.cookie_models.length > 0) ? data.cookie_models : [
-      { id: "gemini-pro-advanced", name: "Gemini 2.5 Pro Advanced (Web Cookie)", badge: "🧠 Pro Reasoning" },
-      { id: "gemini-flash-advanced", name: "Gemini 2.0 Flash Advanced (Web Cookie)", badge: "⚡ Fast Pro" },
+      { id: "gemini-flash-advanced", name: "Gemini 2.0 Flash Advanced (Web Cookie)", badge: "⚡ Ultra Fast (~3s)" },
+      { id: "gemini-pro-advanced", name: "Gemini 2.5 Pro Advanced (Web Cookie)", badge: "🧠 Deep Reasoning (~35s)" },
+      { id: "gemini-flash", name: "Gemini Flash (Standard Web)", badge: "💨 Fast Web (~3s)" },
       { id: "gemini-pro", name: "Gemini Pro (Standard Web)", badge: "🍪 Web Standard" },
-      { id: "gemini-flash", name: "Gemini Flash (Standard Web)", badge: "💨 Fast Web" },
       { id: "default", name: "Gemini Default Web Model", badge: "🍪 Default" }
     ];
 
@@ -1431,7 +1822,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
 
     if (!this.selectAiModel.value) {
       if (provider === "gemini_cookie") {
-        this.selectAiModel.value = "gemini-pro-advanced";
+        this.selectAiModel.value = "gemini-flash-advanced";
       } else {
         this.selectAiModel.value = "gemini-2.5-flash";
       }
@@ -1684,17 +2075,44 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
   }
 
   renderVoices(voices) {
-    this.selectVoice.innerHTML = "";
+    const groupLabels = {
+      vn_neural: "🇻🇳 Giọng Đọc Việt Nam Chuyên Biệt (14 Giọng)",
+      vn_gemini: "✨ Google Gemini Multimodal (10 Giọng Tiếng Việt)",
+      vn_gtts: "🌐 Google Voice VN (2 Giọng)",
+      intl: "🌍 Giọng Quốc Tế (International)"
+    };
     const savedVoice = localStorage.getItem("anistory_cfg_voice");
-    voices.forEach(v => {
-      const opt = document.createElement("option");
-      opt.value = v.id;
-      opt.textContent = `${v.name} (${v.gender})`;
-      if (savedVoice ? (v.id === savedVoice) : (v.id === "gemini-Aoede" || v.id === "en-US-ChristopherNeural")) {
-        opt.selected = true;
-      }
-      this.selectVoice.appendChild(opt);
-    });
+
+    const populateSelect = (selectEl, selectedId) => {
+      if (!selectEl) return;
+      selectEl.innerHTML = "";
+      const groups = {};
+      voices.forEach(v => {
+        const gKey = v.group || (v.id.startsWith("vi-") ? "vn_neural" : (v.id.startsWith("gemini-") ? "vn_gemini" : (v.id.startsWith("gtts-vi") ? "vn_gtts" : "intl")));
+        if (!groups[gKey]) groups[gKey] = [];
+        groups[gKey].push(v);
+      });
+
+      ["vn_neural", "vn_gemini", "vn_gtts", "intl"].forEach(gKey => {
+        const list = groups[gKey];
+        if (!list || list.length === 0) return;
+        const optgroup = document.createElement("optgroup");
+        optgroup.label = groupLabels[gKey] || gKey;
+        list.forEach(v => {
+          const opt = document.createElement("option");
+          opt.value = v.id;
+          opt.textContent = `${v.name} (${v.gender})`;
+          if (selectedId ? (v.id === selectedId) : (v.id === "vi-VN-HoaiMyNeural" || v.id === "gemini-Aoede")) {
+            opt.selected = true;
+          }
+          optgroup.appendChild(opt);
+        });
+        selectEl.appendChild(optgroup);
+      });
+    };
+
+    populateSelect(this.selectVoice, savedVoice);
+    populateSelect(this.selectVoiceStage2, this.currentProject?.voice || savedVoice);
   }
 
   switchStage(stageNum, pushState = true) {
@@ -1767,10 +2185,32 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     }
 
     this.btnGenerateStoryboard.disabled = true;
+    let elapsedSec = 0;
     this.btnGenerateStoryboard.innerHTML = `
-      <span class="btn-text">Brainstorming Storyboard...</span>
-      <span class="btn-arrow">⏳</span>
+      <span class="btn-text">Brainstorming Storyboard... (0s)</span>
+      <span class="btn-arrow">⚡</span>
     `;
+
+    const timerInterval = setInterval(() => {
+      elapsedSec++;
+      if (!this.btnGenerateStoryboard || !this.btnGenerateStoryboard.disabled) {
+        clearInterval(timerInterval);
+        return;
+      }
+      let statusStage = "Brainstorming Storyboard";
+      let icon = "⚡";
+      if (elapsedSec > 8) {
+        statusStage = "Crafting Scene Beats & Acting Prompts";
+        icon = "🎬";
+      } else if (elapsedSec > 3) {
+        statusStage = "Developing Characters & Dialogue";
+        icon = "✨";
+      }
+      this.btnGenerateStoryboard.innerHTML = `
+        <span class="btn-text">${statusStage}... (${elapsedSec}s)</span>
+        <span class="btn-arrow">${icon}</span>
+      `;
+    }, 1000);
 
     try {
       const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
@@ -1778,14 +2218,18 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       let apiKey = this.getEffectiveApiKey(provider);
 
       if (provider === "gemini_cookie" && !apiKey) {
+        clearInterval(timerInterval);
         this.showToast("Please paste your Gemini __Secure-1PSID cookie in Settings ⚙️ first! 🍪", true);
         this.btnGenerateStoryboard.disabled = false;
         this.btnGenerateStoryboard.innerHTML = `<span class="btn-text">Generate Storyboard</span><span class="btn-arrow">✨</span>`;
         return;
       }
-      const numScenes = parseInt(this.selectSceneCount.value, 10);
+      const isAutoScenes = this.isAutoSceneCount();
       const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto_acting";
-      const targetDuration = (durVal === "auto_acting" || !durVal) ? (numScenes * 8) : parseInt(durVal, 10);
+      const fixedDuration = (durVal === "auto_acting" || !durVal) ? null : parseInt(durVal, 10);
+      // num_scenes = 0 tells the backend agent to determine the optimal scene count
+      const numScenes = isAutoScenes ? 0 : (parseInt(this.selectSceneCount.value, 10) || 4);
+      const targetDuration = fixedDuration || (isAutoScenes ? null : numScenes * 8);
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
       const projectTitle = this.inputProjectTitle ? this.inputProjectTitle.value.trim() : "";
 
@@ -1816,7 +2260,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         api_key: apiKey,
         image_mode: this.imageMode || "server",
         enable_voiceover: this.enableVoiceover !== false,
-        enable_subtitles: true
+        enable_subtitles: this.enableSubtitles !== false
       };
 
       const resp = await fetch("/api/create-story", {
@@ -1826,14 +2270,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       });
 
       if (!resp.ok) {
-        let msg = "Failed to create story";
-        try {
-          const err = await resp.json();
-          msg = err.detail || msg;
-        } catch {
-          const raw = await resp.text();
-          if (raw) msg = raw.slice(0, 200);
-        }
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to create story");
         throw new Error(msg);
       }
 
@@ -1842,7 +2279,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       this.renderStoryboardView();
       this.switchStage(2);
       const titleDisplay = this.currentProject.title ? `"${this.currentProject.title}"` : `${this.currentProject.scenes.length} scenes`;
-      this.showToast(`✨ Generated ${titleDisplay} (${this.currentProject.scenes.length} scenes)! Review your script, then click '🎨 Paint All' to paint. 🎬`);
+      this.showToast(`✨ Generated ${titleDisplay} (${this.currentProject.scenes.length} scenes in ${elapsedSec}s)! Review your script, then click '🎨 Paint All' to paint. 🎬`);
       if (localStorage.getItem("anistory_autopaint") === "true") {
         this.autoGenerateMissingSceneImages();
       }
@@ -1850,11 +2287,214 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       console.error(e);
       this.showToast(e.message, true);
     } finally {
+      clearInterval(timerInterval);
       this.btnGenerateStoryboard.disabled = false;
       this.btnGenerateStoryboard.innerHTML = `
         <span class="btn-glow-layer"></span>
         <span class="btn-text">Generate Storyboard with AI</span>
         <span class="btn-arrow">✨</span>
+      `;
+    }
+  }
+
+  handleAddAdImages(files) {
+    if (!files || !files.length) return;
+    const validImages = files.filter(f => f.type.startsWith("image/"));
+    if (!validImages.length) {
+      this.showToast("Please select valid image files (PNG, JPG, WEBP).", true);
+      return;
+    }
+    validImages.forEach(f => {
+      const exists = this.adUploadedFiles.some(existing => existing.name === f.name && existing.size === f.size);
+      if (!exists) {
+        this.adUploadedFiles.push(f);
+      }
+    });
+    this.renderAdImagesPreviews();
+    this.showToast(`📸 Added ${validImages.length} product photo(s)! (${this.adUploadedFiles.length} total)`);
+  }
+
+  renderAdImagesPreviews() {
+    if (!this.adImagesPreviewContainer || !this.adImagesCountBadge) return;
+    const count = this.adUploadedFiles.length;
+    this.adImagesCountBadge.textContent = `${count} photo${count === 1 ? '' : 's'} added`;
+
+    if (count === 0) {
+      this.adImagesPreviewContainer.style.display = "none";
+      this.adImagesPreviewContainer.innerHTML = "";
+      return;
+    }
+
+    this.adImagesPreviewContainer.style.display = "grid";
+    this.adImagesPreviewContainer.innerHTML = "";
+
+    this.adUploadedFiles.forEach((file, idx) => {
+      const card = document.createElement("div");
+      card.className = "ad-image-card";
+
+      const thumbWrap = document.createElement("div");
+      thumbWrap.className = "ad-image-thumb-wrap";
+
+      const img = document.createElement("img");
+      img.className = "ad-image-thumb";
+      img.alt = file.name;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+
+      const badge = document.createElement("span");
+      badge.className = "ad-image-badge";
+      badge.textContent = idx === 0 ? "Hero (Sc 1)" : `Sc ${idx + 1}`;
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "ad-image-delete-btn";
+      deleteBtn.innerHTML = "×";
+      deleteBtn.title = "Remove this photo";
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.adUploadedFiles.splice(idx, 1);
+        this.renderAdImagesPreviews();
+      });
+
+      thumbWrap.appendChild(img);
+      thumbWrap.appendChild(badge);
+      thumbWrap.appendChild(deleteBtn);
+
+      const footer = document.createElement("div");
+      footer.className = "ad-image-footer";
+      const sizeKb = Math.round(file.size / 1024);
+      footer.textContent = `${file.name.slice(0, 14)} (${sizeKb}KB)`;
+
+      card.appendChild(thumbWrap);
+      card.appendChild(footer);
+      this.adImagesPreviewContainer.appendChild(card);
+    });
+  }
+
+  async handleGenerateAdvertisementVideo() {
+    const productName = this.inputAdProductName ? this.inputAdProductName.value.trim() : "";
+    const description = this.textareaAdDesc ? this.textareaAdDesc.value.trim() : "";
+
+    if (!productName) {
+      this.showToast("Please enter the Product / Goods Name! 🏷️", true);
+      this.inputAdProductName?.focus();
+      return;
+    }
+    if (!description) {
+      this.showToast("Please enter a short product description or key selling points! 📝", true);
+      this.textareaAdDesc?.focus();
+      return;
+    }
+
+    if (!this.btnGenerateAdVideo) return;
+    this.btnGenerateAdVideo.disabled = true;
+    let elapsedSec = 0;
+    this.btnGenerateAdVideo.innerHTML = `
+      <span class="btn-text">Writing Commercial Script... (0s)</span>
+      <span class="btn-arrow">⚡</span>
+    `;
+
+    const timerInterval = setInterval(() => {
+      elapsedSec++;
+      if (!this.btnGenerateAdVideo || !this.btnGenerateAdVideo.disabled) {
+        clearInterval(timerInterval);
+        return;
+      }
+      let statusStage = "Writing Commercial Script";
+      let icon = "⚡";
+      if (elapsedSec > 8) {
+        statusStage = "Formatting Goods Keyframes & Specs";
+        icon = "📸";
+      } else if (elapsedSec > 4) {
+        statusStage = "Composing High-Converting Pitch";
+        icon = "🎬";
+      }
+      this.btnGenerateAdVideo.innerHTML = `
+        <span class="btn-text">${statusStage}... (${elapsedSec}s)</span>
+        <span class="btn-arrow">${icon}</span>
+      `;
+    }, 1000);
+
+    try {
+      const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
+      const model = this.selectAiModel ? this.selectAiModel.value : "";
+      const apiKey = this.getEffectiveApiKey(provider);
+
+      const isAutoScenes = this.isAutoSceneCount();
+      const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto_acting";
+      const fixedDuration = (durVal === "auto_acting" || !durVal) ? null : parseInt(durVal, 10);
+      const numScenes = isAutoScenes ? 0 : (parseInt(this.selectSceneCount.value, 10) || 4);
+      const targetDuration = fixedDuration || (isAutoScenes ? 0 : numScenes * 8);
+      const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
+      const voice = this.selectVoice ? this.selectVoice.value : "en-US-ChristopherNeural";
+      const language = this.selectLanguage ? this.selectLanguage.value : "en";
+      const brand = this.inputAdBrand ? this.inputAdBrand.value.trim() : "";
+      const specs = this.textareaAdSpecs ? this.textareaAdSpecs.value.trim() : "";
+      const adStyle = this.selectAdStyle ? this.selectAdStyle.value : "cinematic_commercial";
+      const audience = this.selectAdAudience ? this.selectAdAudience.value : "General";
+      const offer = this.inputAdOffer ? this.inputAdOffer.value.trim() : "";
+      const cta = this.inputAdCTA ? this.inputAdCTA.value.trim() : "";
+
+      const formData = new FormData();
+      formData.append("product_name", productName);
+      formData.append("description", description);
+      formData.append("brand", brand);
+      formData.append("specs", specs);
+      formData.append("target_audience", audience);
+      formData.append("ad_style", adStyle);
+      formData.append("pricing_offer", offer);
+      formData.append("call_to_action", cta);
+      formData.append("num_scenes", numScenes.toString());
+      formData.append("target_duration", targetDuration.toString());
+      formData.append("art_style", this.selectedStyleKey || "realistic");
+      formData.append("voice", voice);
+      formData.append("aspect_ratio", aspectRatio);
+      formData.append("language", language);
+      formData.append("ai_provider", provider);
+      if (model) formData.append("ai_model", model);
+      if (apiKey) formData.append("api_key", apiKey);
+      formData.append("image_mode", this.imageMode || "gemini");
+      formData.append("video_mode", "acting");
+      formData.append("enable_voiceover", (this.enableVoiceover !== false).toString());
+      formData.append("enable_subtitles", (this.enableSubtitles !== false).toString());
+
+      // Append uploaded product photos
+      this.adUploadedFiles.forEach((file) => {
+        formData.append("images", file, file.name);
+      });
+
+      const resp = await fetch("/api/advertisement/create", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to create advertisement video");
+        throw new Error(msg);
+      }
+
+      this.currentProject = await resp.json();
+      this.saveActiveProjectState();
+      this.renderStoryboardView();
+      this.switchStage(2);
+      const photoMsg = this.adUploadedFiles.length > 0
+        ? ` with ${this.adUploadedFiles.length} product photos ready`
+        : "";
+      this.showToast(`🛍️ Generated Commercial for "${productName}" (${this.currentProject.scenes.length} scenes${photoMsg})! Click '🎬 Render Film' to produce video.`);
+    } catch (e) {
+      console.error(e);
+      this.showToast(e.message, true);
+    } finally {
+      clearInterval(timerInterval);
+      this.btnGenerateAdVideo.disabled = false;
+      this.btnGenerateAdVideo.innerHTML = `
+        <span class="btn-glow-layer"></span>
+        <span class="btn-text">Generate Advertisement Video</span>
+        <span class="btn-arrow">🛍️</span>
       `;
     }
   }
@@ -1891,19 +2531,12 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           api_key: apiKey,
           image_mode: this.imageMode || "server",
           enable_voiceover: this.enableVoiceover !== false,
-          enable_subtitles: true
+          enable_subtitles: this.enableSubtitles !== false
         })
       });
 
       if (!resp.ok) {
-        let msg = "Failed to parse storyboard";
-        try {
-          const err = await resp.json();
-          msg = err.detail || msg;
-        } catch {
-          const raw = await resp.text();
-          if (raw) msg = raw.slice(0, 200);
-        }
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to parse storyboard");
         throw new Error(msg);
       }
 
@@ -1945,7 +2578,19 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     const projSeed = this.currentProject?.id ? (this.currentProject.id.charCodeAt(0) * 100) : 500;
     const seed = Math.abs((scene?.scene_number || idx + 1) * 31415 + projSeed);
 
-    return `https://image.pollinations.ai/prompt/${encoded}?width=${w}&height=${h}&seed=${seed}&nologo=true`;
+    return this.getPlaceholderSvg(scene?.scene_number || idx + 1);
+  }
+
+  getPlaceholderSvg(sceneNumber, text = "Ready for Painting • Click AI Paint or Paint All") {
+    const cleanText = (text || "").replace(/['"<>]/g, "");
+    const rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+      <rect width="100%" height="100%" fill="#131722"/>
+      <circle cx="640" cy="300" r="60" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+      <text x="640" y="315" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="40" text-anchor="middle">🎨</text>
+      <text x="640" y="415" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="22" fill="#f1f5f9" text-anchor="middle" font-weight="600">Scene ${sceneNumber}</text>
+      <text x="640" y="455" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="16" fill="#94a3b8" text-anchor="middle">${cleanText}</text>
+    </svg>`;
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(rawSvg).replace(/'/g, "%27");
   }
 
   renderStoryboardView() {
@@ -1975,27 +2620,100 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       this.badgeStoryboardAspectRatio.textContent = `📐 ${ar} (${w}x${h})`;
     }
 
+    if (this.badgeStoryboardAdMode) {
+      if (this.currentProject.project_type === "advertisement") {
+        this.badgeStoryboardAdMode.style.display = "inline-flex";
+      } else {
+        this.badgeStoryboardAdMode.style.display = "none";
+      }
+    }
+
     this.updateSubtitlesUI(this.currentProject.enable_subtitles !== false);
     this.updateVoiceoverUI(this.currentProject.enable_voiceover !== false);
+    if (this.selectVoiceStage2 && this.currentProject.voice) {
+      this.selectVoiceStage2.value = this.currentProject.voice;
+    }
 
     const scenes = this.currentProject.scenes || [];
+    this.renderSceneQuickJumpRibbon(scenes);
     scenes.forEach((scene, idx) => {
       const card = document.createElement("div");
       card.className = "scene-card";
+      card.id = `sceneCard_${idx}`;
       card.dataset.index = idx;
 
-      // Image & Video source
-      const hasSavedImage = Boolean(scene.image_path);
-      const placeholderSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><rect width="100%" height="100%" fill="%23131722"/><circle cx="640" cy="300" r="60" fill="%231e293b" stroke="%23334155" stroke-width="2"/><text x="640" y="315" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="40" text-anchor="middle">🎨</text><text x="640" y="415" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="22" fill="%23f1f5f9" text-anchor="middle" font-weight="600">Scene ${scene.scene_number || idx + 1}</text><text x="640" y="455" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="16" fill="%2394a3b8" text-anchor="middle">Ready for Painting • Click &apos;🎨 AI Paint&apos; or &apos;🎨 Paint All&apos;</text></svg>`;
-      const imgSrc = hasSavedImage ? `/media/${scene.image_path}?t=${Date.now()}` : placeholderSvg;
-      const hasVideo = Boolean(scene.video_path);
-      const videoSrc = hasVideo ? `/media/${scene.video_path}?t=${Date.now()}` : "";
+      // Image & Video source with URL-safe encoding and clean paths
+      const cleanImgPath = scene.image_path ? scene.image_path.replace(/\\/g, "/") : "";
+      const hasSavedImage = Boolean(cleanImgPath);
+      const imgSrc = hasSavedImage ? `/media/${encodeURI(cleanImgPath)}?t=${Date.now()}` : "";
+      const cleanVideoPath = scene.video_path ? scene.video_path.replace(/\\/g, "/") : "";
+      const hasVideo = Boolean(cleanVideoPath);
+      const videoSrc = hasVideo ? `/media/${encodeURI(cleanVideoPath)}?t=${Date.now()}` : "";
+
+      // Ensure visual_prompt (for image) and acting_prompt (for video) are distinctly separated
+      let visPrompt = (scene.visual_prompt || "").trim();
+      let actPrompt = (scene.acting_prompt || "").trim();
+
+      const cameraProseMap = {
+        zoom_in: "The camera executes a smooth slow dolly push-in toward the subject at eye level with fluid stabilization.",
+        zoom_out: "The camera smoothly dollies out with a steady pedestal pull-back, revealing the expansive atmospheric environment.",
+        pan_left: "The camera performs a graceful horizontal tracking pan to the left, smoothly following the subject's eyeline.",
+        pan_right: "The camera glides in a smooth cinematic tracking pan to the right with fluid stabilization.",
+        subtle_drift: "A steady locked-off camera with subtle organic handheld drift and shallow depth of field."
+      };
+      const camMotion = scene.camera_motion || "zoom_in";
+      const camSentence = cameraProseMap[camMotion] || cameraProseMap.zoom_in;
+
+      if (!visPrompt && !actPrompt) {
+        visPrompt = `${this.config?.art_styles?.[this.selectedStyleKey]?.name || "Studio Ghibli 2D"} art style. ${scene.title || "Scene " + (idx + 1)}. Cinematic composition, rich atmospheric lighting, detailed background.`;
+        actPrompt = `Medium shot of character in setting. ${camSentence} 0-3s: The character initiates natural, measured movement as ambient breeze stirs clothing and hair. 3-6s: Core emotional performance beat and focused interaction with the environment. 6-8s: The character takes a steady breath as the scene holds composition. Atmospheric volumetric lighting, 35mm depth of field.\n\nAudio: natural atmospheric ambient soundscape, gentle ambient breeze, no background music.\nSFX: subtle realistic footsteps, cloth movement.\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.`;
+      } else if (!visPrompt && actPrompt) {
+        visPrompt = actPrompt
+          .replace(/0-3s:|3-6s:|6-8s:/gi, "")
+          .replace(/(?:The\s+)?camera\s+(?:executes|performs|glides|smoothly|slowly)[^.]*\.?/gi, "")
+          .replace(/Camera:[^.]*\.?/gi, "")
+          .replace(/Lighting:[^.]*\.?/gi, "")
+          .replace(/Negative:[^.]*\.?/gi, "")
+          .replace(/Audio:[^.]*\.?/gi, "")
+          .replace(/SFX:[^.]*\.?/gi, "")
+          .replace(/["“][^"”]+["”]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (!visPrompt) visPrompt = scene.title || `Scene ${idx + 1}`;
+      } else if (!actPrompt && visPrompt) {
+        const dialBeat = scene.narration ? `The character delivers expressive performance matching the story moment` : `The character performs a focused, deliberate interaction with the setting`;
+        const hasNonAscii = /[^\x00-\x7F]/.test(visPrompt);
+        const visSnippet = hasNonAscii ? "the character in the scene setting" : visPrompt.slice(0, 90).replace(/\s+\S*$/, "").replace(/\.+$/, "");
+        actPrompt = `Medium shot of ${visSnippet}. ${camSentence} 0-3s: The character initiates natural, measured movement in the environment. 3-6s: ${dialBeat}, eyes steady and expressive. 6-8s: Posture settles into a calm, grounded hold as the camera stabilizes. Volumetric atmospheric lighting, 35mm depth of field.\n\nAudio: natural atmospheric ambient soundscape, gentle ambient breeze, no background music.\nSFX: subtle realistic footsteps, cloth movement.\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.`;
+      } else if (visPrompt === actPrompt) {
+        if (actPrompt.includes("0-3s:") || actPrompt.toLowerCase().includes("negative:")) {
+          visPrompt = actPrompt
+            .replace(/0-3s:|3-6s:|6-8s:/gi, "")
+            .replace(/(?:The\s+)?camera\s+(?:executes|performs|glides|smoothly|slowly)[^.]*\.?/gi, "")
+            .replace(/Camera:[^.]*\.?/gi, "")
+            .replace(/Lighting:[^.]*\.?/gi, "")
+            .replace(/Negative:[^.]*\.?/gi, "")
+            .replace(/Audio:[^.]*\.?/gi, "")
+            .replace(/SFX:[^.]*\.?/gi, "")
+            .replace(/["“][^"”]+["”]/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (!visPrompt) visPrompt = scene.title || `Scene ${idx + 1}`;
+        } else {
+          const hasNonAscii = /[^\x00-\x7F]/.test(visPrompt);
+          const visSnippet = hasNonAscii ? "the character in the scene setting" : visPrompt.slice(0, 90).replace(/\s+\S*$/, "").replace(/\.+$/, "");
+          actPrompt = `Medium shot of ${visSnippet}. ${camSentence} 0-3s: The character initiates natural, measured movement. 3-6s: Core emotional performance beat, interacting deliberately with the scene. 6-8s: The character settles naturally into frame with cinematic poise. Atmospheric volumetric lighting, 35mm depth of field.\n\nAudio: natural atmospheric ambient soundscape, gentle ambient breeze, no background music.\nSFX: subtle realistic footsteps, cloth movement.\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.`;
+        }
+      }
+      scene.visual_prompt = visPrompt;
+      scene.acting_prompt = actPrompt;
 
       card.innerHTML = `
         <div class="scene-card-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
             ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.25); color:#c4b5fd; font-weight:600; border:1px solid rgba(139,92,246,0.4);">🎭 ${scene.archetype}</span>` : ''}
+            ${scene.is_product_photo ? `<span class="scene-badge" style="background:rgba(16,185,129,0.2); color:#6ee7b7; border:1px solid rgba(16,185,129,0.4); font-weight:600;">🛍️ Product Photo</span>` : ''}
             <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" id="sceneStatusPill_${idx}">
               ${hasSavedImage ? '✓ Ready' : '⏳ Ready to Paint'}
             </span>
@@ -2006,40 +2724,65 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           <span class="scene-card-title">${scene.title || "Scene " + (idx + 1)}</span>
         </div>
         <div class="scene-preview-container">
-          <img src="${imgSrc}" class="scene-preview-img" alt="Scene ${idx + 1} Preview" id="sceneImg_${idx}" loading="lazy">
+          <div class="scene-preview-placeholder" id="scenePlaceholder_${idx}" style="${hasSavedImage ? 'display:none;' : ''}">
+            <div class="placeholder-icon-circle">🎨</div>
+            <div class="placeholder-scene-num">Scene ${scene.scene_number || idx + 1}</div>
+            <div class="placeholder-scene-status">Ready to Paint • Click 🎨 AI Paint</div>
+          </div>
+          <img src="${imgSrc}" class="scene-preview-img" alt="Scene ${idx + 1} Preview" id="sceneImg_${idx}" style="${hasSavedImage ? '' : 'display:none;'}" loading="lazy">
           <video class="scene-preview-video" id="sceneVideo_${idx}" src="${videoSrc}" controls playsinline preload="metadata" style="display:none;"></video>
           <button class="scene-play-overlay-btn" id="btnPlayOverlay_${idx}" data-idx="${idx}" title="Play scene animation video" style="${hasVideo ? 'display:flex;' : 'display:none;'}">▶️</button>
           <div class="scene-img-actions">
-            <button class="scene-action-pill btn-copy-scene-prompt" data-idx="${idx}" title="1-Click copy this scene's 3-beat acting prompt for Veo / Google Flow / Kling">📋 Copy Prompt</button>
-            <button class="scene-action-pill btn-reroll-img" data-idx="${idx}">🎨 AI Paint</button>
-            <button class="scene-action-pill btn-upload-img" data-idx="${idx}">📁 Image</button>
-            <button class="scene-action-pill btn-generate-veo" data-idx="${idx}" style="color:#6ee7b7; border-color:rgba(16,185,129,0.4);" title="Auto-render acting video via Google Veo & FlowKit bridge">⚡ Veo Auto</button>
-            <button class="scene-action-pill btn-upload-acting" data-idx="${idx}" title="Upload local video clip (.mp4) as fallback">📁 Video</button>
+            <button class="scene-action-pill btn-copy-image-prompt" data-idx="${idx}" title="1-Click copy Image Prompt (Midjourney / Imagen 3)">🎨 Img Prompt</button>
+            <button class="scene-action-pill btn-copy-video-prompt" data-idx="${idx}" title="1-Click copy Acting Video Prompt (Veo 3 / Google Flow / Kling)">🎬 Vid Prompt</button>
+            <button class="scene-action-pill btn-refine-video-prompt" data-idx="${idx}" title="Upgrade to director-grade professional cinematic video prompt" style="color:#e0e7ff; border-color:rgba(167,139,250,0.6); background:rgba(139,92,246,0.25); font-weight:600;">✨ Refine</button>
+            <button class="scene-action-pill btn-reroll-img" data-idx="${idx}" title="AI Paint image for this scene">🎨 Paint</button>
+            <button class="scene-action-pill btn-upload-img" data-idx="${idx}" title="Upload custom image">📁 Art</button>
+            ${(this.currentProject.product_images && this.currentProject.product_images.length) ? `<button class="scene-action-pill btn-pick-product-photo" data-idx="${idx}" title="Cycle/choose from uploaded product photos" style="color:#f472b6; border-color:rgba(236,72,153,0.4);">🛍️ Photo</button>` : ''}
+            <button class="scene-action-pill btn-generate-veo" data-idx="${idx}" style="color:#6ee7b7; border-color:rgba(16,185,129,0.4);" title="Auto-render acting video via Google Veo & FlowKit bridge">⚡ Veo</button>
+            <button class="scene-action-pill btn-upload-acting" data-idx="${idx}" title="Upload local video clip (.mp4) as fallback">📁 Clip</button>
             <a class="scene-action-pill btn-download-scene-clip" id="btnDownloadClip_${idx}" href="/api/projects/${this.currentProject.id}/download-scene-video/${idx}" download title="Download Scene MP4" style="${hasVideo ? '' : 'display:none;'}">⬇️ MP4</a>
             <input type="file" accept="image/*" class="scene-file-input" style="display:none;" id="fileInput_${idx}">
             <input type="file" accept="video/mp4,video/*" class="scene-acting-file-input" style="display:none;" id="actingFileInput_${idx}">
           </div>
         </div>
         <div class="scene-card-body">
+          <!-- Voiceover Narration -->
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
               <div style="display:flex; align-items:center; gap:6px;">
                 <label class="field-label" style="margin-bottom:0;">🎙️ Voiceover Narration</label>
+                <button class="scene-action-pill btn-sync-scene-dialogue" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#6ee7b7; border-color:rgba(16,185,129,0.45); background:rgba(16,185,129,0.15);" title="Add/sync dialogue from story to Voiceover Narration, Image & Video Clip prompts">💬 +Dialogue</button>
                 ${this.currentProject.enable_voiceover === false ? '<span class="tag-badge" style="background:rgba(239,68,68,0.15); color:#f87171; font-size:10px; padding:1px 6px;">🔇 Muted</span>' : ''}
               </div>
               <span class="narration-badge" id="badgeNarr_${idx}" style="font-size:11px; padding:2px 7px; border-radius:12px; font-weight:500;"></span>
             </div>
             <textarea class="scene-narration-input" id="narration_${idx}" placeholder="Concise voiceover narration (<= 16 words to fit 8s video)...">${scene.narration || ""}</textarea>
           </div>
-          <div>
+
+          <!-- SEPARATE PROMPT 1: Image Prompt (Still Art / Imagen 3 / Midjourney) -->
+          <div class="scene-prompt-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
               <div style="display:flex; align-items:center; gap:6px;">
-                <label class="field-label" style="margin-bottom:0;">🎬 Acting & Character Dialogue (3-Beat Video Prompt)</label>
-                <button class="scene-action-pill btn-copy-scene-prompt" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1;" title="Copy this prompt to clipboard">📋 Copy</button>
+                <label class="field-label" style="margin-bottom:0;">🎨 Image Prompt <span style="font-size:10.5px; color:var(--text-muted); font-weight:normal;">(Midjourney / Imagen 3)</span></label>
+                <button class="scene-action-pill btn-copy-image-prompt" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1;" title="Copy image prompt to clipboard">📋 Copy</button>
               </div>
-              <span style="font-size:11px; color:var(--text-muted);">8s Veo/Flow prompt</span>
+              <span class="prompt-type-badge image-badge">🖼️ Image Art</span>
             </div>
-            <textarea class="styled-input scene-acting-input" id="prompt_${idx}" rows="3" style="resize:vertical; min-height:65px; font-size:12px; line-height:1.45; font-family:inherit;" placeholder="0-3s: Initial action... 3-6s: Core activity or character says: &quot;...&quot; (no subtitles)... 6-8s: Reaction...">${scene.acting_prompt || scene.visual_prompt || ""}</textarea>
+            <textarea class="styled-input scene-visual-input" id="visual_prompt_${idx}" rows="2" style="resize:vertical; min-height:54px; font-size:11.5px; line-height:1.45; font-family:inherit;" placeholder="Detailed still illustration prompt: environment, character clothing & features, art style, framing, lighting...">${scene.visual_prompt || ""}</textarea>
+          </div>
+
+          <!-- SEPARATE PROMPT 2: Video Prompt (Acting & Motion / Veo 3 / Google Flow / Kling) -->
+          <div class="scene-prompt-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label class="field-label" style="margin-bottom:0;">🎬 Video Prompt <span style="font-size:10.5px; color:var(--text-muted); font-weight:normal;">(Veo 3 / Google Flow / Kling)</span></label>
+                <button class="scene-action-pill btn-copy-video-prompt" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1;" title="Copy video acting prompt to clipboard">📋 Copy</button>
+                <button class="scene-action-pill btn-refine-video-prompt" data-idx="${idx}" style="padding:2px 9px; font-size:10.5px; height:21px; line-height:1; color:#f5f3ff; background:rgba(139,92,246,0.3); border:1px solid rgba(167,139,250,0.6); font-weight:600;" title="Upgrade to director-grade professional cinematic video prompt">✨ Refine</button>
+              </div>
+              <span class="prompt-type-badge video-badge">⚡ 8s Video</span>
+            </div>
+            <textarea class="styled-input scene-acting-input" id="acting_prompt_${idx}" rows="2" style="resize:vertical; min-height:54px; font-size:11.5px; line-height:1.45; font-family:inherit;" placeholder="Director-grade cinematic video prompt: [Shot Type & Camera Move] 0-3s: Initial organic motion... 3-6s: Core performance / dialogue... 6-8s: Settle and landing. Lighting... Audio: ... SFX: ... Negative: ...">${scene.acting_prompt || ""}</textarea>
           </div>
         </div>
       `;
@@ -2078,6 +2821,22 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         narrTextarea.addEventListener("input", (e) => updateNarrBadge(e.target.value));
       }
 
+      // Image fallback handling
+      const imgEl = card.querySelector(`#sceneImg_${idx}`);
+      const placeholderEl = card.querySelector(`#scenePlaceholder_${idx}`);
+      if (imgEl) {
+        imgEl.addEventListener("error", () => {
+          imgEl.style.display = "none";
+          if (placeholderEl) placeholderEl.style.display = "flex";
+        });
+        imgEl.addEventListener("load", () => {
+          if (imgEl.getAttribute("src")) {
+            imgEl.style.display = "block";
+            if (placeholderEl) placeholderEl.style.display = "none";
+          }
+        });
+      }
+
       // Event listener for re-rolling scene image
       const btnReroll = card.querySelector(".btn-reroll-img");
       btnReroll.addEventListener("click", () => this.rerollSceneImage(idx, btnReroll));
@@ -2098,6 +2857,12 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         }
       });
 
+      // Event listener for cycling/picking product photo
+      const btnPickProd = card.querySelector(".btn-pick-product-photo");
+      if (btnPickProd) {
+        btnPickProd.addEventListener("click", () => this.cycleSceneProductPhoto(idx, btnPickProd));
+      }
+
       // Event listener for uploading custom acting video (from Google Flow)
       const btnUploadActing = card.querySelector(".btn-upload-acting");
       const actingFileInput = card.querySelector(".scene-acting-file-input");
@@ -2116,28 +2881,280 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         btnOverlay.addEventListener("click", () => this.openSceneVideoModal(idx));
       }
 
-      // Event listener for copying scene prompt
+      // Event listeners for copying prompts
+      card.querySelectorAll(".btn-copy-image-prompt").forEach(btn => {
+        btn.addEventListener("click", () => this.copySceneImagePrompt(idx));
+      });
+      card.querySelectorAll(".btn-copy-video-prompt").forEach(btn => {
+        btn.addEventListener("click", () => this.copySceneVideoPrompt(idx));
+      });
       card.querySelectorAll(".btn-copy-scene-prompt").forEach(btn => {
-        btn.addEventListener("click", () => this.copyScenePrompt(idx));
+        btn.addEventListener("click", () => this.copySceneVideoPrompt(idx));
+      });
+      card.querySelectorAll(".btn-refine-video-prompt").forEach(btn => {
+        btn.addEventListener("click", () => this.refineSceneVideoPrompt(idx, btn));
+      });
+      card.querySelectorAll(".btn-sync-scene-dialogue").forEach(btn => {
+        btn.addEventListener("click", () => this.syncStoryDialogues(idx, "all", btn));
       });
 
       this.storyboardScenesGrid.appendChild(card);
     });
   }
 
-  copyScenePrompt(idx) {
+  renderSceneQuickJumpRibbon(scenes) {
+    const qjBar = this.sceneQuickJumpBar || document.getElementById("sceneQuickJumpBar");
+    if (!qjBar) return;
+    qjBar.innerHTML = "";
+
+    if (!scenes || !scenes.length) {
+      qjBar.style.display = "none";
+      return;
+    }
+    qjBar.style.display = "flex";
+
+    const label = document.createElement("div");
+    label.className = "qj-label";
+    label.innerHTML = `<span>🎞️ Jump:</span> <span class="qj-count">(${scenes.length})</span>`;
+    qjBar.appendChild(label);
+
+    const pillsWrap = document.createElement("div");
+    pillsWrap.className = "qj-pills-wrap";
+
+    scenes.forEach((sc, i) => {
+      const cleanImg = sc.image_path ? sc.image_path.replace(/\\/g, "/") : "";
+      const cleanVid = sc.video_path ? sc.video_path.replace(/\\/g, "/") : "";
+      const hasImg = Boolean(cleanImg);
+      const hasVid = Boolean(cleanVid);
+
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = `quick-jump-pill ${hasVid ? 'vid-ready' : hasImg ? 'img-ready' : ''}`;
+      pill.id = `qjPill_${i}`;
+      pill.dataset.idx = i;
+      pill.title = `Jump to Scene ${sc.scene_number || (i + 1)}: ${sc.title || ''}`;
+
+      const icon = hasVid ? '🎬' : hasImg ? '✓' : '⏳';
+      pill.innerHTML = `<span class="qj-status-icon">${icon}</span> <span class="qj-num">${sc.scene_number || (i + 1)}</span>`;
+
+      pill.addEventListener("click", () => {
+        const target = document.getElementById(`sceneCard_${i}`);
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+          target.classList.add("scene-card-highlighted");
+          setTimeout(() => target.classList.remove("scene-card-highlighted"), 1800);
+        }
+        pillsWrap.querySelectorAll(".quick-jump-pill").forEach(p => p.classList.remove("active-jump"));
+        pill.classList.add("active-jump");
+      });
+
+      pillsWrap.appendChild(pill);
+    });
+
+    qjBar.appendChild(pillsWrap);
+
+    const topBtn = document.createElement("button");
+    topBtn.type = "button";
+    topBtn.className = "qj-top-btn";
+    topBtn.innerHTML = `<span>⬆️ Top</span>`;
+    topBtn.title = "Scroll to top of Director's Board";
+    topBtn.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    qjBar.appendChild(topBtn);
+  }
+
+  updateQuickJumpPill(idx, hasImg, hasVid) {
+    const pill = document.getElementById(`qjPill_${idx}`);
+    if (!pill) return;
+    if (hasVid) {
+      pill.className = "quick-jump-pill vid-ready";
+      pill.innerHTML = `<span class="qj-status-icon">🎬</span> <span class="qj-num">${idx + 1}</span>`;
+    } else if (hasImg) {
+      pill.className = "quick-jump-pill img-ready";
+      pill.innerHTML = `<span class="qj-status-icon">✓</span> <span class="qj-num">${idx + 1}</span>`;
+    } else {
+      pill.className = "quick-jump-pill";
+      pill.innerHTML = `<span class="qj-status-icon">⏳</span> <span class="qj-num">${idx + 1}</span>`;
+    }
+  }
+
+  copySceneImagePrompt(idx) {
     if (!this.currentProject || !this.currentProject.scenes || !this.currentProject.scenes[idx]) return;
     const scene = this.currentProject.scenes[idx];
-    const promptText = scene.acting_prompt || scene.visual_prompt || "";
+    const promptText = (scene.visual_prompt || "").trim();
     if (!promptText) {
-      this.showToast("Scene prompt is empty!", true);
+      this.showToast("Image prompt is empty!", true);
       return;
     }
     navigator.clipboard.writeText(promptText).then(() => {
-      this.showToast(`📋 Copied Scene ${idx + 1} Prompt to clipboard! ✨`);
+      this.showToast(`🎨 Copied Scene ${idx + 1} Image Prompt (Midjourney / Imagen 3)! ✨`);
     }).catch(() => {
       this.showToast("Failed to copy to clipboard", true);
     });
+  }
+
+  copySceneVideoPrompt(idx) {
+    if (!this.currentProject || !this.currentProject.scenes || !this.currentProject.scenes[idx]) return;
+    const scene = this.currentProject.scenes[idx];
+    const promptText = (scene.acting_prompt || "").trim();
+    if (!promptText) {
+      this.showToast("Video acting prompt is empty!", true);
+      return;
+    }
+    navigator.clipboard.writeText(promptText).then(() => {
+      this.showToast(`🎬 Copied Scene ${idx + 1} Video Prompt (Veo 3 / Google Flow)! 🚀`);
+    }).catch(() => {
+      this.showToast("Failed to copy to clipboard", true);
+    });
+  }
+
+  copyScenePrompt(idx) {
+    this.copySceneVideoPrompt(idx);
+  }
+
+  async refineSceneVideoPrompt(idx, btn) {
+    if (!this.currentProject || !this.currentProject.id) {
+      this.showToast("No active project found", true);
+      return;
+    }
+    const origHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `⏳ Refining...`;
+    }
+    try {
+      await this.saveStoryboardEdits(false);
+      const res = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/scenes/${idx}/refine-video-prompt`, {
+        method: "POST"
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to refine video prompt");
+      }
+      const data = await res.json();
+      const refinedPrompt = data.acting_prompt || (data.scene && data.scene.acting_prompt) || "";
+
+      if (this.currentProject.scenes && this.currentProject.scenes[idx]) {
+        this.currentProject.scenes[idx].acting_prompt = refinedPrompt;
+      }
+      this.saveActiveProjectState();
+
+      const textarea = document.getElementById(`acting_prompt_${idx}`);
+      if (textarea) {
+        textarea.value = refinedPrompt;
+        textarea.classList.remove("flash-highlight");
+        void textarea.offsetWidth;
+        textarea.classList.add("flash-highlight");
+      }
+      this.showToast(`✨ Upgraded Scene ${idx + 1} Video Prompt to cinematic director grade!`);
+    } catch (err) {
+      console.error("Refine scene video prompt failed:", err);
+      this.showToast(err.message || "Failed to refine prompt", true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  async refineAllVideoPrompts(btn) {
+    if (!this.currentProject || !this.currentProject.id) {
+      this.showToast("No active project found", true);
+      return;
+    }
+    const origHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `⏳ Refining All...`;
+    }
+    try {
+      await this.saveStoryboardEdits(false);
+      const res = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/refine-all-video-prompts`, {
+        method: "POST"
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to refine all video prompts");
+      }
+      const data = await res.json();
+      if (data.scenes && Array.isArray(data.scenes)) {
+        this.currentProject.scenes = data.scenes;
+        data.scenes.forEach((sc, i) => {
+          const textarea = document.getElementById(`acting_prompt_${i}`);
+          if (textarea && sc.acting_prompt) {
+            textarea.value = sc.acting_prompt;
+            textarea.classList.remove("flash-highlight");
+            void textarea.offsetWidth;
+            textarea.classList.add("flash-highlight");
+          }
+        });
+      }
+      if (data.project) {
+        this.currentProject = data.project;
+      }
+      this.saveActiveProjectState();
+      this.showToast("✨ All scenes upgraded with director-grade 8s cinematic video prompts! 🎬");
+    } catch (err) {
+      console.error("Refine all video prompts failed:", err);
+      this.showToast(err.message || "Failed to refine prompts", true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  async syncStoryDialogues(sceneIdx = null, target = "all", btn = null) {
+    if (!this.currentProject || !this.currentProject.id) {
+      this.showToast("No active project loaded", true);
+      return;
+    }
+    const origHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = sceneIdx !== null ? `⏳ Syncing...` : `⏳ Adding Dialogues...`;
+    }
+    try {
+      await this.saveStoryboardEdits(false);
+      const res = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/sync-dialogues`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scene_idx: sceneIdx,
+          target: target || "all",
+          re_render_clips: true
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to sync story dialogues");
+      }
+      const data = await res.json();
+      if (data.project) {
+        this.currentProject = data.project;
+        this.renderStoryboardUI(data.project);
+        this.saveActiveProjectState();
+      }
+      const count = Array.isArray(data.updated_scenes) ? data.updated_scenes.length : 0;
+      if (sceneIdx !== null) {
+        this.showToast(`💬 Added story dialogue to Scene ${sceneIdx + 1} Voiceover, Image & Video Clip!`);
+      } else if (count > 0) {
+        this.showToast(`💬 Added & synced story dialogues across ${count} scene(s) (Voiceover, Image & Video Clips)!`);
+      } else {
+        this.showToast(`💬 All story dialogues are already synced across Voiceover, Image & Video Clips!`);
+      }
+    } catch (err) {
+      console.error("Sync story dialogues failed:", err);
+      this.showToast(err.message || "Failed to sync dialogues", true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
   }
 
   exportAllPrompts() {
@@ -2147,7 +3164,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     }
     const p = this.currentProject;
     let text = `=================================================================\n`;
-    text += `🎬 STORYBOARD: ${p.title || "Animated Story"}\n`;
+    text += `🎬 STORYBOARD PROMPTS: ${p.title || "Animated Story"}\n`;
     if (p.logline) text += `📖 Logline: ${p.logline}\n`;
     if (p.characters) text += `👥 Characters: ${p.characters}\n`;
     text += `=================================================================\n\n`;
@@ -2157,22 +3174,20 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       text += `🎭 Archetype: ${sc.archetype || "Standard"}\n`;
       text += `🎥 Camera Motion: ${sc.camera_motion || "zoom_in"}\n`;
       text += `🎙️ Voiceover: "${sc.narration || ""}"\n`;
-      text += `\n🎬 Acting Video Prompt (Google Flow / Veo 3 / Kling):\n${sc.acting_prompt || sc.visual_prompt || ""}\n`;
-      if (sc.visual_prompt && sc.visual_prompt !== sc.acting_prompt) {
-        text += `\n🎨 Visual Illustration Prompt (Midjourney / Imagen 3):\n${sc.visual_prompt}\n`;
-      }
+      text += `\n🎨 Visual Image Prompt (Midjourney / Imagen 3 / Puter):\n${sc.visual_prompt || ""}\n`;
+      text += `\n🎬 Acting Video Prompt (Google Flow / Veo 3 / Kling):\n${sc.acting_prompt || ""}\n`;
       text += `\n\n`;
     });
 
     navigator.clipboard.writeText(text).then(() => {
-      this.showToast("📋 All scene video prompts copied to clipboard! Ready for Google Flow (Veo 3), Kling, or Midjourney. 🚀");
+      this.showToast("📋 All scene image & video prompts copied to clipboard! 🚀");
     }).catch(() => {
       const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `${(p.title || "storyboard").replace(/[^a-zA-Z0-9_-]/g, "_")}_prompts.txt`;
       a.click();
-      this.showToast("📄 Exported video prompts to text file!");
+      this.showToast("📄 Exported video and image prompts to text file!");
     });
   }
 
@@ -2188,7 +3203,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       script += `### Scene ${sc.scene_number || (i + 1)}: ${sc.title || "Scene " + (i + 1)}\n`;
       script += `- **Archetype:** ${sc.archetype || "Beat"}\n`;
       script += `- **Narration:** "${sc.narration || ""}"\n`;
-      script += `- **Action & Acting Prompt:** ${sc.acting_prompt || sc.visual_prompt || ""}\n\n`;
+      script += `- **Visual Image Prompt:** ${sc.visual_prompt || ""}\n`;
+      script += `- **Acting Video Prompt:** ${sc.acting_prompt || ""}\n\n`;
     });
 
     const blob = new Blob([script], { type: "text/markdown;charset=utf-8" });
@@ -2260,14 +3276,31 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
               this.currentProject.scenes[sceneIdx] = updatedProject.scenes[sceneIdx];
             }
             const updatedScene = this.currentProject.scenes[sceneIdx];
+            const cleanPath = updatedScene?.image_path ? updatedScene.image_path.replace(/\\/g, "/") : "";
             const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
-            if (imgEl && updatedScene && updatedScene.image_path) {
-              imgEl.src = `/media/${updatedScene.image_path}?t=${Date.now()}`;
+            const placeholderEl = document.getElementById(`scenePlaceholder_${sceneIdx}`);
+            if (cleanPath) {
+              if (imgEl) {
+                imgEl.src = `/media/${encodeURI(cleanPath)}?t=${Date.now()}`;
+                imgEl.style.display = "block";
+              }
+              if (placeholderEl) {
+                placeholderEl.style.display = "none";
+              }
+              if (statusPill) {
+                statusPill.className = "scene-status-pill ready";
+                statusPill.textContent = "✓ Ready";
+              }
+            } else {
+              if (imgEl) imgEl.style.display = "none";
+              if (placeholderEl) placeholderEl.style.display = "flex";
+              if (statusPill) {
+                statusPill.className = "scene-status-pill error";
+                statusPill.textContent = "⚠️ No Image";
+              }
             }
-            if (statusPill) {
-              statusPill.className = "scene-status-pill ready";
-              statusPill.textContent = "✓ Ready";
-            }
+            this.updateQuickJumpPill(sceneIdx, Boolean(cleanPath), Boolean(updatedScene?.video_path));
+            this.saveActiveProjectState();
           }
         } else {
           let errDetail = "Generation error";
@@ -2290,7 +3323,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       } finally {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = "🎨 AI Paint";
+          btn.textContent = "🎨 Paint";
         }
       }
 
@@ -2300,6 +3333,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       }
     }
 
+    this.saveActiveProjectState();
     if (this.btnPaintAllImages) {
       this.btnPaintAllImages.disabled = false;
       this.btnPaintAllImages.textContent = "🎨 Paint All (1-by-1)";
@@ -2357,7 +3391,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           // Update image if refreshed
           const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
           if (imgEl && upScene.image_path) {
-            imgEl.src = `/media/${upScene.image_path}?t=${Date.now()}`;
+            const cleanImg = upScene.image_path.replace(/\\/g, "/");
+            imgEl.src = `/media/${encodeURI(cleanImg)}?t=${Date.now()}`;
           }
 
           // Update video pill
@@ -2369,7 +3404,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
           // Update video player
           const vidEl = document.getElementById(`sceneVideo_${sceneIdx}`);
           if (vidEl && upScene.video_path) {
-            vidEl.src = `/media/${upScene.video_path}?t=${Date.now()}`;
+            const cleanVid = upScene.video_path.replace(/\\/g, "/");
+            vidEl.src = `/media/${encodeURI(cleanVid)}?t=${Date.now()}`;
           }
 
           // Show overlay and download button
@@ -2457,7 +3493,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       return;
     }
 
-    const videoUrl = `/media/${scene.video_path}?t=${Date.now()}`;
+    const cleanVid = (scene.video_path || "").replace(/\\/g, "/");
+    const videoUrl = `/media/${encodeURI(cleanVid)}?t=${Date.now()}`;
     if (this.modalSceneVideoTitle) {
       this.modalSceneVideoTitle.textContent = `🎬 Scene ${scene.scene_number || sceneIdx + 1}: ${scene.title || 'Animation Clip'}`;
     }
@@ -2523,13 +3560,12 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
               }
             }
           } catch (pErr) {
-            console.warn("Puter browser AI fallback:", pErr);
-            this.setImageMode("server");
-            this.showToast("Puter credits depleted. Auto-switched to Free Neural AI Engine (Flux)! 🌐", true);
+            console.warn("Puter browser AI notice:", pErr);
+            this.showToast(`Puter generation notice: ${pErr.message || pErr}`, true);
           }
         } else {
-          this.setImageMode("server");
-          this.showToast("Puter.js not available in browser, generating with Server Neural AI...", false);
+          this.showToast("Puter.js not available in browser. Generating with Google Gemini Imagen 3...", false);
+          this.setImageMode("gemini");
         }
       }
 
@@ -2551,27 +3587,43 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         }
         this.currentProject = await resp.json();
         this.saveActiveProjectState();
-        const modeLabel = (curProvider === "gemini_cookie" || curProvider === "gemini") ? "Google Imagen 3" : "Free Neural AI";
+        const modeLabel = (curProvider === "gemini_cookie" || curProvider === "gemini") ? "Google Imagen 3" : (curProvider === "neural_love" ? "Neural.love AI" : "AI Paint");
         this.showToast(`Scene ${sceneIdx + 1} painted with ${modeLabel}! 🎨✨`);
       }
 
       const updatedScene = this.currentProject.scenes[sceneIdx];
+      const cleanPath = updatedScene?.image_path ? updatedScene.image_path.replace(/\\/g, "/") : "";
       const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
-      if (imgEl && updatedScene.image_path) {
-        // Cache bust
-        imgEl.src = `/media/${updatedScene.image_path}?t=${Date.now()}`;
-      }
+      const placeholderEl = document.getElementById(`scenePlaceholder_${sceneIdx}`);
       const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
-      if (statusPill) {
-        statusPill.className = "scene-status-pill ready";
-        statusPill.textContent = "✓ Ready";
+      if (cleanPath) {
+        if (imgEl) {
+          imgEl.src = `/media/${encodeURI(cleanPath)}?t=${Date.now()}`;
+          imgEl.style.display = "block";
+        }
+        if (placeholderEl) {
+          placeholderEl.style.display = "none";
+        }
+        if (statusPill) {
+          statusPill.className = "scene-status-pill ready";
+          statusPill.textContent = "✓ Ready";
+        }
+      } else {
+        if (imgEl) imgEl.style.display = "none";
+        if (placeholderEl) placeholderEl.style.display = "flex";
+        if (statusPill) {
+          statusPill.className = "scene-status-pill error";
+          statusPill.textContent = "⚠️ No Image";
+        }
       }
+      this.updateQuickJumpPill(sceneIdx, Boolean(cleanPath), Boolean(updatedScene?.video_path));
+      this.saveActiveProjectState();
     } catch (e) {
       console.error(e);
       this.showToast(e.message || "Failed to regenerate image", true);
     } finally {
       buttonEl.disabled = false;
-      buttonEl.textContent = "🎨 AI Paint";
+      buttonEl.textContent = "🎨 Paint";
     }
   }
 
@@ -2593,78 +3645,146 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       this.currentProject = await resp.json();
       this.saveActiveProjectState();
       const updatedScene = this.currentProject.scenes[sceneIdx];
+      const cleanPath = updatedScene?.image_path ? updatedScene.image_path.replace(/\\/g, "/") : "";
       const imgEl = document.getElementById(`sceneImg_${sceneIdx}`);
-      if (imgEl && updatedScene.image_path) {
-        imgEl.src = `/media/${updatedScene.image_path}?t=${Date.now()}`;
+      const placeholderEl = document.getElementById(`scenePlaceholder_${sceneIdx}`);
+      if (cleanPath) {
+        if (imgEl) {
+          imgEl.src = `/media/${encodeURI(cleanPath)}?t=${Date.now()}`;
+          imgEl.style.display = "block";
+        }
+        if (placeholderEl) {
+          placeholderEl.style.display = "none";
+        }
       }
       const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
-      if (statusPill) {
-        statusPill.className = "scene-status-pill ready";
-        statusPill.textContent = "✓ Custom Art";
+        if (statusPill) {
+          statusPill.className = "scene-status-pill ready";
+          statusPill.textContent = "✓ Custom Art";
+        }
+        this.updateQuickJumpPill(sceneIdx, Boolean(cleanPath), Boolean(updatedScene?.video_path));
+        this.showToast(`Custom illustration applied to Scene ${sceneIdx + 1}! 🖼️`);
+      } catch (e) {
+        console.error(e);
+        this.showToast("Upload failed: " + e.message, true);
       }
-      this.showToast(`Custom illustration applied to Scene ${sceneIdx + 1}! 🖼️`);
-    } catch (e) {
-      console.error(e);
-      this.showToast("Upload failed: " + e.message, true);
     }
-  }
 
-  async openGoogleFlowBrowser() {
-    this.showToast("Opening signed-in Google Flow in Chromium... 🎬");
-    try {
-      const resp = await fetch("/api/flow/open", { method: "POST" });
-      const data = await resp.json();
-      if (resp.ok) {
-        this.showToast("Google Flow opened! Create your Veo clips and download them. 🚀");
-      } else {
-        this.showToast("Could not launch browser: " + (data.detail || "Error"), true);
+    async cycleSceneProductPhoto(sceneIdx, btnEl) {
+      if (!this.currentProject || !this.currentProject.product_images || !this.currentProject.product_images.length) {
+        this.showToast("No uploaded product photos found for this project", true);
+        return;
       }
-    } catch (err) {
-      console.error(err);
-      this.showToast("Error opening Flow browser: " + err.message, true);
+      const prodImages = this.currentProject.product_images;
+      const scene = this.currentProject.scenes[sceneIdx];
+
+      // Find current product photo index and get next
+      let currentRelPath = (scene?.image_path || "").replace(/\\/g, "/");
+      let currentIdx = -1;
+      for (let i = 0; i < prodImages.length; i++) {
+        const p = prodImages[i].replace(/\\/g, "/");
+        if (currentRelPath.endsWith(p) || p.endsWith(currentRelPath)) {
+          currentIdx = i;
+          break;
+        }
+      }
+      const nextIdx = (currentIdx + 1) % prodImages.length;
+      const nextImagePath = prodImages[nextIdx];
+
+      const originalText = btnEl ? btnEl.innerHTML : "";
+      if (btnEl) btnEl.innerHTML = "⏳ Applying...";
+
+      try {
+        this.showToast(`Applying Product Photo ${nextIdx + 1}/${prodImages.length} to Scene ${sceneIdx + 1}...`);
+        const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/set-scene-product-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scene_idx: sceneIdx,
+            image_path: nextImagePath
+          })
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || "Failed to set product photo");
+        }
+
+        const resData = await resp.json();
+        if (resData.project) {
+          this.currentProject = resData.project;
+        } else if (resData.image_path) {
+          scene.image_path = resData.image_path;
+          scene.is_product_photo = true;
+        }
+        this.saveActiveProjectState();
+        this.renderStoryboardView();
+        this.showToast(`Product Photo ${nextIdx + 1}/${prodImages.length} applied to Scene ${sceneIdx + 1}! 🛍️`);
+      } catch (e) {
+        console.error(e);
+        this.showToast("Failed to apply product photo: " + e.message, true);
+      } finally {
+        if (btnEl) btnEl.innerHTML = originalText;
+      }
     }
-  }
 
-  async uploadCustomActingVideo(sceneIdx, file) {
-    if (!this.currentProject) return;
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      this.showToast(`Importing Flow acting video for Scene ${sceneIdx + 1} & syncing subtitles... ⏳`);
-      const resp = await fetch(`/api/projects/${this.currentProject.id}/upload-acting-clip/${sceneIdx}`, {
-        method: "POST",
-        body: formData
-      });
-
-      if (!resp.ok) throw new Error("Acting video upload failed");
-
-      const data = await resp.json();
-      this.currentProject = data.project;
-      this.saveActiveProjectState();
-
-      // Refresh scene card video
-      const videoEl = document.getElementById(`sceneVideo_${sceneIdx}`);
-      if (videoEl && data.clip_url) {
-        videoEl.src = `${data.clip_url}?t=${Date.now()}`;
+    async openGoogleFlowBrowser() {
+      this.showToast("Opening signed-in Google Flow in Chromium... 🎬");
+      try {
+        const resp = await fetch("/api/flow/open", { method: "POST" });
+        const data = await resp.json();
+        if (resp.ok) {
+          this.showToast("Google Flow opened! Create your Veo clips and download them. 🚀");
+        } else {
+          this.showToast("Could not launch browser: " + (data.detail || "Error"), true);
+        }
+      } catch (err) {
+        console.error(err);
+        this.showToast("Error opening Flow browser: " + err.message, true);
       }
-      const videoPill = document.getElementById(`sceneVideoPill_${sceneIdx}`);
-      if (videoPill) {
-        videoPill.style.display = "";
-        videoPill.textContent = "🎬 Flow Video Ready";
-      }
-      const btnOverlay = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
-      if (btnOverlay) btnOverlay.style.display = "flex";
-      const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
-      if (btnDownload) btnDownload.style.display = "";
-
-      this.showToast(`🎉 Scene ${sceneIdx + 1} acting video synced with speech & subtitles!`);
-    } catch (e) {
-      console.error(e);
-      this.showToast("Upload failed: " + e.message, true);
     }
-  }
+
+    async uploadCustomActingVideo(sceneIdx, file) {
+      if (!this.currentProject) return;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        this.showToast(`Importing Flow acting video for Scene ${sceneIdx + 1} & syncing subtitles... ⏳`);
+        const resp = await fetch(`/api/projects/${this.currentProject.id}/upload-acting-clip/${sceneIdx}`, {
+          method: "POST",
+          body: formData
+        });
+
+        if (!resp.ok) throw new Error("Acting video upload failed");
+
+        const data = await resp.json();
+        this.currentProject = data.project;
+        this.saveActiveProjectState();
+
+        // Refresh scene card video
+        const videoEl = document.getElementById(`sceneVideo_${sceneIdx}`);
+        if (videoEl && data.clip_url) {
+          videoEl.src = `${data.clip_url}?t=${Date.now()}`;
+        }
+        const videoPill = document.getElementById(`sceneVideoPill_${sceneIdx}`);
+        if (videoPill) {
+          videoPill.style.display = "";
+          videoPill.textContent = "🎬 Flow Video Ready";
+        }
+        const btnOverlay = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
+        if (btnOverlay) btnOverlay.style.display = "flex";
+        const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
+        if (btnDownload) btnDownload.style.display = "";
+
+        this.updateQuickJumpPill(sceneIdx, true, true);
+        this.showToast(`🎉 Scene ${sceneIdx + 1} acting video synced with speech & subtitles!`);
+      } catch (e) {
+        console.error(e);
+        this.showToast("Upload failed: " + e.message, true);
+      }
+    }
 
   async generateVeoSceneVideo(sceneIdx, buttonEl) {
     if (!this.currentProject) return;
@@ -2709,6 +3829,7 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
       if (btnDownload) btnDownload.style.display = "";
 
+      this.updateQuickJumpPill(sceneIdx, true, true);
       this.showToast(`🎉 Scene ${sceneIdx + 1} rendered with Google Veo acting motion!`);
     } catch (e) {
       console.error(e);
@@ -2738,13 +3859,19 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     const scenes = this.currentProject.scenes || [];
     scenes.forEach((scene, idx) => {
       const narEl = document.getElementById(`narration_${idx}`);
-      const promptEl = document.getElementById(`prompt_${idx}`);
+      const visualEl = document.getElementById(`visual_prompt_${idx}`);
+      const actingEl = document.getElementById(`acting_prompt_${idx}`);
+      const legacyPromptEl = document.getElementById(`prompt_${idx}`);
       const motionEl = document.getElementById(`motion_${idx}`);
 
       if (narEl) scene.narration = narEl.value;
-      if (promptEl) {
-        scene.visual_prompt = promptEl.value;
-        scene.acting_prompt = promptEl.value;
+      if (visualEl) {
+        scene.visual_prompt = visualEl.value;
+      }
+      if (actingEl) {
+        scene.acting_prompt = actingEl.value;
+      } else if (legacyPromptEl) {
+        scene.acting_prompt = legacyPromptEl.value;
       }
       if (motionEl) scene.camera_motion = motionEl.value;
     });
@@ -2885,7 +4012,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
     this.cinemaMovieLogline.textContent = this.currentProject.logline || "";
 
     if (this.currentProject.video_path) {
-      this.cinemaVideoPlayer.src = `/media/${this.currentProject.video_path}?t=${Date.now()}`;
+      const cleanProjVid = this.currentProject.video_path.replace(/\\/g, "/");
+      this.cinemaVideoPlayer.src = `/media/${encodeURI(cleanProjVid)}?t=${Date.now()}`;
       this.btnDownloadMovie.href = `/api/download/${this.currentProject.id}`;
     }
 
@@ -2921,8 +4049,10 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
         const card = document.createElement("div");
         card.className = "cinema-scene-clip-card";
         const hasVid = Boolean(sc.video_path);
-        const vidSrc = hasVid ? `/media/${sc.video_path}?t=${Date.now()}` : "";
-        const imgSrc = sc.image_path ? `/media/${sc.image_path}?t=${Date.now()}` : this.getInstantPreviewUrl(sc, idx);
+        const cleanVid = sc.video_path ? sc.video_path.replace(/\\/g, "/") : "";
+        const cleanImg = sc.image_path ? sc.image_path.replace(/\\/g, "/") : "";
+        const vidSrc = hasVid ? `/media/${encodeURI(cleanVid)}?t=${Date.now()}` : "";
+        const imgSrc = cleanImg ? `/media/${encodeURI(cleanImg)}?t=${Date.now()}` : this.getInstantPreviewUrl(sc, idx);
 
         card.innerHTML = `
           <div class="cinema-clip-video-box">
@@ -2974,13 +4104,18 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
   }
 
   async loadProject(projectOrId, targetStage = 2) {
+    const projId = (typeof projectOrId === "string") ? projectOrId : (projectOrId?.id);
+    if (!projId) return;
     let p = projectOrId;
-    if (typeof projectOrId === "string") {
-      try {
-        const resp = await fetch(`/api/projects/${encodeURIComponent(projectOrId)}`);
-        if (!resp.ok) throw new Error("Could not fetch project details");
+    try {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(projId)}`);
+      if (resp.ok) {
         p = await resp.json();
-      } catch (err) {
+      } else if (typeof projectOrId === "string") {
+        throw new Error("Could not fetch project details");
+      }
+    } catch (err) {
+      if (typeof projectOrId === "string") {
         this.showToast("Error loading project: " + err.message, true);
         return;
       }
@@ -2988,6 +4123,12 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
 
     if (!p || !p.id) return;
     this.currentProject = p;
+    this.enableVoiceover = p.enable_voiceover !== false;
+    this.enableSubtitles = p.enable_subtitles !== false;
+    localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
+    localStorage.setItem("anistory_cfg_enable_subtitles", this.enableSubtitles ? "true" : "false");
+    this.updateVoiceoverUI(this.enableVoiceover);
+    this.updateSubtitlesUI(this.enableSubtitles);
     this.saveActiveProjectState();
 
     if (this.modalProjects) {
@@ -3048,7 +4189,8 @@ CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do
       if (p.scenes && p.scenes.length > 0) {
         for (const sc of p.scenes) {
           if (sc.image_path) {
-            thumbSrc = `/media/${sc.image_path}`;
+            const cleanPath = sc.image_path.replace(/\\/g, "/");
+            thumbSrc = `/media/${encodeURI(cleanPath)}`;
             break;
           }
         }

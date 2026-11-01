@@ -63,9 +63,11 @@ class AnimationPipeline:
         num_scenes: int = 4,
         target_duration: int = None,
         aspect_ratio: str = "16:9",
-        image_mode: str = "server",
+        image_mode: str = "gemini",
         enable_voiceover: bool = True,
-        enable_subtitles: bool = True
+        enable_subtitles: bool = True,
+        project_type: str = "animation",
+        product_info: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Initialize a new project record with folder name matching the title."""
         chosen_title = (title or "").strip()
@@ -80,6 +82,9 @@ class AnimationPipeline:
         project_data = {
             "id": project_id,
             "created_at": time.time(),
+            "project_type": project_type,
+            "product_info": product_info or {},
+            "product_images": [],
             "idea": idea,
             "art_style": art_style,
             "voice": voice,
@@ -115,10 +120,26 @@ class AnimationPipeline:
                 p_dir = PROJECTS_DIR / project_id
                 changed = False
                 for idx, sc in enumerate(data.get("scenes", [])):
+                    # Auto-recover image_path from disk if missing or file deleted/recreated
+                    cur_img = sc.get("image_path")
+                    if not cur_img or not (PROJECTS_DIR.parent / cur_img).exists():
+                        for ext in [".jpg", ".png", ".jpeg", ".webp"]:
+                            img_file = p_dir / f"scene_{idx + 1}{ext}"
+                            if img_file.exists():
+                                sc["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                                changed = True
+                                break
+                    # Auto-recover video_path from disk
                     if not sc.get("video_path"):
                         clip_file = p_dir / f"clip_{idx + 1}.mp4"
                         if clip_file.exists():
                             sc["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                            changed = True
+                    # Auto-recover audio_path from disk
+                    if not sc.get("audio_path"):
+                        audio_file = p_dir / f"scene_{idx + 1}.mp3"
+                        if audio_file.exists():
+                            sc["audio_path"] = str(audio_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
                             changed = True
                 if changed:
                     try:
@@ -189,9 +210,13 @@ class AnimationPipeline:
         project["status"] = "brainstorming"
         project["current_step"] = "Brainstorming storyboard and scenes..."
         project["progress"] = 15
-        self.save_project(project)
+        # Dynamically use project's configured provider, model, and key if set
+        active_provider = project.get("ai_provider") or self.ai_provider
+        active_model = project.get("ai_model") or self.ai_model
+        active_key = project.get("api_key") or self.api_key
+        script_agent = ScriptAgent(api_key=active_key, provider=active_provider, model=active_model)
 
-        story_data = await self.script_agent.generate_storyboard(
+        story_data = await script_agent.generate_storyboard(
             idea=project["idea"],
             num_scenes=num_scenes,
             target_duration=calc_duration,
@@ -206,6 +231,13 @@ class AnimationPipeline:
         project["logline"] = story_data["logline"]
         project["characters"] = story_data.get("characters", "")
         project["scenes"] = story_data["scenes"]
+        # Record the final scene count (important when Auto mode let the agent decide)
+        actual_count = len(project["scenes"])
+        if actual_count > 0:
+            project["num_scenes_mode"] = "auto" if (not num_scenes or num_scenes <= 0) else "manual"
+            project["num_scenes"] = actual_count
+            if not target_duration or target_duration <= 0:
+                project["target_duration"] = actual_count * 8
         project["status"] = "storyboard_ready"
         project["progress"] = 30
         project["current_step"] = "Storyboard ready for review"
@@ -272,21 +304,25 @@ class AnimationPipeline:
             height=h,
             scene_idx=scene_idx,
             title=scene.get("title", f"Scene {scene_idx + 1}"),
-            image_mode=project.get("image_mode", "server"),
+            image_mode=project.get("image_mode", "gemini"),
             character_desc=character_desc,
             reference_image_path=ref_img_path
         )
 
         # Re-fetch latest project state to avoid race condition overwrite with concurrent scene renders
         fresh_project = self.get_project(project_id) or project
-        if scene_idx < len(fresh_project["scenes"]):
-            fresh_project["scenes"][scene_idx]["image_path"] = str(img_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
-            self.save_project(fresh_project)
-            return fresh_project
+        if img_path.exists():
+            rel_image_path = str(img_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+            if scene_idx < len(fresh_project.get("scenes", [])):
+                fresh_project["scenes"][scene_idx]["image_path"] = rel_image_path
+                self.save_project(fresh_project)
+                return fresh_project
 
-        scene["image_path"] = str(img_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
-        self.save_project(project)
-        return project
+            scene["image_path"] = rel_image_path
+            self.save_project(project)
+            return project
+
+        return fresh_project
 
     async def generate_all_scene_images(self, project_id: str) -> Dict[str, Any]:
         """Generate images for all scenes in a project strictly one by one, preserving character consistency."""
@@ -345,6 +381,7 @@ class AnimationPipeline:
 
         scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
         scene["srt_path"] = str(srt_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+        scene["voiced_narration"] = (scene.get("narration") or "").strip()
         scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_path))
         self.save_project(project)
         return project
@@ -376,13 +413,17 @@ class AnimationPipeline:
             project = self.get_project(project_id)
             scene = project["scenes"][scene_idx]
 
-        # 2. Ensure voiceover audio & subtitles exist
+        # 2. Ensure voiceover audio & subtitles exist if enabled
+        enable_subtitles = project.get("enable_subtitles", True)
+        enable_voiceover = project.get("enable_voiceover", True)
         audio_file = project_dir / f"scene_{scene_idx + 1}.mp3"
         srt_file = project_dir / f"scene_{scene_idx + 1}.srt"
-        if force_revoice or not audio_file.exists() or not srt_file.exists() or not scene.get("audio_path") or not scene.get("srt_path"):
-            await self.generate_scene_audio(project_id, scene_idx)
-            project = self.get_project(project_id)
-            scene = project["scenes"][scene_idx]
+        narration_changed = (scene.get("voiced_narration") != (scene.get("narration") or "").strip())
+        if enable_voiceover or enable_subtitles:
+            if force_revoice or narration_changed or not audio_file.exists() or not srt_file.exists() or not scene.get("audio_path") or not scene.get("srt_path"):
+                await self.generate_scene_audio(project_id, scene_idx)
+                project = self.get_project(project_id)
+                scene = project["scenes"][scene_idx]
 
         # 3. Render video clip with Ken Burns camera motion & subtitles
         width = project.get("video_width", 1280)
@@ -390,13 +431,11 @@ class AnimationPipeline:
         engine = VideoEngine(width=width, height=height)
 
         clip_file = project_dir / f"clip_{scene_idx + 1}.mp4"
-        img_full = str(PROJECTS_DIR.parent / scene["image_path"])
-        audio_full = str(PROJECTS_DIR.parent / scene["audio_path"])
-        srt_full = str(PROJECTS_DIR.parent / scene["srt_path"])
+        img_full = str(PROJECTS_DIR.parent / scene["image_path"]) if scene.get("image_path") else None
+        audio_full = str(PROJECTS_DIR.parent / scene["audio_path"]) if (scene.get("audio_path") and enable_voiceover) else None
+        srt_full = str(PROJECTS_DIR.parent / scene["srt_path"]) if (scene.get("srt_path") and enable_subtitles) else None
         motion = scene.get("camera_motion", "zoom_in")
         duration = scene.get("duration", 4.0)
-        enable_subtitles = project.get("enable_subtitles", True)
-        enable_voiceover = project.get("enable_voiceover", True)
 
         # Check for acting video source (e.g. from Google Flow / I2V generator)
         acting_video_full = None
@@ -515,82 +554,98 @@ class AnimationPipeline:
                     height=height,
                     scene_idx=idx,
                     title=scene.get("title", f"Scene {idx + 1}"),
-                    image_mode=project.get("image_mode", "server"),
+                    image_mode=project.get("image_mode", "gemini"),
                     character_desc=character_desc,
                     reference_image_path=ref_img_path
                 )
             scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+            self.save_project(project)
             if idx < total_scenes - 1:
                 await asyncio.sleep(0.8)
 
+        enable_voiceover = project.get("enable_voiceover", True)
+        enable_subtitles = project.get("enable_subtitles", True)
+
         # 2. Voices & Subtitles
-        notify(52, "Recording voice actor narration & subtitles...")
+        if not enable_voiceover and not enable_subtitles:
+            notify(65, "Voiceover narration & subtitles disabled (instrumental only)...")
+            for idx, scene in enumerate(scenes):
+                raw_acting_cand = project_dir / f"scene_{idx + 1}_acting.mp4"
+                if raw_acting_cand.exists():
+                    scene["duration"] = engine.get_media_duration(str(raw_acting_cand)) or 8.0
+                elif not scene.get("duration") or scene.get("duration") <= 0:
+                    scene["duration"] = 5.0
+            self.save_project(project)
+        else:
+            notify(52, "Recording voice actor narration & subtitles..." if enable_voiceover else "Preparing scene subtitles...")
 
-        # Enforce exactly ONE voice consistently across the entire clip (no mid-clip fallback or swapping)
-        clip_voice = project.get("voice") or "en-US-ChristopherNeural"
+            # Enforce exactly ONE voice consistently across the entire clip (no mid-clip fallback or swapping)
+            clip_voice = project.get("voice") or "en-US-ChristopherNeural"
 
-        # Up-front audition probe to verify voice operational health and establish 100% clip voice consistency
-        try:
-            probe_path = project_dir / ".probe_voice.mp3"
-            probe_text = "Xin chào, bắt đầu câu chuyện." if ("vi" in clip_voice.lower() or any(ord(c) > 127 for c in scenes[0].get("narration", ""))) else "Welcome, beginning the story."
-            probe_res = await self.voice_agent.synthesize(
-                text=probe_text,
-                output_audio_path=str(probe_path),
-                voice=clip_voice,
-                api_key=project.get("api_key"),
-                allow_voice_fallback=True
-            )
-            if probe_path.exists():
-                try:
-                    os.remove(probe_path)
-                except Exception:
-                    pass
-            if probe_res.get("is_fallback") and probe_res.get("voice"):
-                clip_voice = probe_res["voice"]
-                project["voice"] = clip_voice
-                self.save_project(project)
-                print(f"Audition probe established consistent clip voice: {clip_voice}")
-        except Exception as e_probe:
-            print(f"Voice probe notice: {e_probe}")
+            # Up-front audition probe to verify voice operational health and establish 100% clip voice consistency
+            try:
+                probe_path = project_dir / ".probe_voice.mp3"
+                probe_text = "Xin chào, bắt đầu câu chuyện." if ("vi" in clip_voice.lower() or any(ord(c) > 127 for c in scenes[0].get("narration", ""))) else "Welcome, beginning the story."
+                probe_res = await self.voice_agent.synthesize(
+                    text=probe_text,
+                    output_audio_path=str(probe_path),
+                    voice=clip_voice,
+                    api_key=project.get("api_key"),
+                    allow_voice_fallback=True
+                )
+                if probe_path.exists():
+                    try:
+                        os.remove(probe_path)
+                    except Exception:
+                        pass
+                if probe_res.get("is_fallback") and probe_res.get("voice"):
+                    clip_voice = probe_res["voice"]
+                    project["voice"] = clip_voice
+                    self.save_project(project)
+                    print(f"Audition probe established consistent clip voice: {clip_voice}")
+            except Exception as e_probe:
+                print(f"Voice probe notice: {e_probe}")
 
-        for idx, scene in enumerate(scenes):
-            audio_file = project_dir / f"scene_{idx + 1}.mp3"
-            srt_file = project_dir / f"scene_{idx + 1}.srt"
-            if not audio_file.exists() or not srt_file.exists():
-                notify(52 + int((idx / total_scenes) * 15), f"Narrating scene {idx + 1} of {total_scenes}...")
-                try:
-                    res = await self.voice_agent.synthesize(
-                        text=scene["narration"],
-                        output_audio_path=str(audio_file),
-                        output_srt_path=str(srt_file),
-                        voice=clip_voice,
-                        api_key=project.get("api_key"),
-                        allow_voice_fallback=False
-                    )
-                except Exception as e_voice_fail:
-                    print(f"Scene {idx + 1} primary voice notice ({e_voice_fail}). Engaging resilient fallback...")
-                    # Fallback allowed so video rendering never fatal-crashes
-                    res = await self.voice_agent.synthesize(
-                        text=scene["narration"],
-                        output_audio_path=str(audio_file),
-                        output_srt_path=str(srt_file),
-                        voice=clip_voice,
-                        api_key=project.get("api_key"),
-                        allow_voice_fallback=True
-                    )
-                    # If this scene resolved to a fallback voice, update clip_voice so subsequent scenes stay consistent
-                    if res.get("is_fallback") and res.get("voice"):
-                        clip_voice = res["voice"]
-                        project["voice"] = clip_voice
-                        self.save_project(project)
+            for idx, scene in enumerate(scenes):
+                audio_file = project_dir / f"scene_{idx + 1}.mp3"
+                srt_file = project_dir / f"scene_{idx + 1}.srt"
+                narration_changed = (scene.get("voiced_narration") != (scene.get("narration") or "").strip())
+                if narration_changed or not audio_file.exists() or not srt_file.exists():
+                    notify(52 + int((idx / total_scenes) * 15), f"Narrating scene {idx + 1} of {total_scenes}..." if enable_voiceover else f"Preparing scene {idx + 1} subtitles...")
+                    try:
+                        res = await self.voice_agent.synthesize(
+                            text=scene["narration"],
+                            output_audio_path=str(audio_file),
+                            output_srt_path=str(srt_file),
+                            voice=clip_voice,
+                            api_key=project.get("api_key"),
+                            allow_voice_fallback=False
+                        )
+                    except Exception as e_voice_fail:
+                        print(f"Scene {idx + 1} primary voice notice ({e_voice_fail}). Engaging resilient fallback...")
+                        # Fallback allowed so video rendering never fatal-crashes
+                        res = await self.voice_agent.synthesize(
+                            text=scene["narration"],
+                            output_audio_path=str(audio_file),
+                            output_srt_path=str(srt_file),
+                            voice=clip_voice,
+                            api_key=project.get("api_key"),
+                            allow_voice_fallback=True
+                        )
+                        # If this scene resolved to a fallback voice, update clip_voice so subsequent scenes stay consistent
+                        if res.get("is_fallback") and res.get("voice"):
+                            clip_voice = res["voice"]
+                            project["voice"] = clip_voice
+                            self.save_project(project)
 
-                scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_file))
-                await asyncio.sleep(1.2)  # Pace requests to avoid socket throttling and preserve voice consistency
-            else:
-                scene["duration"] = self.voice_agent.get_audio_duration(str(audio_file))
+                    scene["voiced_narration"] = (scene.get("narration") or "").strip()
+                    scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_file))
+                    await asyncio.sleep(1.2)  # Pace requests to avoid socket throttling and preserve voice consistency
+                else:
+                    scene["duration"] = self.voice_agent.get_audio_duration(str(audio_file))
 
-            scene["audio_path"] = str(audio_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
-            scene["srt_path"] = str(srt_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                scene["audio_path"] = str(audio_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                scene["srt_path"] = str(srt_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
 
         # 3. Render scene clips with Ken Burns camera motion & subtitles
         notify(70, "Applying camera animations (zoom & pan) and burning subtitles...")
@@ -599,9 +654,9 @@ class AnimationPipeline:
             clip_file = project_dir / f"clip_{idx + 1}.mp4"
             notify(70 + int((idx / total_scenes) * 15), f"Rendering camera motion for scene {idx + 1}...")
 
-            img_full = str(PROJECTS_DIR.parent / scene["image_path"])
-            audio_full = str(PROJECTS_DIR.parent / scene["audio_path"])
-            srt_full = str(PROJECTS_DIR.parent / scene["srt_path"])
+            img_full = str(PROJECTS_DIR.parent / scene["image_path"]) if scene.get("image_path") else None
+            audio_full = str(PROJECTS_DIR.parent / scene["audio_path"]) if (scene.get("audio_path") and enable_voiceover) else None
+            srt_full = str(PROJECTS_DIR.parent / scene["srt_path"]) if (scene.get("srt_path") and enable_subtitles) else None
             # Check for acting video source (e.g. from Google Flow / I2V generator)
             acting_video_full = None
             raw_acting_cand = project_dir / f"scene_{idx + 1}_acting.mp4"
@@ -621,8 +676,8 @@ class AnimationPipeline:
                 output_clip_path=str(clip_file),
                 motion_type=motion,
                 duration=scene.get("duration", 4.0),
-                enable_subtitles=project.get("enable_subtitles", True),
-                enable_voiceover=project.get("enable_voiceover", True),
+                enable_subtitles=enable_subtitles,
+                enable_voiceover=enable_voiceover,
                 source_video_path=acting_video_full
             )
             scene["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")

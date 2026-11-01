@@ -37,6 +37,8 @@ PROVIDER_BINARIES = {
     "claude": "claude",
     "agy": "agy",
     "codex": "codex",
+    # `gemini` uses native Google Gemini Vision (via GeminiWebWrapper or GenAI SDK)
+    "gemini": None,
     # `muse` has no binary: the reviewer IS the agent itself, reading
     # contact sheets through its own vision and scoring via review-submit.
     "muse": None,
@@ -51,6 +53,7 @@ PROVIDER_EFFORTS = {
     "claude": ("low", "medium", "high", "xhigh", "max"),
     "agy": ("low", "medium", "high"),
     "codex": ("low", "medium", "high", "xhigh", "max"),
+    "gemini": ("low", "medium", "high"),
     "muse": (),
 }
 
@@ -65,6 +68,7 @@ PROVIDER_MODEL_ENCODES_EFFORT = {
     "claude": False,
     "agy": True,
     "codex": False,
+    "gemini": False,
     "muse": False,
 }
 
@@ -77,6 +81,7 @@ PROVIDER_CATALOG_IS_AUTHORITATIVE = {
     "claude": False,
     "agy": True,
     "codex": False,
+    "gemini": False,
     "muse": False,
 }
 
@@ -100,7 +105,7 @@ ROLES = {
     },
 }
 
-DEFAULT_PROVIDER = "claude"
+DEFAULT_PROVIDER = "gemini"
 
 _CATALOG_TTL_S = 300.0
 # Unlocked on purpose. Two concurrent misses for the same provider both run the
@@ -303,6 +308,12 @@ async def list_models(provider: str, force: bool = False) -> list[dict]:
 
     if provider == "muse":
         return []  # no binary, no catalog — the assistant is the reviewer
+    if provider == "gemini":
+        return [
+            {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (Fast Vision)"},
+            {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro (Deep Reasoning)"},
+            {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash"},
+        ]
     if not shutil.which(PROVIDER_BINARIES[provider]):
         return []
 

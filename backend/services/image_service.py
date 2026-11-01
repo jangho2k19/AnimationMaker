@@ -17,22 +17,29 @@ class ImageService:
     @staticmethod
     def sanitize_visual_prompt(prompt: str) -> str:
         """
-        Strips quotes, spoken dialogue, and speech bubble indicators from prompt
-        to prevent image models from drawing speech bubbles with garbled text.
+        Strips quotes, spoken dialogue, speech bubble indicators, video timestamps,
+        camera moves, and negative prompts from prompt to prevent image models
+        from rendering speech bubbles, text overlays, or getting confused by video directives.
         """
         if not prompt:
             return ""
         p = prompt.strip()
+        # Remove video timing markers like 0-3s:, 3-6s:, 6-8s:
+        p = re.sub(r'(?i)\b\d+-\d+s\s*:\s*', '', p)
+        # Remove video camera and negative markers
+        p = re.sub(r'(?i)\bCamera\s*:[^.]*\.?', '', p)
+        p = re.sub(r'(?i)\bLighting\s*:[^.]*\.?', '', p)
+        p = re.sub(r'(?i)\bNegative\s*:[^.]*\.?', '', p)
         # Remove quoted dialogue like "..." or “...” or '...'
         p = re.sub(r'["“][^"”]{2,}["”]', '', p)
         p = re.sub(r"['‘][^'’]{2,}['’]", '', p)
         # Remove dialogue markers and speech bubble requests
         p = re.sub(r'(?i)\b(?:speech bubble|dialogue bubble|thought bubble|speech balloon|comic bubble|text bubble)\b', '', p)
         p = re.sub(r'(?i)\b(?:nói rằng|cất tiếng nói|nói với|bảo rằng|lời nói|says|saying)\b[:\s]*', '', p)
-        # If a massive story paragraph was mistakenly passed in, keep only the visual description parts
-        if len(p) > 500:
-            # Keep first 250 characters and strip trailing half-words
-            p = p[:250].rsplit(' ', 1)[0]
+        # Preserve full detailed visual prompts (up to 2000 chars) so character actions, animals (e.g. golden-brown cow),
+        # and key props (e.g. bamboo sleeping cot) are never cut off mid-sentence!
+        if len(p) > 2000:
+            p = p[:2000].rsplit(' ', 1)[0]
         # Collapse multiple spaces and commas
         p = re.sub(r'\s*,\s*', ', ', p)
         p = re.sub(r',\s*,+', ', ', p)
@@ -41,23 +48,66 @@ class ImageService:
         return p
 
     def craft_full_prompt(self, base_prompt: str, style_key: str = None, character_desc: str = None) -> str:
-        """Combine base scene prompt with character consistency anchors, artistic style keywords, and anti-text constraints."""
-        style_info = ART_STYLES.get(style_key or self.default_style, ART_STYLES["ghibli"])
-        suffix = style_info.get("prompt_suffix", "")
+        """Combine base scene prompt with character consistency anchors, subject/prop disambiguation, artistic style keywords, and anti-text constraints."""
         clean_base = self.sanitize_visual_prompt(base_prompt)
+        lower_base = clean_base.lower()
+
+        # Auto-harmonize style if the visual prompt explicitly specifies 3D Pixar, Ghibli, Realistic, or Stick Figure
+        effective_style = style_key or self.default_style or "ghibli"
+        if any(k in lower_base for k in ("pixar", "3d animated", "3d animation", "disney 3d")):
+            effective_style = "pixar"
+        elif any(k in lower_base for k in ("studio ghibli", "ghibli", "2d hand-drawn", "cel-shaded anime")):
+            effective_style = "ghibli"
+        elif any(k in lower_base for k in ("raw photograph", "photorealistic", "live-action")):
+            effective_style = "realistic"
+        elif any(k in lower_base for k in ("stick figure", "stickman", "stick figures", "stick-figure", "người que")):
+            effective_style = "stick_figure"
+
+        style_info = ART_STYLES.get(effective_style, ART_STYLES["ghibli"])
+        suffix = style_info.get("prompt_suffix", "")
+        # Avoid duplicating style suffix if base prompt already describes the style thoroughly
+        if effective_style == "pixar" and "pixar" in lower_base:
+            suffix = ", consistent 3D Pixar-inspired character proportions, warm subsurface scattering, cinematic lighting"
+        elif effective_style == "stick_figure" and any(k in lower_base for k in ("stick figure", "stickman")):
+            suffix = ", clean bold line-drawn stickman silhouette, Alan Becker aesthetic, smooth 2D vector animation style"
 
         char_addon = ""
+        clean_char = ""
         if character_desc and str(character_desc).strip():
             clean_char = self.sanitize_visual_prompt(str(character_desc))
-            # If not already detailed in base prompt, append character consistency anchor
-            char_tokens = [w for w in re.findall(r'\b\w{4,}\b', clean_char.lower()) if w not in ("character", "protagonist", "appearance", "visual", "consistency")]
-            matching_tokens = sum(1 for tok in char_tokens if tok in clean_base.lower())
-            if not char_tokens or matching_tokens < len(char_tokens) * 0.4:
-                short_char = clean_char[:160].rsplit(' ', 1)[0] if len(clean_char) > 160 else clean_char
-                char_addon = f", character visual consistency: {short_char}, exact same character appearance and outfit across scenes"
+            # Append character sheet anchor (up to 500 chars so supporting characters & animals like Bò Vàng / Quan Huyện are preserved)
+            char_tokens = [w for w in re.findall(r'\b\w{4,}\b', clean_char.lower()) if w not in ("character", "protagonist", "appearance", "visual", "consistency", "companion", "supporting")]
+            matching_tokens = sum(1 for tok in char_tokens if tok in lower_base)
+            if not char_tokens or matching_tokens < len(char_tokens) * 0.65:
+                short_char = clean_char[:500].rsplit(' ', 1)[0] if len(clean_char) > 500 else clean_char
+                char_addon = f", character & cast visual consistency ({short_char}), maintain exact same character appearance, faces, and outfits across all scenes"
 
-        anti_text = ", clean textless illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark"
-        return f"{clean_base}{char_addon}{suffix}{anti_text}"
+        # Subject & Prop Disambiguation Anchors to prevent common visual hallucinations in Vietnamese rural stories
+        disambiguation_parts = []
+        combined_lower = f"{lower_base} {clean_char.lower()}"
+        has_cow_in_scene = any(k in lower_base for k in ("cow", "bò vàng", "con bò", "cattle", "calf", "golden-brown cow"))
+        has_buffalo = any(k in lower_base for k in ("buffalo", "con trâu", "water buffalo"))
+        if has_cow_in_scene and not has_buffalo:
+            disambiguation_parts.append(
+                "IMPORTANT ANIMAL ACCURACY: The animal in this scene is strictly a warm golden-yellow/brown domestic cow (bò vàng) with sleek golden-tan fur and short small curved horns — NOT a dark gray or black water buffalo (con trâu) and NOT wide water buffalo horns"
+            )
+
+        has_cot_in_scene = any(k in lower_base for k in ("sleeping cot", "bamboo cot", "cot", "chõng", "giường", "bamboo bed"))
+        has_lifting_in_scene = any(k in lower_base for k in ("lift", "lifting", "carry", "carrying", "move", "khiêng", "nhấc", "two masked thieves", "thieves"))
+        if has_cot_in_scene and has_lifting_in_scene and any(k in lower_base for k in ("lift", "lifting", "carry", "carrying", "khiêng", "nhấc")):
+            disambiguation_parts.append(
+                "IMPORTANT PROP ACCURACY: The two thieves are lifting a flat, open rectangular four-legged woven bamboo bed/cot (chiếc chõng tre) by its wooden legs with the sleeping young man lying flat and fully visible on top of the open bed surface — strictly an open flat bamboo bed/cot, NOT carrying a sack, NOT a bag, NOT a wrapped bundle"
+            )
+
+        disambiguation_addon = (". " + ". ".join(disambiguation_parts)) if disambiguation_parts else ""
+
+        if effective_style == "realistic":
+            anti_text = ", textless RAW photograph, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark, not cartoon, not 3D render, not illustration, not painting"
+        elif effective_style == "stick_figure":
+            anti_text = ", clean textless stickman illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark, not photorealistic, no realistic human faces, no detailed skin, no 3D rendering"
+        else:
+            anti_text = ", clean textless illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark"
+        return f"{clean_base}{disambiguation_addon}{char_addon}{suffix}{anti_text}"
 
     def extract_keywords(self, prompt: str, title: str = "") -> list:
         """Extract clean, meaningful visual keywords for thematic asset discovery."""
@@ -103,17 +153,16 @@ class ImageService:
         height: int = 720,
         scene_idx: int = 0,
         title: str = "",
-        image_mode: str = "server",
+        image_mode: str = "gemini",
         character_desc: str = None,
         reference_image_path: str = None
     ) -> str:
         """
-        Multi-tier robust scene visual pipeline:
-        1. Google Gemini / Imagen 3 (if image_mode is gemini or provider is gemini)
-        2. OpenAI DALL-E 3 (if provider is OpenAI)
-        3. Free Neural AI Generator (Pollinations Flux / SDXL)
-        4. Open Thematic Asset Engines (Openverse & Wikimedia Commons matching scene keywords)
-        5. Scene-specific procedural artwork generator (guarantees every scene looks distinct)
+        Scene visual generation pipeline:
+        1. Google Gemini / Imagen 3 (Default — official API key or web session cookie)
+        2. Neural.love AI Art Engine (if image_mode is neural_love)
+        3. OpenAI DALL-E 3 (if image_mode or provider is OpenAI)
+        4. Storyboard-Only Canvas (if image_mode is manual)
         """
         output_path = str(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -162,109 +211,9 @@ class ImageService:
             raise RuntimeError("Neural.love image generation failed. Please check your API key and credit balance.")
 
         # ============================================================
-        # 2. GOOGLE GEMINI / IMAGEN 3 MODE
+        # 2. OPENAI DALL-E 3 MODE
         # ============================================================
-        if image_mode == "gemini":
-            gemini_error = None
-            # 2a. Try official Gemini API Key with Image models
-            if self.api_key and "__Secure-1PSID" not in self.api_key and self.provider != "gemini_cookie":
-                try:
-                    from google import genai
-                    client = genai.Client(api_key=self.api_key)
-                    for img_model in ["gemini-2.5-flash-image", "gemini-3-pro-image-preview", "gemini-3.1-flash-image"]:
-                        try:
-                            contents = []
-                            if reference_image_path and os.path.exists(reference_image_path):
-                                try:
-                                    ref_pil = Image.open(reference_image_path).convert("RGB")
-                                    contents.append(ref_pil)
-                                    contents.append(f"CHARACTER REFERENCE IMAGE ATTACHED. CRITICAL: Maintain the exact same character appearance, face, hairstyle, and clothing shown in this reference image. Now generate the next scene illustration: {full_prompt[:800]}. STRICT: Textless illustration, no speech bubbles, no dialogue, no words.")
-                                except Exception:
-                                    contents = [f"Generate a high quality illustration: {full_prompt[:1000]}. STRICT: No speech bubbles, no dialogue, no text in the artwork."]
-                            else:
-                                contents = [f"Generate a high quality illustration: {full_prompt[:1000]}. STRICT: No speech bubbles, no dialogue, no text in the artwork."]
-
-                            resp = client.models.generate_content(
-                                model=img_model,
-                                contents=contents
-                            )
-                            if resp.candidates:
-                                for cand in resp.candidates:
-                                    if cand.content and cand.content.parts:
-                                        for part in cand.content.parts:
-                                            if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
-                                                raw_data = part.inline_data.data
-                                                if isinstance(raw_data, str):
-                                                    import base64
-                                                    raw_data = base64.b64decode(raw_data)
-                                                img = Image.open(io.BytesIO(raw_data))
-                                                fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                                                fitted.save(output_path, "JPEG", quality=93)
-                                                print(f"Generated scene {scene_idx + 1} using Google Gemini Image Model ({img_model}) with character consistency!")
-                                                return output_path
-                        except Exception as e_gen:
-                            gemini_error = str(e_gen)
-                except Exception as e:
-                    gemini_error = str(e)
-
-            # 2b. Try Gemini Pro Web Session Cookie
-            from backend.config import get_server_credentials
-            s_creds = get_server_credentials()
-            saved_psid = s_creds.get("gemini_cookie_psid")
-            saved_psidts = s_creds.get("gemini_cookie_psidts")
-            cookie_input = self.api_key if ("__Secure-1PSID" in (self.api_key or "")) else (f"{saved_psid}|{saved_psidts}" if saved_psidts else saved_psid)
-            psid, psidts = self._parse_gemini_cookie_pair(cookie_input)
-
-            if psid:
-                try:
-                    from backend.services.gemini_wrapper import GeminiWebWrapper
-                    wrapper = GeminiWebWrapper.get_instance()
-                    req_files = [reference_image_path] if (reference_image_path and os.path.exists(reference_image_path)) else None
-                    if req_files:
-                        gemini_prompt = f"Maintain the exact same character appearance, facial features, hairstyle, and outfit from the attached reference image. Generate the next scene illustration: {full_prompt[:750]}. Clean illustration without text, no speech bubbles, no words."
-                    else:
-                        gemini_prompt = f"Generate an image of: {full_prompt[:800]}. Clean illustration without text, no speech bubbles, no words."
-
-                    resp = await wrapper.generate_content(
-                        gemini_prompt,
-                        files=req_files,
-                        cookie_override=cookie_input
-                    )
-                    saved_img = None
-                    if resp.has_images:
-                        temp_dir = Path(output_path).parent / "temp_gemini"
-                        os.makedirs(temp_dir, exist_ok=True)
-                        saved_img = await resp.images[0].save(path=str(temp_dir))
-
-                    if saved_img and os.path.exists(saved_img):
-                        img = Image.open(saved_img)
-                        fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                        fitted.save(output_path, "JPEG", quality=93)
-                        try:
-                            os.remove(saved_img)
-                        except Exception:
-                            pass
-                        print(f"Generated scene {scene_idx + 1} using Gemini Pro Web Session Imagen 3 with character consistency!")
-                        return output_path
-                except RuntimeError:
-                    raise
-                except Exception as e:
-                    gemini_error = str(e)
-
-            # Strict: No procedural or silent fallback!
-            err_msg = gemini_error or "Google Gemini Imagen 3 generation failed. Please verify your Gemini API key or ensure __Secure-1PSID and __Secure-1PSIDTS cookies are valid."
-            raise RuntimeError(f"Gemini Imagen 3 Error: {err_msg}")
-
-        # ============================================================
-        # 3. PUTER.JS IN-BROWSER MODE
-        # ============================================================
-        if image_mode == "puter":
-            raise RuntimeError("In-Browser Puter image generation runs directly in the browser client. Please use the 'Repaint with Puter' button in the Storyboard.")
-
-        # ============================================================
-        # 4. OPENAI DALL-E 3 MODE
-        # ============================================================
-        if self.provider == "openai" and self.api_key:
+        if image_mode == "openai" or (self.provider == "openai" and self.api_key):
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     resp = await client.post(
@@ -275,7 +224,7 @@ class ImageService:
                         },
                         json={
                             "model": "dall-e-3",
-                            "prompt": full_prompt[:950],
+                            "prompt": full_prompt[:1800],
                             "size": dalle_size,
                             "quality": "standard",
                             "n": 1
@@ -297,48 +246,112 @@ class ImageService:
                 raise RuntimeError(f"OpenAI DALL-E 3 generation failed: {e}")
 
         # ============================================================
-        # 5. FREE NEURAL AI GENERATOR (Pollinations Flux / SDXL)
+        # 3. PUTER.JS IN-BROWSER MODE
         # ============================================================
-        last_poll_error = None
-        poll_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
-        }
-        for model_name in [None, "flux", "turbo"]:
-            try:
-                safe_prompt = urllib.parse.quote(full_prompt[:350])
-                seed_param = f"&seed={seed}" if seed is not None else ""
-                model_param = f"&model={model_name}" if model_name else ""
-                poll_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width={width}&height={height}&nologo=true{model_param}{seed_param}"
-                async with httpx.AsyncClient(timeout=30.0, headers=poll_headers, follow_redirects=True) as client:
-                    poll_resp = await client.get(poll_url)
-                    if poll_resp.status_code == 200 and len(poll_resp.content) > 10000:
-                        img = Image.open(io.BytesIO(poll_resp.content))
+        if image_mode == "puter":
+            raise RuntimeError("In-Browser Puter image generation runs directly in the browser client. Please use the 'Repaint with Puter' button in the Storyboard.")
+
+        # ============================================================
+        # 4. GOOGLE GEMINI / IMAGEN 3 MODE (Default)
+        # ============================================================
+        if image_mode in ("gemini", "server"):
+            gemini_error = None
+
+            # 4a. Official Google AI Studio API Key (starts with AIzaSy... or standard API key)
+            is_cookie_key = bool(
+                self.api_key and (
+                    self.api_key.startswith("g.a")
+                    or "__Secure-1PSID" in self.api_key
+                    or self.provider == "gemini_cookie"
+                )
+            )
+
+            if self.api_key and not is_cookie_key:
+                try:
+                    from google import genai
+                    from google.genai import types
+                    client = genai.Client(api_key=self.api_key)
+                    for img_model in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+                        try:
+                            resp = client.models.generate_images(
+                                model=img_model,
+                                prompt=full_prompt[:2800],
+                                config=types.GenerateImagesConfig(
+                                    number_of_images=1,
+                                    aspect_ratio=imagen_ratio,
+                                    output_mime_type="image/jpeg",
+                                    person_generation="ALLOW_ADULT"
+                                )
+                            )
+                            if resp.generated_images:
+                                raw_bytes = resp.generated_images[0].image.image_bytes
+                                img = Image.open(io.BytesIO(raw_bytes))
+                                fitted = self.fit_image_to_aspect_ratio(img, width, height)
+                                fitted.save(output_path, "JPEG", quality=95)
+                                print(f"Generated scene {scene_idx + 1} using Google Gemini Imagen 3 API ({img_model})!")
+                                return output_path
+                        except Exception as e_model:
+                            gemini_error = str(e_model)
+                except Exception as e:
+                    gemini_error = str(e)
+
+            # 4b. Google Gemini Web Session Cookie (__Secure-1PSID)
+            from backend.config import get_server_credentials
+            s_creds = get_server_credentials()
+            saved_psid = s_creds.get("gemini_cookie_psid")
+            saved_psidts = s_creds.get("gemini_cookie_psidts")
+            cookie_input = self.api_key if is_cookie_key else (f"{saved_psid}|{saved_psidts}" if saved_psidts else saved_psid)
+            psid, psidts = self._parse_gemini_cookie_pair(cookie_input)
+            if not psid:
+                psid = saved_psid
+            if not psidts:
+                psidts = saved_psidts or psidts
+
+            if psid:
+                combined_cookie = f"{psid}|{psidts}" if psidts else psid
+                try:
+                    from backend.services.gemini_wrapper import GeminiWebWrapper
+                    wrapper = GeminiWebWrapper.get_instance()
+                    req_files = [reference_image_path] if (reference_image_path and os.path.exists(reference_image_path)) else None
+                    if req_files:
+                        gemini_prompt = (
+                            f"Generate a brand-new scene illustration strictly depicting this exact scene action, props, and setting: {full_prompt[:2800]}. "
+                            f"Use the attached reference image ONLY to keep the main character's face, hairstyle, and clothing consistent — do NOT copy the pose or background from the reference image, and accurately depict all new actions, props, and characters described above. "
+                            f"Clean illustration without text, no speech bubbles, no words."
+                        )
+                    else:
+                        gemini_prompt = f"Generate an image of: {full_prompt[:2800]}. Clean illustration without text, no speech bubbles, no words."
+
+                    resp = await wrapper.generate_content(
+                        gemini_prompt,
+                        files=req_files,
+                        cookie_override=combined_cookie
+                    )
+                    saved_img = None
+                    if resp.has_images:
+                        temp_dir = Path(output_path).parent / "temp_gemini"
+                        os.makedirs(temp_dir, exist_ok=True)
+                        saved_img = await resp.images[0].save(path=str(temp_dir))
+
+                    if saved_img and os.path.exists(saved_img):
+                        img = Image.open(saved_img)
                         fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                        fitted.save(output_path, "JPEG", quality=92)
-                        model_label = model_name.upper() if model_name else "DEFAULT"
-                        print(f"Generated scene {scene_idx + 1} using Free Neural AI Engine ({model_label}) [seed={seed}]!")
+                        fitted.save(output_path, "JPEG", quality=95)
+                        try:
+                            os.remove(saved_img)
+                        except Exception:
+                            pass
+                        print(f"Generated scene {scene_idx + 1} using Gemini Pro Web Session Imagen 3 with character consistency!")
                         return output_path
                     else:
-                        last_poll_error = f"HTTP {poll_resp.status_code}"
-            except Exception as e_poll:
-                last_poll_error = str(e_poll)
-                continue
+                        gemini_error = "Gemini returned response without image content. Try again or verify session cookies."
+                except Exception as e:
+                    gemini_error = str(e)
 
-        # Resilient fallback so video rendering pipeline never crashes
-        try:
-            words = [w for w in re.sub(r'[^\w\s]', '', prompt).split() if len(w) > 3][:6]
-            thematic = await self._fetch_thematic_image(words, width, height)
-            if thematic:
-                thematic.save(output_path, "JPEG", quality=92)
-                print(f"Generated scene {scene_idx + 1} using open thematic visual!")
-                return output_path
-        except Exception:
-            pass
+            err_msg = gemini_error or "Google Gemini Imagen 3 generation failed. Please verify your Gemini API key or ensure cookies are valid."
+            raise RuntimeError(f"Google Gemini Imagen 3 generation failed: {err_msg}")
 
-        self.generate_procedural_fallback(title=title, prompt=prompt, output_path=output_path, style_key=style_key, scene_idx=scene_idx, width=width, height=height)
-        print(f"Generated scene {scene_idx + 1} using stylized storyboard canvas!")
-        return output_path
+        raise RuntimeError(f"Unsupported image generation mode '{image_mode}'. Free Neural AI Engine has been removed.")
 
     async def _fetch_thematic_image(self, keywords: list, width: int = 1280, height: int = 720) -> Image.Image:
         """Search and fetch high-res thematic visuals from open creative repositories."""

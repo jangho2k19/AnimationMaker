@@ -465,19 +465,19 @@ def _normalise_keys(entry: dict, aliases: dict) -> dict:
 
 
 def _parse_json_response(raw: str) -> dict:
-    """Extract JSON from a response that may contain markdown fences."""
+    """Extract JSON from a response that may contain markdown fences, commentary, or citations."""
     raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    # Also try to find JSON object in free text
-    raw = raw.strip()
-    if not raw.startswith("{"):
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw, re.IGNORECASE)
+    if match:
+        candidate = match.group(1).strip()
+    else:
         start = raw.find("{")
-        if start >= 0:
-            raw = raw[start:]
-    return json.loads(raw)
+        end = raw.rfind("}")
+        if start >= 0 and end > start:
+            candidate = raw[start:end + 1].strip()
+        else:
+            candidate = raw
+    return json.loads(candidate)
 
 
 # ─── Backend 1: CLI providers (default, no API key needed) ───
@@ -672,6 +672,62 @@ async def _run_codex_cli(
         out_path.unlink(missing_ok=True)
 
 
+async def _analyze_gemini(
+    contact_sheets: list[Path],
+    prompt: str,
+    *,
+    model: str | None = None,
+    effort: str | None = None,
+) -> dict:
+    """Analyze contact sheets using Google Gemini Vision (via GeminiWebWrapper or Google GenAI)."""
+    chosen_model = model or "gemini-2.5-flash"
+    extended_thinking = (effort in ("high", "xhigh", "max")) or ("pro" in chosen_model.lower())
+
+    # 1. Primary: GeminiWebWrapper (uses persistent authenticated session & cookies)
+    try:
+        from backend.services.gemini_wrapper import GeminiWebWrapper
+        wrapper = GeminiWebWrapper.get_instance()
+        logger.info(
+            "Running Gemini Vision review on %d contact sheet(s) with model=%s (thinking=%s)",
+            len(contact_sheets), chosen_model, extended_thinking,
+        )
+        res = await wrapper.generate_content(
+            prompt=prompt,
+            files=contact_sheets,
+            model=chosen_model,
+            extended_thinking=extended_thinking,
+        )
+        if res and res.text:
+            return _parse_json_response(res.text)
+    except Exception as e:
+        logger.warning("GeminiWebWrapper vision review failed (%s), attempting GenAI API fallback...", e)
+
+    # 2. Secondary fallback: Google GenAI API if an API key is configured
+    try:
+        from backend.config import get_server_credentials
+        creds = get_server_credentials()
+        api_key = creds.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY")
+        if api_key:
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=api_key)
+            contents = [prompt]
+            for sheet in contact_sheets:
+                contents.append(types.Part.from_bytes(data=sheet.read_bytes(), mime_type="image/jpeg"))
+            api_model = chosen_model if chosen_model.startswith("gemini-") else "gemini-2.5-flash"
+            resp = await asyncio.to_thread(
+                client.models.generate_content,
+                model=api_model,
+                contents=contents,
+            )
+            if resp and resp.text:
+                return _parse_json_response(resp.text)
+    except Exception as api_err:
+        logger.error("Google GenAI API fallback also failed: %s", api_err)
+
+    raise RuntimeError("Google Gemini Vision review failed on all available backends.")
+
+
 async def _analyze_cli(
     contact_sheets: list[Path],
     n_frames: int,
@@ -706,7 +762,7 @@ async def _analyze_cli(
         role = resolve_role("video_review")
     provider = role["provider"]
     logger.info(
-        "Calling %s CLI for vision analysis (%d frames, %d sheets, model=%s, effort=%s, timestamps=%s)",
+        "Calling %s for vision analysis (%d frames, %d sheets, model=%s, effort=%s, timestamps=%s)",
         provider, n_frames, n_sheets,
         role["model"] or "default", role["effort"] or "default", timestamped,
     )
@@ -729,7 +785,15 @@ async def _analyze_cli(
             f"at {fps}fps {stamp_note}, in chronological order (sheet 1 is earliest)."
         )
 
-    if provider == "codex":
+    if provider == "gemini":
+        full_prompt = f"{sheet_intro}\n\n{base_prompt}"
+        return await _analyze_gemini(
+            contact_sheets=contact_sheets,
+            prompt=full_prompt,
+            model=role["model"],
+            effort=role["effort"],
+        )
+    elif provider == "codex":
         full_prompt = f"{sheet_intro}\n\n{base_prompt}"
         raw = await _run_codex_cli(
             full_prompt, contact_sheets, model=role["model"], effort=role["effort"]

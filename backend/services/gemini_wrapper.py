@@ -327,7 +327,6 @@ class GeminiWebWrapper:
                     from gemini_webapi.utils.rotate_1psidts import rotate_1psidts
                     new_ts = await rotate_1psidts(
                         self.client._live_client,
-                        base_psid=self.psid,
                         verbose=True
                     )
                     if new_ts:
