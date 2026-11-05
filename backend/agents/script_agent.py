@@ -119,7 +119,8 @@ class ScriptAgent:
                 idea=idea,
                 art_style=art_style,
                 language=language,
-                target="all"
+                target="all",
+                characters=imported.get("characters")
             )
             return imported
 
@@ -138,7 +139,8 @@ class ScriptAgent:
                     idea=idea,
                     art_style=art_style,
                     language=language,
-                    target="all"
+                    target="all",
+                    characters=story.get("characters")
                 )
             return story
 
@@ -157,7 +159,8 @@ class ScriptAgent:
                     idea=idea,
                     art_style=art_style,
                     language=language,
-                    target="all"
+                    target="all",
+                    characters=story.get("characters")
                 )
             return story
 
@@ -966,6 +969,27 @@ Return ONLY raw JSON matching this structure:
                     idx += 2
                     continue
 
+            # 1b. Screenplay or prose inline "Speaker: Dialogue line" (e.g. "Bà Tư: Tư ơi, tin gì..." or "Ông Tư: Tin Mỹ đó bà...")
+            m_spk_inline = re.match(r'^([A-ZÀ-ỹa-zà-ỹ0-9_\s]{2,28})\s*:\s*(.+)$', ln)
+            if m_spk_inline:
+                spk_cand = m_spk_inline.group(1).strip()
+                dial_cand = m_spk_inline.group(2).strip(' "“”')
+                if (
+                    dial_cand
+                    and spk_cand.lower() not in ("tiêu đề", "title", "bối cảnh", "setting", "thời lượng", "duration", "thể loại", "genre", "nhân vật", "characters", "hình ảnh", "âm thanh")
+                    and not any(dial_cand.lower().startswith(p) for p in meta_prefixes)
+                ):
+                    extracted.append({
+                        "speaker": spk_cand.strip(),
+                        "tone": "",
+                        "intro": last_narrative,
+                        "line": dial_cand,
+                        "scene_num": current_scene_num
+                    })
+                    last_narrative = ""
+                    idx += 1
+                    continue
+
             # 2. Dash-prefixed dialogue line (– ... or - ... or — ...)
             m_dash = re.match(r'^[–\-—]\s*(.+)$', ln)
             if m_dash:
@@ -1024,7 +1048,7 @@ Return ONLY raw JSON matching this structure:
     @staticmethod
     def extract_scene_dialogue_segments(
         narration: str,
-        characters: List[str] = None,
+        characters: Union[List[str], str, None] = None,
         narrator_name: str = "Narrator",
         matched_dialogues: List[Dict[str, Any]] = None
     ) -> List[Dict[str, str]]:
@@ -1036,7 +1060,16 @@ Return ONLY raw JSON matching this structure:
             return []
 
         clean_narr = narration.strip()
-        chars = [c.strip() for c in (characters or []) if c and c.strip()]
+        chars = []
+        if isinstance(characters, list):
+            chars = [str(c).strip() for c in characters if c and str(c).strip() and str(c).lower() not in ("narrator", "người kể chuyện", "character")]
+        elif isinstance(characters, str) and characters.strip():
+            for p in re.split(r'[|\n]+', characters):
+                m_c = re.match(r'^(?:[A-Za-z0-9_\s]+:)?\s*([^,:\(\)]+)', p.strip())
+                if m_c:
+                    c_n = m_c.group(1).strip()
+                    if c_n and c_n.lower() not in ("narrator", "người kể chuyện", "character"):
+                        chars.append(c_n)
 
         # 1. If explicit matched dialogues exist from story analysis, segment based on them
         if matched_dialogues:
@@ -1044,10 +1077,26 @@ Return ONLY raw JSON matching this structure:
             curr_text = clean_narr
             for md in matched_dialogues:
                 d_line = (md.get("line") or "").strip(' "“”')
-                spk = (md.get("speaker") or "").strip() or "Character"
+                spk = (md.get("speaker") or "").strip()
                 if not d_line:
                     continue
                 pos = curr_text.find(d_line)
+                prefix_candidate = curr_text[:pos].rstrip(' "“”:\t\n') if pos != -1 else curr_text
+
+                # If speaker is missing or generic "Character", resolve using known character roster & prefix
+                if not spk or spk.lower() == "character":
+                    found_spk = None
+                    if chars:
+                        matched_chars = []
+                        for c in chars:
+                            p_idx = prefix_candidate.lower().find(c.lower())
+                            if p_idx != -1:
+                                matched_chars.append((p_idx, c))
+                        if matched_chars:
+                            matched_chars.sort(key=lambda x: x[0])
+                            found_spk = matched_chars[0][1]
+                    spk = found_spk or (chars[0] if len(chars) == 1 else "Character")
+
                 if pos != -1:
                     prefix = curr_text[:pos].rstrip(' "“”:\t\n')
                     if prefix:
@@ -1072,28 +1121,44 @@ Return ONLY raw JSON matching this structure:
 
             speaker = "Character"
             found_char = None
-            for c in chars:
-                if c.lower() in prefix.lower():
-                    found_char = c
-                    break
+            if chars:
+                matched_chars = []
+                for c in chars:
+                    p_pos = prefix.lower().find(c.lower())
+                    if p_pos != -1:
+                        matched_chars.append((p_pos, c))
+                if matched_chars:
+                    matched_chars.sort(key=lambda x: x[0])
+                    found_char = matched_chars[0][1]
 
             if found_char:
                 speaker = found_char
             else:
-                m_spk = re.search(
-                    r'([A-Za-zÀ-ỹ\s]{2,25})\s*(?:thưa|nói|hỏi|đáp|kêu|bảo|quát|la|cười|mắng|than|nghĩ|lắp bắp|chữa cháy|said|asked|replied|shouted|exclaimed|gasped|yelled)\s*[:,\-]?\s*$',
-                    prefix,
-                    re.IGNORECASE
-                )
-                if m_spk:
-                    cand = m_spk.group(1).strip()
-                    cand = re.sub(r'\b(?:liền|bèn|vội|hớt hải|ngơ ngác|sợ hãi|tức giận)\b', '', cand, flags=re.IGNORECASE).strip()
-                    if cand:
-                        speaker = cand.title()
-                elif ':' in prefix:
-                    cand = prefix.split(':')[-1].strip()
-                    if 2 <= len(cand) <= 25:
-                        speaker = cand.title()
+                # 1. Check capitalized subject at beginning of prefix (e.g. "Bà Tư bước đến gần...", "Ông Tư ngước lên...")
+                m_lead = re.match(r'^([A-ZÀ-ỹ][a-zà-ỹ]+(?:\s+[A-ZÀ-ỹ][a-zà-ỹ]+){0,3})\b', prefix.strip())
+                if m_lead and m_lead.group(1).lower() not in (
+                    "buổi", "sau", "khi", "trong", "tại", "một", "hai", "bỗng", "lúc",
+                    "người", "nhưng", "rồi", "vừa", "đoạn", "hồi", "thế", "còn", "thì",
+                    "the", "after", "when", "in", "at", "one", "suddenly", "then", "while"
+                ):
+                    speaker = m_lead.group(1).strip()
+                else:
+                    m_spk = re.search(
+                        r'([A-Za-zÀ-ỹ\s]{2,25})\s*(?:thưa|nói|hỏi|đáp|kêu|bảo|quát|la|cười|mắng|than|nghĩ|lắp bắp|chữa cháy|thốt|chia sẻ|phân tích|tuyên bố|gặng hỏi|said|asked|replied|shouted|exclaimed|gasped|yelled)',
+                        prefix,
+                        re.IGNORECASE
+                    )
+                    if m_spk:
+                        cand = m_spk.group(1).strip()
+                        cand = re.sub(r'\b(?:liền|bèn|vội|hớt hải|ngơ ngác|sợ hãi|tức giận)\b', '', cand, flags=re.IGNORECASE).strip()
+                        if cand:
+                            speaker = cand.title()
+                    elif ':' in prefix:
+                        cand = prefix.split(':')[-1].strip()
+                        if 2 <= len(cand) <= 25:
+                            speaker = cand.title()
+                    elif len(chars) == 1:
+                        speaker = chars[0]
 
             if prefix:
                 segments.append({"speaker": narrator_name, "text": prefix})
@@ -1144,7 +1209,7 @@ Return ONLY raw JSON matching this structure:
                 m = re.match(r'^(?:[A-Za-z0-9_\s]+:)?\s*([^,:\(\)]+)', p_strip)
                 if m:
                     c_name = m.group(1).strip()
-                    if c_name and c_name.lower() not in ("narrator", "người kể chuyện", "bối cảnh", "setting", "title"):
+                    if c_name and c_name.lower() not in ("narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character"):
                         if c_name not in char_names:
                             char_names.append(c_name)
 
@@ -1153,7 +1218,7 @@ Return ONLY raw JSON matching this structure:
                 d_list = sc.get("dialogues") or []
                 for d in d_list:
                     spk = (d.get("speaker") or "").strip()
-                    if spk and spk.lower() not in ("narrator", "người kể chuyện", "none", "") and spk not in char_names:
+                    if spk and spk.lower() not in ("narrator", "người kể chuyện", "none", "", "character") and spk not in char_names:
                         char_names.append(spk)
 
         assigned_voices = set(character_voices.values())
@@ -1236,7 +1301,8 @@ Return ONLY raw JSON matching this structure:
         language: str = "en",
         target: str = "all",
         target_scene_idx: int = None,
-        auto_invent: bool = False
+        auto_invent: bool = False,
+        characters: Union[List[str], str, None] = None
     ) -> List[Dict[str, Any]]:
         """
         Extracts dialogues from the story (`idea`) and scene fields, and synchronizes/adds them to:
@@ -1254,6 +1320,22 @@ Return ONLY raw JSON matching this structure:
         update_clip = target_norm in ("all", "clip", "video", "image_clip")
 
         story_dialogues = ScriptAgent.extract_story_dialogues(idea) if idea else []
+
+        char_names_list = []
+        if isinstance(characters, list):
+            char_names_list = [str(c).strip() for c in characters if c and str(c).strip() and str(c).lower() not in ("narrator", "character")]
+        elif isinstance(characters, str) and characters.strip():
+            for p in re.split(r'[|\n]+', characters):
+                m_c = re.match(r'^(?:[A-Za-z0-9_\s]+:)?\s*([^,:\(\)]+)', p.strip())
+                if m_c:
+                    c_n = m_c.group(1).strip()
+                    if c_n and c_n.lower() not in ("narrator", "người kể chuyện", "character"):
+                        char_names_list.append(c_n)
+        if not char_names_list and story_dialogues:
+            for d in story_dialogues:
+                spk = (d.get("speaker") or "").strip()
+                if spk and spk.lower() not in ("narrator", "người kể chuyện", "character") and spk not in char_names_list:
+                    char_names_list.append(spk)
 
         # Helper to tokenize Vietnamese/English content words for matching
         stop_words = {
@@ -1484,7 +1566,7 @@ Return ONLY raw JSON matching this structure:
             # Populate / sync structured dialogue segments for multi-voice casting
             sc["dialogues"] = ScriptAgent.extract_scene_dialogue_segments(
                 narration=sc.get("narration", narr),
-                characters=None,
+                characters=char_names_list,
                 narrator_name="Narrator",
                 matched_dialogues=matched_d
             )

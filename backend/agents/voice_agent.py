@@ -447,6 +447,10 @@ class VoiceAgent:
             for k, v in char_voices.items():
                 if k.lower() in low_spk or low_spk in k.lower():
                     return v
+            if low_spk == "character":
+                named = [v for k, v in char_voices.items() if k.lower() not in ("narrator", "người kể chuyện", "character")]
+                if named:
+                    return named[0]
             return char_voices.get("Narrator") or def_voice
 
         # Check if single speaker / single voice needed

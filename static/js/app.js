@@ -1941,7 +1941,13 @@ class AniStoryApp {
     if (!isEnabled) return;
 
     const voicesMap = this.currentProject.character_voices || {};
-    const charNames = Object.keys(voicesMap);
+    let charNames = Object.keys(voicesMap);
+
+    // Filter out generic "Character" if specific named characters exist
+    const hasNamedChars = charNames.some(c => !["narrator", "người kể chuyện", "character"].includes(c.toLowerCase()));
+    if (hasNamedChars) {
+      charNames = charNames.filter(c => c.toLowerCase() !== "character");
+    }
 
     if (charNames.length === 0) {
       voicesMap["Narrator"] = this.currentProject.voice || "vi-VN-HoaiMyNeural-story";

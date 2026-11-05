@@ -889,7 +889,8 @@ async def sync_project_dialogues(project_id: str, req: SyncDialoguesRequest = Bo
         language=lang,
         target=req.target or "all",
         target_scene_idx=req.scene_idx,
-        auto_invent=(req.scene_idx is not None)
+        auto_invent=(req.scene_idx is not None),
+        characters=project.get("characters")
     )
 
     p_dir = Path(OUTPUT_DIR) / "projects" / project_id

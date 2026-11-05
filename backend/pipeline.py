@@ -403,6 +403,20 @@ class AnimationPipeline:
         char_voices = project.get("character_voices") or {}
         sc_dialogues = scene.get("dialogues")
 
+        # Ensure scene dialogues use actual named characters instead of generic "Character"
+        named_chars = [c for c in char_voices.keys() if c.lower() not in ("narrator", "người kể chuyện", "character")]
+        if named_chars and (not sc_dialogues or any((d.get("speaker") or "").lower() == "character" for d in sc_dialogues)):
+            from backend.agents.script_agent import ScriptAgent
+            fresh_dialogues = ScriptAgent.extract_scene_dialogue_segments(
+                narration=scene.get("narration", ""),
+                characters=named_chars or project.get("characters"),
+                narrator_name="Narrator"
+            )
+            if fresh_dialogues and len(fresh_dialogues) > 1:
+                sc_dialogues = fresh_dialogues
+                scene["dialogues"] = fresh_dialogues
+                self.save_project(project)
+
         try:
             res = await self.voice_agent.synthesize(
                 text=scene["narration"],
@@ -829,6 +843,11 @@ class AnimationPipeline:
             narrator_voice=project.get("voice"),
             existing_voices=None
         )
+
+        # Remove generic "Character" fallback key if specific named characters exist
+        has_named_chars = any(k.lower() not in ("narrator", "người kể chuyện", "character") for k in project["character_voices"])
+        if has_named_chars and "Character" in project["character_voices"]:
+            del project["character_voices"]["Character"]
 
         for sc in project.get("scenes", []):
             sc["voiced_narration"] = ""
