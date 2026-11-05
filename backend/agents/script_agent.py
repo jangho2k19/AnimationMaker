@@ -463,6 +463,10 @@ CINEMATIC DIRECTIVES:
    - NO GENERIC FILLER OR SCENERY STUBS: Never write disconnected 3-5 word weather/scenery fragments or generic atmospheric platitudes that do not advance the story.
    - PACING RULE: Aim for 14 to {max_words} words per scene so the narration tells the story clearly while fitting comfortably within an 8-second scene clip.
 
+6. MULTI-VOICE CHARACTER DIALOGUES (STUDIO PRODUCTION QUALITY):
+   - In scenes where characters speak or converse, output a `dialogues` array segmenting the scene speech: `[{{"speaker": "Narrator", "text": "Intro..."}}, {{"speaker": "Character Name", "text": "Spoken line..."}}]`.
+   - Keep speaker names consistent with the names declared in `characters` so individual character neural voices can be auto-cast.
+
 Return ONLY raw JSON matching this structure:
 {{
   "title": "Title",
@@ -476,6 +480,10 @@ Return ONLY raw JSON matching this structure:
       "visual_prompt": "Detailed static illustration description: frozen composition, character visual details and outfit, environment, color palette, lighting in {art_style} art style. (NO timing, NO camera moves, NO dialogue quotes)",
       "acting_prompt": "Medium wide shot of [Character] in [Setting]. The camera executes a smooth slow dolly push-in at eye level with fluid stabilization. 0-3s: [Character] steps forward naturally as ambient wind stirs clothing and hair. 3-6s: [Character] pauses to inspect [prop/surroundings], eyes filled with quiet resolve. Character says in a calm voice: \\\"We are close.\\\" (no subtitles). 6-8s: [Character] takes a steady breath as the scene holds composition. Volumetric atmospheric rim lighting with soft 35mm depth of field.\\n\\nAudio: gentle mountain breeze, distant bird calls, no background music.\\nSFX: soft footsteps on stone, cloth rustle.\\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.",
       "narration": "...",
+      "dialogues": [
+        {{"speaker": "Narrator", "text": "..."}},
+        {{"speaker": "Character Name", "text": "..."}}
+      ],
       "camera_motion": "zoom_in"
     }}
   ]
@@ -1014,6 +1022,213 @@ Return ONLY raw JSON matching this structure:
         return extracted
 
     @staticmethod
+    def extract_scene_dialogue_segments(
+        narration: str,
+        characters: List[str] = None,
+        narrator_name: str = "Narrator",
+        matched_dialogues: List[Dict[str, Any]] = None
+    ) -> List[Dict[str, str]]:
+        """
+        Extracts structured speaker segments from scene narration for multi-voice synthesis.
+        Splits between third-person narrator lines and authentic quoted character dialogue.
+        """
+        if not narration or not narration.strip():
+            return []
+
+        clean_narr = narration.strip()
+        chars = [c.strip() for c in (characters or []) if c and c.strip()]
+
+        # 1. If explicit matched dialogues exist from story analysis, segment based on them
+        if matched_dialogues:
+            segments = []
+            curr_text = clean_narr
+            for md in matched_dialogues:
+                d_line = (md.get("line") or "").strip(' "“”')
+                spk = (md.get("speaker") or "").strip() or "Character"
+                if not d_line:
+                    continue
+                pos = curr_text.find(d_line)
+                if pos != -1:
+                    prefix = curr_text[:pos].rstrip(' "“”:\t\n')
+                    if prefix:
+                        segments.append({"speaker": narrator_name, "text": prefix})
+                    segments.append({"speaker": spk, "text": d_line})
+                    curr_text = curr_text[pos + len(d_line):].lstrip(' "“”\t\n')
+                else:
+                    segments.append({"speaker": spk, "text": d_line})
+            if curr_text.strip(' "“”'):
+                segments.append({"speaker": narrator_name, "text": curr_text.strip(' "“”')})
+            if segments:
+                return segments
+
+        # 2. Extract quotes with speaker heuristic
+        quote_pattern = re.compile(r'([^"“”\n]*?)["“]([^"”]+)["”]')
+        segments = []
+        last_end = 0
+
+        for match in quote_pattern.finditer(clean_narr):
+            prefix = match.group(1).strip()
+            quote = match.group(2).strip()
+
+            speaker = "Character"
+            found_char = None
+            for c in chars:
+                if c.lower() in prefix.lower():
+                    found_char = c
+                    break
+
+            if found_char:
+                speaker = found_char
+            else:
+                m_spk = re.search(
+                    r'([A-Za-zÀ-ỹ\s]{2,25})\s*(?:thưa|nói|hỏi|đáp|kêu|bảo|quát|la|cười|mắng|than|nghĩ|lắp bắp|chữa cháy|said|asked|replied|shouted|exclaimed|gasped|yelled)\s*[:,\-]?\s*$',
+                    prefix,
+                    re.IGNORECASE
+                )
+                if m_spk:
+                    cand = m_spk.group(1).strip()
+                    cand = re.sub(r'\b(?:liền|bèn|vội|hớt hải|ngơ ngác|sợ hãi|tức giận)\b', '', cand, flags=re.IGNORECASE).strip()
+                    if cand:
+                        speaker = cand.title()
+                elif ':' in prefix:
+                    cand = prefix.split(':')[-1].strip()
+                    if 2 <= len(cand) <= 25:
+                        speaker = cand.title()
+
+            if prefix:
+                segments.append({"speaker": narrator_name, "text": prefix})
+            if quote:
+                segments.append({"speaker": speaker, "text": quote})
+            last_end = match.end()
+
+        remainder = clean_narr[last_end:].strip(' \t\n')
+        if remainder:
+            segments.append({"speaker": narrator_name, "text": remainder})
+
+        if not segments:
+            segments.append({"speaker": narrator_name, "text": clean_narr})
+
+        return segments
+
+    @staticmethod
+    def auto_assign_character_voices(
+        characters_str: str = "",
+        scenes: List[Dict[str, Any]] = None,
+        language: str = "vi",
+        narrator_voice: str = None,
+        existing_voices: Dict[str, str] = None
+    ) -> Dict[str, str]:
+        """
+        Intelligently analyzes the story character roster and dialogue speakers,
+        detecting gender, age (child, adult, elder), and personality archetype,
+        then casts distinct, highly expressive voices from the voice catalog.
+        """
+        character_voices = dict(existing_voices or {})
+
+        # Default narrator voice
+        if "Narrator" not in character_voices or not character_voices["Narrator"]:
+            if narrator_voice:
+                character_voices["Narrator"] = narrator_voice
+            elif (language or "").startswith("vi"):
+                character_voices["Narrator"] = "vi-VN-HoaiMyNeural-story"
+            else:
+                character_voices["Narrator"] = "en-US-ChristopherNeural"
+
+        char_names = []
+        if characters_str:
+            parts = re.split(r'[|\n]+', characters_str)
+            for p in parts:
+                p_strip = p.strip()
+                if not p_strip:
+                    continue
+                m = re.match(r'^(?:[A-Za-z0-9_\s]+:)?\s*([^,:\(\)]+)', p_strip)
+                if m:
+                    c_name = m.group(1).strip()
+                    if c_name and c_name.lower() not in ("narrator", "người kể chuyện", "bối cảnh", "setting", "title"):
+                        if c_name not in char_names:
+                            char_names.append(c_name)
+
+        if scenes:
+            for sc in scenes:
+                d_list = sc.get("dialogues") or []
+                for d in d_list:
+                    spk = (d.get("speaker") or "").strip()
+                    if spk and spk.lower() not in ("narrator", "người kể chuyện", "none", "") and spk not in char_names:
+                        char_names.append(spk)
+
+        assigned_voices = set(character_voices.values())
+
+        # Curated pools for Vietnamese
+        male_energetic_pool = ["vi-VN-NamMinhNeural-energetic", "gemini-Puck", "vi-VN-NamMinhNeural"]
+        male_heroic_pool = ["vi-VN-NamMinhNeural-heroic", "gemini-Fenrir", "gemini-Charon", "vi-VN-NamMinhNeural-documentary"]
+        male_elder_pool = ["vi-VN-NamMinhNeural-elder", "vi-VN-NamMinhNeural-story", "gemini-Orus"]
+        male_standard_pool = ["vi-VN-NamMinhNeural", "gemini-Enceladus", "vi-VN-NamMinhNeural-commercial"]
+
+        female_energetic_pool = ["vi-VN-HoaiMyNeural-energetic", "gemini-Zephyr", "gemini-Leda"]
+        female_sweet_pool = ["vi-VN-HoaiMyNeural-sweet", "gemini-Callirrhoe", "gemini-Kore"]
+        female_elder_pool = ["vi-VN-HoaiMyNeural-elder", "vi-VN-HoaiMyNeural-story"]
+        female_drama_pool = ["vi-VN-HoaiMyNeural-drama", "gemini-Aoede", "vi-VN-HoaiMyNeural-commercial"]
+        female_standard_pool = ["vi-VN-HoaiMyNeural", "gtts-vi"]
+
+        # English pools
+        en_male_pool = ["en-US-GuyNeural", "en-GB-RyanNeural", "en-US-ChristopherNeural"]
+        en_female_pool = ["en-US-JennyNeural", "en-GB-SoniaNeural", "en-US-AriaNeural"]
+
+        def pick_from_pool(pool):
+            for vid in pool:
+                if vid not in assigned_voices:
+                    assigned_voices.add(vid)
+                    return vid
+            return pool[0]
+
+        is_vi = (language or "").startswith("vi")
+
+        for name in char_names:
+            if name in character_voices and character_voices[name]:
+                continue
+
+            context = ""
+            for p in re.split(r'[|\n]+', characters_str or ""):
+                if name.lower() in p.lower():
+                    context = p.lower()
+                    break
+            low_name = f"{name} {context}".lower()
+
+            is_elder = any(w in low_name for w in ["ông", "cụ", "bà lão", "già", "bụt", "tiên", "old", "elder", "grandfather", "grandmother"])
+            is_child_energetic = any(w in low_name for w in ["bé", "nhỏ", "tí", "khôi", "con", "child", "young boy", "kid", "boy", "lively", "energetic"])
+            is_female = any(w in low_name for w in ["cô", "bé gái", "nữ", "mẹ", "bà", "nàng", "chị", "em gái", "lan", "phương", "mai", "hoa", "girl", "woman", "mother", "female", "princess", "queen", "daughter", "lady"])
+            is_heroic_official = any(w in low_name for w in ["quan", "huyện", "đại nhân", "tướng", "vua", "hoàng đế", "phán quan", "thẩm phán", "heroic", "magistrate", "judge", "king", "general", "warrior"])
+
+            if is_vi:
+                if is_female:
+                    if is_elder:
+                        voice = pick_from_pool(female_elder_pool)
+                    elif is_child_energetic:
+                        voice = pick_from_pool(female_energetic_pool)
+                    elif any(w in low_name for w in ["kịch tính", "ác", "tức giận", "drama", "giận"]):
+                        voice = pick_from_pool(female_drama_pool)
+                    else:
+                        voice = pick_from_pool(female_sweet_pool)
+                else:
+                    if is_elder:
+                        voice = pick_from_pool(male_elder_pool)
+                    elif is_heroic_official:
+                        voice = pick_from_pool(male_heroic_pool)
+                    elif is_child_energetic:
+                        voice = pick_from_pool(male_energetic_pool)
+                    else:
+                        voice = pick_from_pool(male_standard_pool)
+            else:
+                if is_female:
+                    voice = pick_from_pool(en_female_pool)
+                else:
+                    voice = pick_from_pool(en_male_pool)
+
+            character_voices[name] = voice
+
+        return character_voices
+
+    @staticmethod
     def sync_story_dialogues_to_scenes(
         scenes: List[Dict[str, Any]],
         idea: str = "",
@@ -1266,6 +1481,14 @@ Return ONLY raw JSON matching this structure:
             if update_narration:
                 sc["narration"] = narr
 
+            # Populate / sync structured dialogue segments for multi-voice casting
+            sc["dialogues"] = ScriptAgent.extract_scene_dialogue_segments(
+                narration=sc.get("narration", narr),
+                characters=None,
+                narrator_name="Narrator",
+                matched_dialogues=matched_d
+            )
+
             # Update Image Prompt (`visual_prompt`) with expressive dialogue visual cues if scene has dialogue
             if update_image and primary_clip_quote and vis:
                 vis_is_vi = any(ord(c) > 127 for c in vis)
@@ -1387,6 +1610,8 @@ Return ONLY raw JSON matching this structure:
         scene["visual_prompt"] = raw_vis
         scene["acting_prompt"] = pro_acting
         scene["narration"] = narration
+        if not scene.get("dialogues") and narration:
+            scene["dialogues"] = ScriptAgent.extract_scene_dialogue_segments(narration)
         return scene
 
     @staticmethod

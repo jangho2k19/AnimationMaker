@@ -2836,3 +2836,159 @@ body {
   transform: scale(1.05);
 }
 
+/* ====================================================================
+   MULTI-VOICE CHARACTER CASTING STYLES
+   ==================================================================== */
+.character-voice-casting-bar {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: rgba(18, 24, 38, 0.65);
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  animation: fadeIn 0.25s ease-out;
+}
+
+.casting-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.casting-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #f3f4f6;
+}
+
+.casting-bar-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+.character-voices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.character-voice-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.character-voice-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+.char-voice-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 90px;
+  max-width: 120px;
+  flex-shrink: 0;
+}
+
+.char-voice-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e0e7ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.char-voice-select {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 2px 6px;
+  font-size: 11px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #f1f5f9;
+  cursor: pointer;
+}
+
+.char-voice-select:focus {
+  outline: none;
+  border-color: #8b5cf6;
+}
+
+.char-audition-btn {
+  padding: 2px 7px;
+  height: 28px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* Scene Dialogue Multi-Voice Display */
+.scene-multivoice-badge {
+  background: rgba(139, 92, 246, 0.2) !important;
+  color: #c4b5fd !important;
+  border: 1px solid rgba(139, 92, 246, 0.45) !important;
+  font-weight: 600;
+}
+
+.scene-dialogue-breakdown {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 6px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+}
+
+.dialogue-segment-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.dialogue-segment-row:last-child {
+  margin-bottom: 0;
+}
+
+.dialogue-speaker-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: rgba(139, 92, 246, 0.25);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.dialogue-speaker-pill.narrator {
+  background: rgba(100, 116, 139, 0.25);
+  color: #cbd5e1;
+  border-color: rgba(100, 116, 139, 0.35);
+}
+
+.dialogue-text-bubble {
+  color: #e2e8f0;
+  font-style: italic;
+}
+
+

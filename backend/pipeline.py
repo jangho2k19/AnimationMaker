@@ -67,7 +67,8 @@ class AnimationPipeline:
         enable_voiceover: bool = True,
         enable_subtitles: bool = True,
         project_type: str = "animation",
-        product_info: Optional[Dict[str, Any]] = None
+        product_info: Optional[Dict[str, Any]] = None,
+        enable_multivoice: bool = True
     ) -> Dict[str, Any]:
         """Initialize a new project record with folder name matching the title."""
         chosen_title = (title or "").strip()
@@ -88,6 +89,8 @@ class AnimationPipeline:
             "idea": idea,
             "art_style": art_style,
             "voice": voice,
+            "enable_multivoice": enable_multivoice,
+            "character_voices": {"Narrator": voice},
             "ai_provider": self.ai_provider,
             "ai_model": self.ai_model or "",
             "api_key": self.api_key or "",
@@ -231,6 +234,15 @@ class AnimationPipeline:
         project["logline"] = story_data["logline"]
         project["characters"] = story_data.get("characters", "")
         project["scenes"] = story_data["scenes"]
+
+        # Auto-cast character voices for multi-voice dialogue
+        project["character_voices"] = ScriptAgent.auto_assign_character_voices(
+            characters_str=project.get("characters", ""),
+            scenes=project.get("scenes", []),
+            language=language,
+            narrator_voice=project.get("voice"),
+            existing_voices=project.get("character_voices")
+        )
         # Record the final scene count (important when Auto mode let the agent decide)
         actual_count = len(project["scenes"])
         if actual_count > 0:
@@ -358,6 +370,10 @@ class AnimationPipeline:
             if act_dur > 0:
                 max_dur = max(3.0, round(act_dur - 0.2, 2))
 
+        enable_mv = project.get("enable_multivoice", True)
+        char_voices = project.get("character_voices") or {}
+        sc_dialogues = scene.get("dialogues")
+
         try:
             res = await self.voice_agent.synthesize(
                 text=scene["narration"],
@@ -366,7 +382,10 @@ class AnimationPipeline:
                 voice=project.get("voice", "en-US-ChristopherNeural"),
                 api_key=project.get("api_key"),
                 allow_voice_fallback=False,
-                max_duration=max_dur
+                max_duration=max_dur,
+                dialogues=sc_dialogues,
+                character_voices=char_voices,
+                enable_multivoice=enable_mv
             )
         except Exception:
             res = await self.voice_agent.synthesize(
@@ -376,7 +395,10 @@ class AnimationPipeline:
                 voice=project.get("voice", "en-US-ChristopherNeural"),
                 api_key=project.get("api_key"),
                 allow_voice_fallback=True,
-                max_duration=max_dur
+                max_duration=max_dur,
+                dialogues=sc_dialogues,
+                character_voices=char_voices,
+                enable_multivoice=enable_mv
             )
 
         scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
@@ -612,6 +634,9 @@ class AnimationPipeline:
                 narration_changed = (scene.get("voiced_narration") != (scene.get("narration") or "").strip())
                 if narration_changed or not audio_file.exists() or not srt_file.exists():
                     notify(52 + int((idx / total_scenes) * 15), f"Narrating scene {idx + 1} of {total_scenes}..." if enable_voiceover else f"Preparing scene {idx + 1} subtitles...")
+                    enable_mv = project.get("enable_multivoice", True)
+                    char_voices = project.get("character_voices") or {}
+                    sc_dialogues = scene.get("dialogues")
                     try:
                         res = await self.voice_agent.synthesize(
                             text=scene["narration"],
@@ -619,7 +644,10 @@ class AnimationPipeline:
                             output_srt_path=str(srt_file),
                             voice=clip_voice,
                             api_key=project.get("api_key"),
-                            allow_voice_fallback=False
+                            allow_voice_fallback=False,
+                            dialogues=sc_dialogues,
+                            character_voices=char_voices,
+                            enable_multivoice=enable_mv
                         )
                     except Exception as e_voice_fail:
                         print(f"Scene {idx + 1} primary voice notice ({e_voice_fail}). Engaging resilient fallback...")
@@ -630,7 +658,10 @@ class AnimationPipeline:
                             output_srt_path=str(srt_file),
                             voice=clip_voice,
                             api_key=project.get("api_key"),
-                            allow_voice_fallback=True
+                            allow_voice_fallback=True,
+                            dialogues=sc_dialogues,
+                            character_voices=char_voices,
+                            enable_multivoice=enable_mv
                         )
                         # If this scene resolved to a fallback voice, update clip_voice so subsequent scenes stay consistent
                         if res.get("is_fallback") and res.get("voice"):
@@ -710,4 +741,63 @@ class AnimationPipeline:
         self.save_project(project)
 
         notify(100, "Ready! Your animated film has been created!")
+        return project
+
+    def set_character_voice(self, project_id: str, character_name: str, voice_id: str) -> Dict[str, Any]:
+        """Assigns a specific voice to a character in the project."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        if "character_voices" not in project or not isinstance(project["character_voices"], dict):
+            project["character_voices"] = {}
+
+        project["character_voices"][character_name] = voice_id
+        if character_name.lower() in ("narrator", "người kể chuyện"):
+            project["voice"] = voice_id
+
+        # Mark scenes featuring this character as needing audio update
+        for sc in project.get("scenes", []):
+            sc_d = sc.get("dialogues") or []
+            if any(d.get("speaker", "").lower() == character_name.lower() for d in sc_d):
+                sc["voiced_narration"] = ""
+
+        self.save_project(project)
+        return project
+
+    def toggle_multivoice(self, project_id: str, enable: Optional[bool] = None) -> Dict[str, Any]:
+        """Toggles multi-voice character dialogue mode on or off."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        curr = project.get("enable_multivoice", True)
+        new_val = (not curr) if enable is None else bool(enable)
+        project["enable_multivoice"] = new_val
+
+        # Clear voiced_narration so next preview or render uses the updated mode
+        for sc in project.get("scenes", []):
+            sc["voiced_narration"] = ""
+
+        self.save_project(project)
+        return project
+
+    def auto_cast_project_voices(self, project_id: str) -> Dict[str, Any]:
+        """Automatically analyzes character roster and dialogues to assign diverse voices."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        project["character_voices"] = ScriptAgent.auto_assign_character_voices(
+            characters_str=project.get("characters", ""),
+            scenes=project.get("scenes", []),
+            language=project.get("language", "vi" if any(ord(c) > 127 for c in project.get("idea", "")) else "en"),
+            narrator_voice=project.get("voice"),
+            existing_voices=None
+        )
+
+        for sc in project.get("scenes", []):
+            sc["voiced_narration"] = ""
+
+        self.save_project(project)
         return project

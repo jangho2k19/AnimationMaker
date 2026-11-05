@@ -394,6 +394,9 @@
                     <div class="voice-box-header">
                       <label for="selectVoice" class="input-label small-label">🎙️ Narrator Voice</label>
                       <div class="voice-toggles">
+                        <button id="btnToggleMultivoiceStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" title="Toggle Multi-Voice Dialogue (auto-casts unique character voices)">
+                          <span id="iconMultivoiceStage1">🎭</span> <span id="textMultivoiceStage1">Multi-Voice: ON</span>
+                        </button>
                         <button id="btnToggleVoiceoverStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" title="Click to turn Voiceover ON or OFF">
                           <span id="iconVoiceoverStage1">🎙️</span> <span id="textVoiceoverStage1">Voiceover: ON</span>
                         </button>
@@ -595,6 +598,9 @@
           <!-- Secondary Director Options Bar (Toggles & Character Lock) -->
           <div class="director-sub-row">
             <div class="director-toggles-wrap">
+              <button id="btnToggleMultivoiceStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle Multi-Voice Character Dialogue">
+                <span id="iconMultivoiceStage2">🎭</span> <span id="textMultivoiceStage2">Multi-Voice: ON</span>
+              </button>
               <button id="btnToggleVoiceoverStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle voiceover narration ON or OFF">
                 <span id="iconVoiceoverStage2">🎙️</span> <span id="textVoiceoverStage2">Voiceover: ON</span>
               </button>
@@ -625,6 +631,22 @@
               </div>
               <input type="text" id="inputCharacterConsistency" class="styled-input compact-char-input" placeholder="Main character visual traits (e.g. Leo, 10yo boy, yellow hoodie)...">
               <button id="btnLockCharacter" class="glass-btn secondary-btn compact-lock-btn" title="Save character specification">🔒 Lock</button>
+            </div>
+          </div>
+
+          <!-- Character Voice Casting Bar (Active when Multi-Voice is enabled) -->
+          <div id="characterVoiceCastingBar" class="character-voice-casting-bar" style="display:none;">
+            <div class="casting-bar-header">
+              <div class="casting-bar-title">
+                <span>🎭</span> <strong>Character Voice Casting</strong>
+                <span class="casting-bar-hint">Assign distinct character voices for each role</span>
+              </div>
+              <button id="btnAutoCastVoices" type="button" class="glass-btn secondary-btn compact-action-pill" title="Re-analyze character archetypes and auto-cast voices">
+                <span>🤖 Auto-Cast Voices</span>
+              </button>
+            </div>
+            <div id="characterVoicesList" class="character-voices-grid">
+              <!-- Populated dynamically via JS -->
             </div>
           </div>
         </div>

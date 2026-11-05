@@ -4,7 +4,7 @@ import shutil
 import asyncio
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import edge_tts
 from backend.config import FFMPEG_PATH, VOICES
 
@@ -383,6 +383,214 @@ class VoiceAgent:
 
         return True
 
+    async def synthesize_multivoice(
+        self,
+        dialogues: Optional[List[Dict[str, Any]]] = None,
+        narration: str = "",
+        character_voices: Optional[Dict[str, str]] = None,
+        output_audio_path: str = "scene.mp3",
+        output_srt_path: Optional[str] = None,
+        default_voice: Optional[str] = None,
+        api_key: Optional[str] = None,
+        max_duration: Optional[float] = None,
+        pause_gap: float = 0.25
+    ) -> dict:
+        """
+        Synthesizes multi-voice character dialogues for a scene.
+        Each speaker segment is voiced by their assigned character voice persona,
+        concatenated with natural speech pauses (pause_gap), and merged into
+        a single cohesive scene audio track with synchronized rhythmic subtitles.
+        """
+        output_audio_path = str(output_audio_path)
+        parent_dir = os.path.dirname(output_audio_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+
+        def_voice = default_voice or self.default_voice
+        char_voices = dict(character_voices or {})
+
+        # Resolve dialogue segments
+        segments = []
+        if dialogues and isinstance(dialogues, list):
+            for d in dialogues:
+                if isinstance(d, dict) and d.get("text", "").strip():
+                    segments.append({
+                        "speaker": d.get("speaker", "Narrator").strip(),
+                        "text": d.get("text", "").strip()
+                    })
+
+        if not segments and narration:
+            try:
+                from backend.agents.script_agent import ScriptAgent
+                segments = ScriptAgent.extract_scene_dialogue_segments(
+                    narration,
+                    characters=list(char_voices.keys()),
+                    narrator_name="Narrator"
+                )
+            except Exception:
+                segments = [{"speaker": "Narrator", "text": narration.strip()}]
+
+        if not segments:
+            segments = [{"speaker": "Narrator", "text": narration.strip() or "Scene action."}]
+
+        # Voice resolver
+        def get_voice_for_speaker(speaker_name: str) -> str:
+            spk = (speaker_name or "").strip()
+            if not char_voices:
+                return def_voice
+            if spk in char_voices:
+                return char_voices[spk]
+            low_spk = spk.lower()
+            for k, v in char_voices.items():
+                if k.lower() == low_spk:
+                    return v
+            for k, v in char_voices.items():
+                if k.lower() in low_spk or low_spk in k.lower():
+                    return v
+            return char_voices.get("Narrator") or def_voice
+
+        # Check if single speaker / single voice needed
+        voices_needed = [get_voice_for_speaker(s["speaker"]) for s in segments]
+        distinct_voices = set(voices_needed)
+
+        if len(segments) == 1 or len(distinct_voices) <= 1:
+            chosen_single_voice = voices_needed[0] if voices_needed else def_voice
+            combined_text = " ".join(s["text"] for s in segments) if len(segments) > 1 else segments[0]["text"]
+            res = await self.synthesize(
+                text=combined_text,
+                output_audio_path=output_audio_path,
+                output_srt_path=output_srt_path,
+                voice=chosen_single_voice,
+                api_key=api_key,
+                allow_voice_fallback=True,
+                max_duration=max_duration,
+                enable_multivoice=False
+            )
+            res["dialogues"] = segments
+            res["character_voices"] = char_voices
+            res["is_multivoice"] = False
+            return res
+
+        # Multi-voice synthesis flow
+        temp_dir = f"{output_audio_path}.multivoice_temp"
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_files = []
+        sil_file = os.path.join(temp_dir, "speech_gap.mp3")
+
+        try:
+            # Generate silence gap
+            if pause_gap > 0:
+                subprocess.run([
+                    FFMPEG_PATH, "-y",
+                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                    "-t", str(pause_gap),
+                    sil_file
+                ], capture_output=True)
+
+            all_cues = []
+            current_time = 0.0
+
+            for idx, seg in enumerate(segments):
+                seg_spk = seg["speaker"]
+                seg_text = seg["text"]
+                seg_voice = get_voice_for_speaker(seg_spk)
+                part_audio = os.path.join(temp_dir, f"part_{idx}.mp3")
+                part_srt = os.path.join(temp_dir, f"part_{idx}.srt")
+
+                # Synthesize individual segment
+                res = await self.synthesize(
+                    text=seg_text,
+                    output_audio_path=part_audio,
+                    output_srt_path=part_srt,
+                    voice=seg_voice,
+                    api_key=api_key,
+                    allow_voice_fallback=True,
+                    enable_multivoice=False
+                )
+                part_dur = res.get("duration") or self.get_audio_duration(part_audio)
+
+                # Subtitle cues with exact time offset
+                cues = self._chunk_text_into_rhythmic_cues(seg_text, current_time, current_time + part_dur)
+                all_cues.extend(cues)
+
+                temp_files.append(part_audio)
+                current_time += part_dur
+
+                if idx < len(segments) - 1 and pause_gap > 0 and os.path.exists(sil_file):
+                    temp_files.append(sil_file)
+                    current_time += pause_gap
+
+                # Pacing between Edge-TTS requests
+                await asyncio.sleep(0.4)
+
+            # Concatenate with FFmpeg
+            inputs = []
+            for tf in temp_files:
+                inputs.extend(["-i", str(tf)])
+            filter_inputs = "".join(f"[{i}:a]" for i in range(len(temp_files)))
+            filter_complex = f"{filter_inputs}concat=n={len(temp_files)}:v=0:a=1[aout]"
+
+            concat_cmd = [
+                FFMPEG_PATH, "-y",
+                *inputs,
+                "-filter_complex", filter_complex,
+                "-map", "[aout]",
+                "-b:a", "192k",
+                output_audio_path
+            ]
+            proc = subprocess.run(concat_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if proc.returncode != 0:
+                raise RuntimeError(f"Multi-voice audio concat failed: {proc.stderr}")
+
+            duration = self.get_audio_duration(output_audio_path)
+
+            # Max duration compression if exceeding acting video clip length
+            if max_duration and max_duration > 1.0 and duration > max_duration:
+                target_dur = max(1.0, max_duration - 0.2)
+                speedup_ratio = round(duration / target_dur, 3)
+                if 1.02 <= speedup_ratio <= 1.50:
+                    compressed_path = output_audio_path + ".compressed.mp3"
+                    tempo_cmd = [
+                        FFMPEG_PATH, "-y",
+                        "-i", str(output_audio_path),
+                        "-filter:a", f"atempo={speedup_ratio:.3f}",
+                        "-b:a", "192k",
+                        str(compressed_path)
+                    ]
+                    p_tempo = subprocess.run(tempo_cmd, capture_output=True, text=True)
+                    if p_tempo.returncode == 0 and os.path.exists(compressed_path):
+                        shutil.move(compressed_path, output_audio_path)
+                        duration = self.get_audio_duration(output_audio_path)
+                        for c in all_cues:
+                            c["start"] = round(c["start"] / speedup_ratio, 2)
+                            c["end"] = round(c["end"] / speedup_ratio, 2)
+
+            # Write combined SRT
+            if output_srt_path:
+                output_srt_path = str(output_srt_path)
+                parent_srt = os.path.dirname(output_srt_path)
+                if parent_srt:
+                    os.makedirs(parent_srt, exist_ok=True)
+                with open(output_srt_path, "w", encoding="utf-8") as srt_file:
+                    for c_idx, cue in enumerate(all_cues, 1):
+                        s_str = self._format_srt_timestamp(cue["start"])
+                        e_str = self._format_srt_timestamp(cue["end"])
+                        srt_file.write(f"{c_idx}\n{s_str} --> {e_str}\n{cue['text']}\n\n")
+
+            return {
+                "audio_path": output_audio_path,
+                "srt_path": output_srt_path,
+                "duration": duration,
+                "voice": def_voice,
+                "character_voices": char_voices,
+                "dialogues": segments,
+                "is_multivoice": True
+            }
+
+        finally:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
     async def synthesize(
         self,
         text: str,
@@ -393,16 +601,29 @@ class VoiceAgent:
         pitch: str = "+0Hz",
         api_key: str = None,
         allow_voice_fallback: bool = False,
-        max_duration: Optional[float] = None
+        max_duration: Optional[float] = None,
+        dialogues: Optional[List[Dict[str, Any]]] = None,
+        character_voices: Optional[Dict[str, str]] = None,
+        enable_multivoice: bool = False
     ) -> dict:
         """
-        Synthesizes narration speech using ONE consistent voice throughout the clip.
-        When allow_voice_fallback is False (default for clip narration), it strictly preserves
-        the chosen character voice and will NOT swap to an alternate gender or robotic voice.
-        If max_duration is specified (e.g. 7.8s for Google Flow / Veo 8s acting clips),
-        gently speeds up tempo via FFmpeg atempo if the audio duration exceeds it,
-        guaranteeing the voiceover is equal to or shorter than the video clip.
+        Synthesizes scene audio and subtitles.
+        When enable_multivoice is True and character_voices or dialogues are supplied,
+        routes to synthesize_multivoice() to voice each character with distinct personas.
+        When single-voice narration is desired, synthesizes using ONE consistent voice.
         """
+        if enable_multivoice and (dialogues or character_voices):
+            return await self.synthesize_multivoice(
+                dialogues=dialogues,
+                narration=text,
+                character_voices=character_voices,
+                output_audio_path=output_audio_path,
+                output_srt_path=output_srt_path,
+                default_voice=voice or self.default_voice,
+                api_key=api_key,
+                max_duration=max_duration
+            )
+
         clean_text = self._normalize_text_for_tts(text)
         selected_voice = voice or self.default_voice
         output_audio_path = str(output_audio_path)

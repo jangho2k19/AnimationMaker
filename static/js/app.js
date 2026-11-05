@@ -23,10 +23,12 @@ class AniStoryApp {
     this.config = null;
     this.selectedStyleKey = localStorage.getItem("anistory_cfg_art_style") || "ghibli";
     this.enableVoiceover = localStorage.getItem("anistory_cfg_enable_voiceover") !== "false";
+    this.enableMultivoice = localStorage.getItem("anistory_cfg_enable_multivoice") !== "false";
     this.pollInterval = null;
 
     this.initElements();
     this.updateVoiceoverUI(this.enableVoiceover);
+    this.updateMultivoiceUI(this.enableMultivoice);
     this.updateAutoPaintUI(localStorage.getItem("anistory_autopaint") === "true");
     this.restoreCachedProjectSync();
     this.attachEvents();
@@ -322,9 +324,18 @@ class AniStoryApp {
     this.btnToggleVoiceoverStage1 = document.getElementById("btnToggleVoiceoverStage1");
     this.iconVoiceoverStage1 = document.getElementById("iconVoiceoverStage1");
     this.textVoiceoverStage1 = document.getElementById("textVoiceoverStage1");
+    this.btnToggleMultivoiceStage1 = document.getElementById("btnToggleMultivoiceStage1");
+    this.iconMultivoiceStage1 = document.getElementById("iconMultivoiceStage1");
+    this.textMultivoiceStage1 = document.getElementById("textMultivoiceStage1");
     this.btnToggleVoiceoverStage2 = document.getElementById("btnToggleVoiceoverStage2");
     this.iconVoiceoverStage2 = document.getElementById("iconVoiceoverStage2");
     this.textVoiceoverStage2 = document.getElementById("textVoiceoverStage2");
+    this.btnToggleMultivoiceStage2 = document.getElementById("btnToggleMultivoiceStage2");
+    this.iconMultivoiceStage2 = document.getElementById("iconMultivoiceStage2");
+    this.textMultivoiceStage2 = document.getElementById("textMultivoiceStage2");
+    this.characterVoiceCastingBar = document.getElementById("characterVoiceCastingBar");
+    this.characterVoicesList = document.getElementById("characterVoicesList");
+    this.btnAutoCastVoices = document.getElementById("btnAutoCastVoices");
     this.selectVoiceStage2 = document.getElementById("selectVoiceStage2");
     this.btnAuditionVoiceStage2 = document.getElementById("btnAuditionVoiceStage2");
     this.iconAuditionVoiceStage2 = document.getElementById("iconAuditionVoiceStage2");
@@ -965,6 +976,80 @@ class AniStoryApp {
       });
     }
 
+    // Toggle Multi-Voice in Stage 1
+    if (this.btnToggleMultivoiceStage1) {
+      this.btnToggleMultivoiceStage1.addEventListener("click", () => {
+        this.enableMultivoice = !this.enableMultivoice;
+        localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
+        this.updateMultivoiceUI(this.enableMultivoice);
+        this.showToast(this.enableMultivoice ? "🎭 Multi-Voice enabled (auto-casts character voices)" : "🎙️ Multi-Voice disabled (single narrator reads all)");
+      });
+    }
+
+    // Toggle Multi-Voice in Stage 2
+    if (this.btnToggleMultivoiceStage2) {
+      this.btnToggleMultivoiceStage2.addEventListener("click", async () => {
+        if (!this.currentProject) return;
+        const oldState = this.currentProject.enable_multivoice !== false;
+        const newState = !oldState;
+        this.updateMultivoiceUI(newState);
+        try {
+          const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-multivoice`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enable: newState })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            }
+            this.currentProject.enable_multivoice = data.enable_multivoice;
+            this.enableMultivoice = data.enable_multivoice;
+            localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
+            this.saveActiveProjectState();
+            this.updateMultivoiceUI(this.currentProject.enable_multivoice);
+            this.renderStoryboardView();
+            this.showToast(data.enable_multivoice ? "🎭 Multi-Voice enabled" : "🎙️ Multi-Voice disabled (single narrator)");
+          }
+        } catch (e) {
+          console.error(e);
+          this.updateMultivoiceUI(oldState);
+          this.showToast("Failed to toggle multi-voice: " + e.message, true);
+        }
+      });
+    }
+
+    // Auto-cast voices button
+    if (this.btnAutoCastVoices) {
+      this.btnAutoCastVoices.addEventListener("click", async () => {
+        if (!this.currentProject) return;
+        const btn = this.btnAutoCastVoices;
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Casting Voices...</span>`;
+        try {
+          const resp = await fetch(`/api/projects/${this.currentProject.id}/auto-cast-voices`, { method: "POST" });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            }
+            this.saveActiveProjectState();
+            this.renderCharacterVoiceCasting();
+            this.showToast("✨ Voices auto-cast successfully!");
+          } else {
+            const err = await resp.json().catch(() => ({ detail: "Casting failed" }));
+            this.showToast(err.detail || "Failed to auto-cast voices", true);
+          }
+        } catch (e) {
+          this.showToast("Auto-cast error: " + e.message, true);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = `<span>🤖 Auto-Cast Voices</span>`;
+        }
+      });
+    }
+
     // Change Narrator Voice in Stage 2
     if (this.selectVoiceStage2) {
       this.selectVoiceStage2.addEventListener("change", async () => {
@@ -1464,6 +1549,184 @@ class AniStoryApp {
           this.btnToggleVoiceoverStage2.style.borderColor = "rgba(239,68,68,0.4)";
           this.btnToggleVoiceoverStage2.style.color = "#f87171";
         }
+      }
+    }
+  }
+
+  updateMultivoiceUI(enabled) {
+    if (this.btnToggleMultivoiceStage1) {
+      if (this.iconMultivoiceStage1) this.iconMultivoiceStage1.textContent = enabled ? "🎭" : "🎙️";
+      if (this.textMultivoiceStage1) this.textMultivoiceStage1.textContent = enabled ? "Multi-Voice: ON" : "Multi-Voice: OFF";
+      if (enabled) {
+        this.btnToggleMultivoiceStage1.style.background = "rgba(139,92,246,0.18)";
+        this.btnToggleMultivoiceStage1.style.color = "#c4b5fd";
+        this.btnToggleMultivoiceStage1.style.borderColor = "rgba(139,92,246,0.4)";
+      } else {
+        this.btnToggleMultivoiceStage1.style.background = "rgba(255,255,255,0.05)";
+        this.btnToggleMultivoiceStage1.style.color = "var(--text-muted)";
+        this.btnToggleMultivoiceStage1.style.borderColor = "rgba(255,255,255,0.1)";
+      }
+    }
+
+    if (this.btnToggleMultivoiceStage2) {
+      if (this.iconMultivoiceStage2) this.iconMultivoiceStage2.textContent = enabled ? "🎭" : "🎙️";
+      if (this.textMultivoiceStage2) this.textMultivoiceStage2.textContent = enabled ? "Multi-Voice: ON" : "Multi-Voice: OFF";
+      if (enabled) {
+        this.btnToggleMultivoiceStage2.style.borderColor = "rgba(139,92,246,0.45)";
+        this.btnToggleMultivoiceStage2.style.color = "#c4b5fd";
+      } else {
+        this.btnToggleMultivoiceStage2.style.borderColor = "rgba(255,255,255,0.12)";
+        this.btnToggleMultivoiceStage2.style.color = "var(--text-muted)";
+      }
+    }
+
+    if (this.characterVoiceCastingBar) {
+      this.characterVoiceCastingBar.style.display = enabled ? "block" : "none";
+    }
+  }
+
+  renderCharacterVoiceCasting() {
+    if (!this.characterVoiceCastingBar || !this.characterVoicesList) return;
+    if (!this.currentProject) return;
+
+    const isEnabled = this.currentProject.enable_multivoice !== false;
+    this.characterVoiceCastingBar.style.display = isEnabled ? "block" : "none";
+    if (!isEnabled) return;
+
+    const voicesMap = this.currentProject.character_voices || {};
+    const charNames = Object.keys(voicesMap);
+
+    if (charNames.length === 0) {
+      voicesMap["Narrator"] = this.currentProject.voice || "vi-VN-HoaiMyNeural-story";
+      charNames.push("Narrator");
+    }
+
+    this.characterVoicesList.innerHTML = "";
+    const allVoices = this.config?.voices || [];
+
+    charNames.forEach((charName) => {
+      const currentVoice = voicesMap[charName];
+      const card = document.createElement("div");
+      card.className = "character-voice-card";
+
+      const isNarrator = charName.toLowerCase() in { "narrator": 1, "người kể chuyện": 1 };
+      const icon = isNarrator ? "🎙️" : "🎭";
+
+      let optionsHtml = "";
+      allVoices.forEach(v => {
+        const isSelected = v.id === currentVoice ? "selected" : "";
+        optionsHtml += `<option value="${v.id}" ${isSelected}>${v.name}</option>`;
+      });
+
+      card.innerHTML = `
+        <div class="char-voice-info" title="${charName}">
+          <span>${icon}</span>
+          <span class="char-voice-name">${charName}</span>
+        </div>
+        <select class="char-voice-select styled-select" data-char="${encodeURIComponent(charName)}">
+          ${optionsHtml}
+        </select>
+        <button type="button" class="glass-btn secondary-btn char-audition-btn" data-char="${encodeURIComponent(charName)}" title="Audition this character's voice">
+          <span>🔊</span>
+        </button>
+      `;
+
+      const sel = card.querySelector(".char-voice-select");
+      sel.addEventListener("change", async (e) => {
+        const newVoiceId = e.target.value;
+        try {
+          const resp = await fetch(`/api/projects/${this.currentProject.id}/set-character-voice`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ character_name: charName, voice_id: newVoiceId })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            }
+            if (isNarrator) {
+              this.currentProject.voice = newVoiceId;
+              if (this.selectVoiceStage2) this.selectVoiceStage2.value = newVoiceId;
+            }
+            this.showToast(`🎭 ${charName}: assigned voice "${newVoiceId}"`);
+          }
+        } catch (err) {
+          this.showToast("Failed to update voice: " + err.message, true);
+        }
+      });
+
+      const btnAud = card.querySelector(".char-audition-btn");
+      btnAud.addEventListener("click", () => {
+        const voiceId = sel.value;
+        this.playCharacterVoiceAudition(voiceId, charName);
+      });
+
+      this.characterVoicesList.appendChild(card);
+    });
+  }
+
+  async playCharacterVoiceAudition(voiceId, charName) {
+    if (!this.audioAuditionPlayer) return;
+    const curProvider = this.selectAiProvider?.value || "gemini";
+    const curKey = this.getEffectiveApiKey(curProvider);
+    const selectedLang = this.currentProject?.language || (this.selectLanguage ? this.selectLanguage.value : "vi");
+
+    this.showToast(`🎙️ Auditioning voice for [${charName}]... ⏳`);
+    try {
+      const resp = await fetch("/api/audition-voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voice: voiceId,
+          language: selectedLang,
+          api_key: curKey
+        })
+      });
+      if (!resp.ok) throw new Error("Audition request failed");
+      const data = await resp.json();
+      if (data.audio_url) {
+        this.audioAuditionPlayer.src = `${data.audio_url}?t=${Date.now()}`;
+        this.audioAuditionPlayer.volume = 1.0;
+        this.audioAuditionPlayer.muted = false;
+        await this.audioAuditionPlayer.play();
+        this.showToast(`🔊 Playing voice sample for [${charName}]`);
+      }
+    } catch (e) {
+      this.showToast("Audition error: " + e.message, true);
+    }
+  }
+
+  async revoiceSceneAudio(sceneIdx, btn = null) {
+    if (!this.currentProject) return;
+    const originalText = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span>⏳ Narrating...</span>`;
+    }
+    this.showToast(`🎙️ Re-voicing Scene ${sceneIdx + 1} with assigned character voices... ⏳`);
+    try {
+      const resp = await fetch(`/api/projects/${this.currentProject.id}/regenerate-audio/${sceneIdx}`, {
+        method: "POST"
+      });
+      if (resp.ok) {
+        const updatedProj = await resp.json();
+        if (updatedProj && updatedProj.scenes) {
+          this.currentProject = updatedProj;
+          this.saveActiveProjectState();
+          this.renderStoryboardView();
+          this.showToast(`✅ Scene ${sceneIdx + 1} audio re-synthesized successfully! 🎙️`);
+        }
+      } else {
+        const err = await AniStoryApp.parseErrorResponse(resp, "Audio synthesis failed");
+        this.showToast(err, true);
+      }
+    } catch (err) {
+      this.showToast("Audio error: " + err.message, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
       }
     }
   }
@@ -2260,7 +2523,8 @@ ${isAutoScenes
         api_key: apiKey,
         image_mode: this.imageMode || "server",
         enable_voiceover: this.enableVoiceover !== false,
-        enable_subtitles: this.enableSubtitles !== false
+        enable_subtitles: this.enableSubtitles !== false,
+        enable_multivoice: this.enableMultivoice !== false
       };
 
       const resp = await fetch("/api/create-story", {
@@ -2531,7 +2795,8 @@ ${isAutoScenes
           api_key: apiKey,
           image_mode: this.imageMode || "server",
           enable_voiceover: this.enableVoiceover !== false,
-          enable_subtitles: this.enableSubtitles !== false
+          enable_subtitles: this.enableSubtitles !== false,
+          enable_multivoice: this.enableMultivoice !== false
         })
       });
 
@@ -2630,6 +2895,8 @@ ${isAutoScenes
 
     this.updateSubtitlesUI(this.currentProject.enable_subtitles !== false);
     this.updateVoiceoverUI(this.currentProject.enable_voiceover !== false);
+    this.updateMultivoiceUI(this.currentProject.enable_multivoice !== false);
+    this.renderCharacterVoiceCasting();
     if (this.selectVoiceStage2 && this.currentProject.voice) {
       this.selectVoiceStage2.value = this.currentProject.voice;
     }
@@ -2708,11 +2975,28 @@ ${isAutoScenes
       scene.visual_prompt = visPrompt;
       scene.acting_prompt = actPrompt;
 
+      const isMultiVoiceScene = Boolean(
+        this.currentProject.enable_multivoice !== false &&
+        scene.dialogues &&
+        scene.dialogues.length > 1
+      );
+      const dialogueBreakdownHtml = (isMultiVoiceScene && scene.dialogues) ? `
+        <div class="scene-dialogue-breakdown">
+          ${scene.dialogues.map(d => `
+            <div class="dialogue-segment-row">
+              <span class="dialogue-speaker-pill ${(d.speaker || '').toLowerCase() === 'narrator' ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
+              <span class="dialogue-text-bubble">"${d.text || ''}"</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : '';
+
       card.innerHTML = `
         <div class="scene-card-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
             ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.25); color:#c4b5fd; font-weight:600; border:1px solid rgba(139,92,246,0.4);">🎭 ${scene.archetype}</span>` : ''}
+            ${isMultiVoiceScene ? `<span class="scene-badge scene-multivoice-badge" title="Multi-Voice Scene: ${scene.dialogues.length} character dialogue segments">🎭 Multi-Voice (${scene.dialogues.length})</span>` : ''}
             ${scene.is_product_photo ? `<span class="scene-badge" style="background:rgba(16,185,129,0.2); color:#6ee7b7; border:1px solid rgba(16,185,129,0.4); font-weight:600;">🛍️ Product Photo</span>` : ''}
             <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" id="sceneStatusPill_${idx}">
               ${hasSavedImage ? '✓ Ready' : '⏳ Ready to Paint'}
@@ -2753,11 +3037,13 @@ ${isAutoScenes
               <div style="display:flex; align-items:center; gap:6px;">
                 <label class="field-label" style="margin-bottom:0;">🎙️ Voiceover Narration</label>
                 <button class="scene-action-pill btn-sync-scene-dialogue" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#6ee7b7; border-color:rgba(16,185,129,0.45); background:rgba(16,185,129,0.15);" title="Add/sync dialogue from story to Voiceover Narration, Image & Video Clip prompts">💬 +Dialogue</button>
+                <button class="scene-action-pill btn-revoice-scene" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#c4b5fd; border-color:rgba(139,92,246,0.45); background:rgba(139,92,246,0.15);" title="Re-synthesize audio for this scene with assigned character voices">🎙️ Re-Voice</button>
                 ${this.currentProject.enable_voiceover === false ? '<span class="tag-badge" style="background:rgba(239,68,68,0.15); color:#f87171; font-size:10px; padding:1px 6px;">🔇 Muted</span>' : ''}
               </div>
               <span class="narration-badge" id="badgeNarr_${idx}" style="font-size:11px; padding:2px 7px; border-radius:12px; font-weight:500;"></span>
             </div>
             <textarea class="scene-narration-input" id="narration_${idx}" placeholder="Concise voiceover narration (<= 16 words to fit 8s video)...">${scene.narration || ""}</textarea>
+            ${dialogueBreakdownHtml}
           </div>
 
           <!-- SEPARATE PROMPT 1: Image Prompt (Still Art / Imagen 3 / Midjourney) -->
@@ -2896,6 +3182,9 @@ ${isAutoScenes
       });
       card.querySelectorAll(".btn-sync-scene-dialogue").forEach(btn => {
         btn.addEventListener("click", () => this.syncStoryDialogues(idx, "all", btn));
+      });
+      card.querySelectorAll(".btn-revoice-scene").forEach(btn => {
+        btn.addEventListener("click", () => this.revoiceSceneAudio(idx, btn));
       });
 
       this.storyboardScenesGrid.appendChild(card);
@@ -4125,10 +4414,13 @@ ${isAutoScenes
     this.currentProject = p;
     this.enableVoiceover = p.enable_voiceover !== false;
     this.enableSubtitles = p.enable_subtitles !== false;
+    this.enableMultivoice = p.enable_multivoice !== false;
     localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
     localStorage.setItem("anistory_cfg_enable_subtitles", this.enableSubtitles ? "true" : "false");
+    localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
     this.updateVoiceoverUI(this.enableVoiceover);
     this.updateSubtitlesUI(this.enableSubtitles);
+    this.updateMultivoiceUI(this.enableMultivoice);
     this.saveActiveProjectState();
 
     if (this.modalProjects) {

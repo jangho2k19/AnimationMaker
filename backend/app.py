@@ -47,6 +47,7 @@ class CreateStoryRequest(BaseModel):
     video_mode: Optional[str] = "acting"
     enable_voiceover: bool = True
     enable_subtitles: bool = True
+    enable_multivoice: bool = True
 
 class ImportStoryRequest(BaseModel):
     text: str
@@ -59,6 +60,14 @@ class ImportStoryRequest(BaseModel):
     image_mode: str = "gemini"
     enable_voiceover: bool = True
     enable_subtitles: bool = True
+    enable_multivoice: bool = True
+
+class SetCharacterVoiceRequest(BaseModel):
+    character_name: str
+    voice_id: str
+
+class ToggleMultivoiceRequest(BaseModel):
+    enable: Optional[bool] = None
 
 class UpdateScenesRequest(BaseModel):
     title: Optional[str] = None
@@ -458,7 +467,8 @@ async def create_story(req: CreateStoryRequest):
             aspect_ratio=req.aspect_ratio,
             image_mode=req.image_mode,
             enable_voiceover=req.enable_voiceover,
-            enable_subtitles=req.enable_subtitles
+            enable_subtitles=req.enable_subtitles,
+            enable_multivoice=req.enable_multivoice
         )
         project["video_mode"] = req.video_mode or "acting"
 
@@ -515,12 +525,20 @@ async def import_story(req: ImportStoryRequest):
             image_mode=req.image_mode,
             enable_voiceover=req.enable_voiceover,
             enable_subtitles=req.enable_subtitles,
-            num_scenes=len(story_data["scenes"])
+            num_scenes=len(story_data["scenes"]),
+            enable_multivoice=req.enable_multivoice
         )
         project["title"] = req.title or story_data.get("title", "Imported Animated Story")
         project["logline"] = story_data.get("logline", "")
         project["characters"] = story_data.get("characters", "")
         project["scenes"] = story_data["scenes"]
+        project["character_voices"] = ScriptAgent.auto_assign_character_voices(
+            characters_str=project.get("characters", ""),
+            scenes=project.get("scenes", []),
+            language="vi" if any(ord(c) > 127 for c in req.text) else "en",
+            narrator_voice=project.get("voice"),
+            existing_voices=None
+        )
         project["status"] = "storyboard_ready"
         project["progress"] = 30
         project["current_step"] = "AI Storyboard imported and ready for review"
@@ -1032,6 +1050,32 @@ async def set_project_voice(project_id: str, req: SetProjectVoiceRequest):
 
     pipeline.save_project(project)
     return {"status": "ok", "voice": new_voice, "project": project}
+
+@app.post("/api/projects/{project_id}/toggle-multivoice")
+async def toggle_project_multivoice(project_id: str, req: Optional[ToggleMultivoiceRequest] = None):
+    try:
+        updated = pipeline.toggle_multivoice(project_id, enable=req.enable if req else None)
+        return {"status": "ok", "enable_multivoice": updated.get("enable_multivoice", True), "project": updated}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/set-character-voice")
+async def set_project_character_voice(project_id: str, req: SetCharacterVoiceRequest):
+    if not req.character_name or not req.voice_id:
+        raise HTTPException(status_code=400, detail="Both character_name and voice_id are required")
+    try:
+        updated = pipeline.set_character_voice(project_id, req.character_name, req.voice_id)
+        return {"status": "ok", "character_voices": updated.get("character_voices", {}), "project": updated}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/auto-cast-voices")
+async def auto_cast_project_voices(project_id: str):
+    try:
+        updated = pipeline.auto_cast_project_voices(project_id)
+        return {"status": "ok", "character_voices": updated.get("character_voices", {}), "project": updated}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/projects/{project_id}/upload-image/{scene_idx}")
 async def upload_scene_image(project_id: str, scene_idx: int, file: UploadFile = File(...)):
