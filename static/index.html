@@ -605,6 +605,9 @@
               <button id="btnToggleMultivoiceStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle Multi-Voice Character Dialogue">
                 <span id="iconMultivoiceStage2">🎭</span> <span id="textMultivoiceStage2">Multi-Voice: ON</span>
               </button>
+              <button id="btnOpenVoiceCastingModal" class="glass-btn secondary-btn toggle-pill-btn voice-casting-pill" title="Configure character voices in studio modal">
+                <span class="btn-icon">🎙️</span> <span id="textVoiceCastingBadge">Cast Voices</span> <span id="badgeVoiceRoleCount" class="tag-count-bubble">0</span>
+              </button>
               <button id="btnToggleVoiceoverStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle voiceover narration ON or OFF">
                 <span id="iconVoiceoverStage2">🎙️</span> <span id="textVoiceoverStage2">Voiceover: ON</span>
               </button>
@@ -637,28 +640,37 @@
               <button id="btnLockCharacter" class="glass-btn secondary-btn compact-lock-btn" title="Save character specification">🔒 Lock</button>
             </div>
           </div>
-
-          <!-- Character Voice Casting Bar (Active when Multi-Voice is enabled) -->
-          <div id="characterVoiceCastingBar" class="character-voice-casting-bar" style="display:none;">
-            <div class="casting-bar-header">
-              <div class="casting-bar-title">
-                <span>🎭</span> <strong>Character Voice Casting</strong>
-                <span class="casting-bar-hint">Assign distinct character voices for each role</span>
-              </div>
-              <button id="btnAutoCastVoices" type="button" class="glass-btn secondary-btn compact-action-pill" title="Re-analyze character archetypes and auto-cast voices">
-                <span>🤖 Auto-Cast Voices</span>
-              </button>
-            </div>
-            <div id="characterVoicesList" class="character-voices-grid">
-              <!-- Populated dynamically via JS -->
-            </div>
-          </div>
         </div>
 
         <!-- Sticky Scene Quick-Jump Ribbon -->
         <nav id="sceneQuickJumpBar" class="scene-quick-jump-ribbon" aria-label="Scene Quick Navigation">
           <!-- Populated dynamically by app.js: [Sc 1 ✓] [Sc 2 ✓] [Sc 3 ⏳] ... -->
         </nav>
+
+        <!-- Character Voice Casting Bar (Non-sticky, regular page flow) -->
+        <div id="characterVoiceCastingBar" class="character-voice-casting-bar glass-panel" style="display:none;">
+          <div class="casting-bar-header">
+            <div class="casting-bar-title">
+              <span>🎭</span> <strong>Character Voice Casting</strong>
+              <span id="castingBarRoleCountBadge" class="casting-role-badge">0 roles</span>
+              <span class="casting-bar-hint">Assign distinct actor voices for each dialogue speaker</span>
+            </div>
+            <div class="casting-bar-actions">
+              <button id="btnAutoCastVoices" type="button" class="glass-btn secondary-btn compact-action-pill" title="Re-analyze character archetypes and auto-cast voices">
+                <span>🤖 Auto-Cast</span>
+              </button>
+              <button id="btnOpenVoiceModalFromBar" type="button" class="glass-btn secondary-btn compact-action-pill" title="Open Full Casting Studio Modal">
+                <span>🎛️ Full Studio ↗</span>
+              </button>
+              <button id="btnToggleCastingBarCollapse" type="button" class="glass-btn secondary-btn compact-action-pill" title="Collapse or expand casting drawer">
+                <span id="textCastingCollapse">▲ Hide</span>
+              </button>
+            </div>
+          </div>
+          <div id="characterVoicesList" class="character-voices-grid">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
 
         <!-- Scene Cards Masonry Grid -->
         <div id="storyboardScenesGrid" class="scenes-masonry-grid compact-grid">
@@ -958,6 +970,39 @@
     </div>
   </div>
 
+  <!-- MODAL: Character Voice Casting Studio -->
+  <div id="modalVoiceCasting" class="modal-backdrop">
+    <div class="modal-card glass-panel wide-modal" style="max-width: 860px;">
+      <div class="modal-header flex-between">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:24px;">🎭</span>
+          <div>
+            <h3 class="modal-title" style="margin:0;">Character Voice Casting Studio</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin:0;">Assign unique voice personas and audition lines for each character</p>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button id="btnAutoCastInModal" type="button" class="glass-btn secondary-btn compact-btn" title="Auto-assign voices based on character names & archetypes">
+            🤖 Auto-Cast All Roles
+          </button>
+          <button id="btnCloseVoiceCasting" class="modal-close-btn">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="padding: 16px; max-height: 65vh; overflow-y: auto;">
+        <div id="modalCharacterVoicesList" class="character-voices-grid">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+      <div class="modal-footer flex-between" style="padding: 12px 16px; border-top: 1px solid var(--border-subtle); background: rgba(0,0,0,0.2);">
+        <span style="font-size: 12px; color: var(--text-dim);">💡 Multi-Voice synthesizes unique voice tones with synchronized subtitles.</span>
+        <button id="btnDoneVoiceCasting" class="hero-action-btn compact-btn">
+          <span>Done & Apply</span>
+          <span>✓</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: Import Storyboard from Gemini Pro -->
   <div id="modalImport" class="modal-backdrop">
     <div class="modal-card glass-panel wide-modal">
@@ -1073,6 +1118,6 @@ Narration: The detective scanned the horizon for clues..."></textarea>
   <div id="toastNotification" class="toast-popup"></div>
 
   <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=3.3"></script>
+  <script src="/js/app.js?v=3.4"></script>
 </body>
 </html>

@@ -362,9 +362,22 @@ class AniStoryApp {
     this.btnToggleMultivoiceStage2 = document.getElementById("btnToggleMultivoiceStage2");
     this.iconMultivoiceStage2 = document.getElementById("iconMultivoiceStage2");
     this.textMultivoiceStage2 = document.getElementById("textMultivoiceStage2");
+    this.btnOpenVoiceCastingModal = document.getElementById("btnOpenVoiceCastingModal");
+    this.textVoiceCastingBadge = document.getElementById("textVoiceCastingBadge");
+    this.badgeVoiceRoleCount = document.getElementById("badgeVoiceRoleCount");
     this.characterVoiceCastingBar = document.getElementById("characterVoiceCastingBar");
+    this.castingBarRoleCountBadge = document.getElementById("castingBarRoleCountBadge");
+    this.btnOpenVoiceModalFromBar = document.getElementById("btnOpenVoiceModalFromBar");
+    this.btnToggleCastingBarCollapse = document.getElementById("btnToggleCastingBarCollapse");
+    this.textCastingCollapse = document.getElementById("textCastingCollapse");
     this.characterVoicesList = document.getElementById("characterVoicesList");
     this.btnAutoCastVoices = document.getElementById("btnAutoCastVoices");
+    this.modalVoiceCasting = document.getElementById("modalVoiceCasting");
+    this.btnCloseVoiceCasting = document.getElementById("btnCloseVoiceCasting");
+    this.btnDoneVoiceCasting = document.getElementById("btnDoneVoiceCasting");
+    this.btnAutoCastInModal = document.getElementById("btnAutoCastInModal");
+    this.modalCharacterVoicesList = document.getElementById("modalCharacterVoicesList");
+    this.isCastingBarCollapsed = false;
     this.selectVoiceStage2 = document.getElementById("selectVoiceStage2");
     this.btnAuditionVoiceStage2 = document.getElementById("btnAuditionVoiceStage2");
     this.iconAuditionVoiceStage2 = document.getElementById("iconAuditionVoiceStage2");
@@ -1122,32 +1135,50 @@ class AniStoryApp {
       });
     }
 
-    // Auto-cast voices button
+    // Auto-cast voices button (inline & modal)
     if (this.btnAutoCastVoices) {
-      this.btnAutoCastVoices.addEventListener("click", async () => {
-        if (!this.currentProject) return;
-        const btn = this.btnAutoCastVoices;
-        btn.disabled = true;
-        btn.innerHTML = `<span>⏳ Casting Voices...</span>`;
-        try {
-          const resp = await fetch(`/api/projects/${this.currentProject.id}/auto-cast-voices`, { method: "POST" });
-          if (resp.ok) {
-            const data = await resp.json();
-            if (data.project) {
-              this.currentProject = data.project;
-            }
-            this.saveActiveProjectState();
-            this.renderCharacterVoiceCasting();
-            this.showToast("✨ Voices auto-cast successfully!");
-          } else {
-            const err = await resp.json().catch(() => ({ detail: "Casting failed" }));
-            this.showToast(err.detail || "Failed to auto-cast voices", true);
-          }
-        } catch (e) {
-          this.showToast("Auto-cast error: " + e.message, true);
-        } finally {
-          btn.disabled = false;
-          btn.innerHTML = `<span>🤖 Auto-Cast Voices</span>`;
+      this.btnAutoCastVoices.addEventListener("click", () => this.autoCastCharacterVoices(this.btnAutoCastVoices));
+    }
+    if (this.btnAutoCastInModal) {
+      this.btnAutoCastInModal.addEventListener("click", () => this.autoCastCharacterVoices(this.btnAutoCastInModal));
+    }
+
+    // Open/Close Character Voice Casting Studio Modal
+    const openVoiceModal = () => {
+      if (this.modalVoiceCasting) {
+        this.modalVoiceCasting.classList.add("active");
+        this.renderCharacterVoiceCasting();
+      }
+    };
+    const closeVoiceModal = () => {
+      if (this.modalVoiceCasting) this.modalVoiceCasting.classList.remove("active");
+    };
+
+    if (this.btnOpenVoiceCastingModal) {
+      this.btnOpenVoiceCastingModal.addEventListener("click", openVoiceModal);
+    }
+    if (this.btnOpenVoiceModalFromBar) {
+      this.btnOpenVoiceModalFromBar.addEventListener("click", openVoiceModal);
+    }
+    if (this.btnCloseVoiceCasting) {
+      this.btnCloseVoiceCasting.addEventListener("click", closeVoiceModal);
+    }
+    if (this.btnDoneVoiceCasting) {
+      this.btnDoneVoiceCasting.addEventListener("click", () => {
+        closeVoiceModal();
+        this.showToast("Character voice assignments saved! 🎭✨");
+      });
+    }
+
+    // Toggle collapse/expand on inline Character Voice Casting Bar
+    if (this.btnToggleCastingBarCollapse) {
+      this.btnToggleCastingBarCollapse.addEventListener("click", () => {
+        this.isCastingBarCollapsed = !this.isCastingBarCollapsed;
+        if (this.characterVoicesList) {
+          this.characterVoicesList.style.display = this.isCastingBarCollapsed ? "none" : "grid";
+        }
+        if (this.textCastingCollapse) {
+          this.textCastingCollapse.textContent = this.isCastingBarCollapsed ? "▼ Show" : "▲ Hide";
         }
       });
     }
@@ -1682,17 +1713,89 @@ class AniStoryApp {
       }
     }
 
+    if (this.btnOpenVoiceCastingModal) {
+      this.btnOpenVoiceCastingModal.style.display = enabled ? "inline-flex" : "none";
+    }
+
     if (this.characterVoiceCastingBar) {
       this.characterVoiceCastingBar.style.display = enabled ? "block" : "none";
     }
   }
 
+  createCharacterVoiceCard(charName, currentVoice, allVoices, isNarrator) {
+    const card = document.createElement("div");
+    card.className = "character-voice-card";
+
+    const icon = isNarrator ? "🎙️" : "🎭";
+
+    let optionsHtml = "";
+    allVoices.forEach(v => {
+      const isSelected = v.id === currentVoice ? "selected" : "";
+      optionsHtml += `<option value="${v.id}" ${isSelected}>${v.name}</option>`;
+    });
+
+    card.innerHTML = `
+      <div class="char-voice-info" title="${this.escapeHtml(charName)}">
+        <span style="font-size:13px;">${icon}</span>
+        <span class="char-voice-name">${this.escapeHtml(charName)}</span>
+      </div>
+      <select class="char-voice-select styled-select" data-char="${encodeURIComponent(charName)}">
+        ${optionsHtml}
+      </select>
+      <button type="button" class="glass-btn secondary-btn char-audition-btn" data-char="${encodeURIComponent(charName)}" title="Audition voice for ${this.escapeHtml(charName)}">
+        <span>🔊</span>
+      </button>
+    `;
+
+    const sel = card.querySelector(".char-voice-select");
+    sel.addEventListener("change", async (e) => {
+      const newVoiceId = e.target.value;
+      try {
+        const resp = await fetch(`/api/projects/${this.currentProject.id}/set-character-voice`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ character_name: charName, voice_id: newVoiceId })
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.project) {
+            this.currentProject = data.project;
+          }
+          if (isNarrator) {
+            this.currentProject.voice = newVoiceId;
+            if (this.selectVoiceStage2) this.selectVoiceStage2.value = newVoiceId;
+          }
+          this.saveActiveProjectState();
+          this.showToast(`🎭 ${charName}: assigned voice "${newVoiceId}"`);
+          // Sync any duplicate selects across views
+          document.querySelectorAll(`.char-voice-select[data-char="${encodeURIComponent(charName)}"]`).forEach(s => {
+            if (s !== sel) s.value = newVoiceId;
+          });
+        }
+      } catch (err) {
+        this.showToast("Failed to update voice: " + err.message, true);
+      }
+    });
+
+    const btnAud = card.querySelector(".char-audition-btn");
+    btnAud.addEventListener("click", () => {
+      const voiceId = sel.value;
+      this.playCharacterVoiceAudition(voiceId, charName);
+    });
+
+    return card;
+  }
+
   renderCharacterVoiceCasting() {
-    if (!this.characterVoiceCastingBar || !this.characterVoicesList) return;
     if (!this.currentProject) return;
 
     const isEnabled = this.currentProject.enable_multivoice !== false;
-    this.characterVoiceCastingBar.style.display = isEnabled ? "block" : "none";
+    if (this.characterVoiceCastingBar) {
+      this.characterVoiceCastingBar.style.display = isEnabled ? "block" : "none";
+    }
+    if (this.btnOpenVoiceCastingModal) {
+      this.btnOpenVoiceCastingModal.style.display = isEnabled ? "inline-flex" : "none";
+    }
     if (!isEnabled) return;
 
     const voicesMap = this.currentProject.character_voices || {};
@@ -1703,69 +1806,62 @@ class AniStoryApp {
       charNames.push("Narrator");
     }
 
-    this.characterVoicesList.innerHTML = "";
+    const countText = `${charNames.length} ${charNames.length === 1 ? 'Role' : 'Roles'}`;
+    if (this.badgeVoiceRoleCount) this.badgeVoiceRoleCount.textContent = countText;
+    if (this.castingBarRoleCountBadge) this.castingBarRoleCountBadge.textContent = `${countText} Assigned`;
+
     const allVoices = this.config?.voices || [];
 
-    charNames.forEach((charName) => {
-      const currentVoice = voicesMap[charName];
-      const card = document.createElement("div");
-      card.className = "character-voice-card";
-
-      const isNarrator = charName.toLowerCase() in { "narrator": 1, "người kể chuyện": 1 };
-      const icon = isNarrator ? "🎙️" : "🎭";
-
-      let optionsHtml = "";
-      allVoices.forEach(v => {
-        const isSelected = v.id === currentVoice ? "selected" : "";
-        optionsHtml += `<option value="${v.id}" ${isSelected}>${v.name}</option>`;
+    if (this.characterVoicesList) {
+      this.characterVoicesList.innerHTML = "";
+      charNames.forEach((charName) => {
+        const isNarrator = charName.toLowerCase() in { "narrator": 1, "người kể chuyện": 1 };
+        const card = this.createCharacterVoiceCard(charName, voicesMap[charName], allVoices, isNarrator);
+        this.characterVoicesList.appendChild(card);
       });
+    }
 
-      card.innerHTML = `
-        <div class="char-voice-info" title="${charName}">
-          <span>${icon}</span>
-          <span class="char-voice-name">${charName}</span>
-        </div>
-        <select class="char-voice-select styled-select" data-char="${encodeURIComponent(charName)}">
-          ${optionsHtml}
-        </select>
-        <button type="button" class="glass-btn secondary-btn char-audition-btn" data-char="${encodeURIComponent(charName)}" title="Audition this character's voice">
-          <span>🔊</span>
-        </button>
-      `;
+    if (this.modalCharacterVoicesList) {
+      this.modalCharacterVoicesList.innerHTML = "";
+      charNames.forEach((charName) => {
+        const isNarrator = charName.toLowerCase() in { "narrator": 1, "người kể chuyện": 1 };
+        const card = this.createCharacterVoiceCard(charName, voicesMap[charName], allVoices, isNarrator);
+        this.modalCharacterVoicesList.appendChild(card);
+      });
+    }
+  }
 
-      const sel = card.querySelector(".char-voice-select");
-      sel.addEventListener("change", async (e) => {
-        const newVoiceId = e.target.value;
-        try {
-          const resp = await fetch(`/api/projects/${this.currentProject.id}/set-character-voice`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ character_name: charName, voice_id: newVoiceId })
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            if (data.project) {
-              this.currentProject = data.project;
-            }
-            if (isNarrator) {
-              this.currentProject.voice = newVoiceId;
-              if (this.selectVoiceStage2) this.selectVoiceStage2.value = newVoiceId;
-            }
-            this.showToast(`🎭 ${charName}: assigned voice "${newVoiceId}"`);
-          }
-        } catch (err) {
-          this.showToast("Failed to update voice: " + err.message, true);
+  async autoCastCharacterVoices(triggerBtn) {
+    if (!this.currentProject) return;
+    const btn = triggerBtn || this.btnAutoCastVoices;
+    const originalHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span>⏳ Casting Voices...</span>`;
+    }
+    try {
+      this.showToast("🤖 Analyzing characters and auto-assigning voices... ⏳");
+      const resp = await fetch(`/api/projects/${this.currentProject.id}/auto-cast-voices`, { method: "POST" });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.project) {
+          this.currentProject = data.project;
         }
-      });
-
-      const btnAud = card.querySelector(".char-audition-btn");
-      btnAud.addEventListener("click", () => {
-        const voiceId = sel.value;
-        this.playCharacterVoiceAudition(voiceId, charName);
-      });
-
-      this.characterVoicesList.appendChild(card);
-    });
+        this.saveActiveProjectState();
+        this.renderCharacterVoiceCasting();
+        this.showToast("✓ Voices auto-cast successfully!");
+      } else {
+        const err = await resp.json().catch(() => ({ detail: "Casting failed" }));
+        this.showToast(err.detail || "Failed to auto-cast voices", true);
+      }
+    } catch (e) {
+      this.showToast("Auto-cast error: " + e.message, true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
   }
 
   async playCharacterVoiceAudition(voiceId, charName) {
