@@ -4,6 +4,7 @@ import io
 import json
 import uuid
 import re
+import asyncio
 from pathlib import Path
 
 # Ensure UTF-8 console output on Windows across reload workers
@@ -1251,16 +1252,68 @@ async def audition_voice(req: AuditionVoiceRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# In-memory tracking for concurrent background rendering tasks
+active_render_tasks: Dict[str, asyncio.Task] = {}
+
 async def run_render_task(project_id: str):
     try:
         await pipeline.render_full_animation(project_id)
+    except asyncio.CancelledError:
+        print(f"Render task for project '{project_id}' was cancelled.")
+        p = pipeline.get_project(project_id)
+        if p:
+            p["status"] = "storyboard_ready"
+            p["current_step"] = "Rendering cancelled by user."
+            pipeline.save_project(p)
     except Exception as e:
-        print(f"Error during video rendering: {e}")
+        print(f"Error during video rendering for project '{project_id}': {e}")
         p = pipeline.get_project(project_id)
         if p:
             p["status"] = "error"
             p["current_step"] = f"Rendering error: {str(e)}"
             pipeline.save_project(p)
+    finally:
+        active_render_tasks.pop(project_id, None)
+
+@app.get("/api/tasks/active")
+async def get_active_tasks():
+    tasks = pipeline.list_active_tasks()
+    for t in tasks:
+        tid = t["id"]
+        t["is_running"] = tid in active_render_tasks and not active_render_tasks[tid].done()
+    return {"active_count": len(tasks), "tasks": tasks}
+
+@app.post("/api/projects/{project_id}/cancel")
+async def cancel_render_endpoint(project_id: str):
+    task = active_render_tasks.get(project_id)
+    if task and not task.done():
+        task.cancel()
+    active_render_tasks.pop(project_id, None)
+
+    p = pipeline.get_project(project_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    p["status"] = "storyboard_ready"
+    p["current_step"] = "Rendering cancelled by user."
+    pipeline.save_project(p)
+    return {"status": "success", "message": f"Render cancelled for project {project_id}", "project": p}
+
+@app.post("/api/tasks/cancel-all")
+async def cancel_all_renders_endpoint():
+    cancelled = []
+    for tid, task in list(active_render_tasks.items()):
+        if not task.done():
+            task.cancel()
+        cancelled.append(tid)
+    active_render_tasks.clear()
+    for tid in cancelled:
+        p = pipeline.get_project(tid)
+        if p and p.get("status") == "rendering":
+            p["status"] = "storyboard_ready"
+            p["current_step"] = "Rendering cancelled."
+            pipeline.save_project(p)
+    return {"status": "success", "cancelled_count": len(cancelled), "cancelled_ids": cancelled}
 
 @app.post("/api/projects/{project_id}/render")
 async def start_render(project_id: str, background_tasks: BackgroundTasks, req: Optional[RenderRequest] = None):
@@ -1279,8 +1332,10 @@ async def start_render(project_id: str, background_tasks: BackgroundTasks, req: 
     project["current_step"] = "Queued for video rendering..."
     pipeline.save_project(project)
 
-    background_tasks.add_task(run_render_task, project_id)
-    return {"message": "Rendering started", "project_id": project_id}
+    # Spawn independent background asyncio Task so multiple renders run concurrently in parallel
+    task = asyncio.create_task(run_render_task(project_id))
+    active_render_tasks[project_id] = task
+    return {"message": "Rendering started", "project_id": project_id, "active_count": len(active_render_tasks)}
 
 @app.get("/api/download/{project_id}")
 async def download_video(project_id: str):

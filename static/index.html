@@ -67,6 +67,10 @@
         <button id="btnNavHome" class="glass-btn secondary-btn nav-home-btn compact-header-btn" title="Back to Homepage / Concept & Style">
           <span class="btn-icon">🏠</span> <span class="header-btn-text">Home</span>
         </button>
+        <button id="btnHeaderTasks" class="glass-btn secondary-btn compact-header-btn header-tasks-btn" style="display:none;" title="Active Background Rendering Tasks">
+          <span class="status-pulse-dot" style="background:#38bdf8; box-shadow:0 0 10px #38bdf8;"></span>
+          <span id="textHeaderTasksCount">⚡ 0 Tasks</span>
+        </button>
         <button id="btnOpenProjects" class="glass-btn secondary-btn compact-header-btn" title="Open or switch between existing projects">
           <span class="btn-icon">📂</span> <span class="header-btn-text">Projects</span>
         </button>
@@ -705,11 +709,17 @@
 
           <!-- Navigation controls while rendering -->
           <div class="render-nav-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button id="btnRunInBackgroundAndCreate" class="glass-btn primary-glow-btn compact-btn" title="Keep this film rendering in the background and immediately start a new story or edit other films">
+              <span class="btn-icon">🚀</span> Run in Background & Create New Film
+            </button>
             <button id="btnBackToBoardFromStage3" class="glass-btn secondary-btn compact-btn" title="Return to Director's Storyboard">
               <span class="btn-icon">📋</span> Back to Storyboard
             </button>
             <button id="btnBackToHomeFromStage3" class="glass-btn secondary-btn compact-btn" title="Return to Homepage">
               <span class="btn-icon">🏠</span> Back to Home
+            </button>
+            <button id="btnCancelRenderCurrent" class="glass-btn secondary-btn compact-btn text-danger-btn" title="Cancel this rendering task and return to Storyboard">
+              <span class="btn-icon">⏹</span> Cancel Render
             </button>
           </div>
         </div>
@@ -908,8 +918,40 @@
           <button id="btnCloseProjects" class="modal-close-btn">&times;</button>
         </div>
       </div>
-      <div class="modal-body" style="padding: 0; max-height: 70vh; overflow-y: auto;">
+      <div class="projects-filter-bar" style="padding: 10px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; background: rgba(0,0,0,0.15);">
+        <button id="filterProjectsAll" class="filter-chip-btn active" data-filter="all">All Films</button>
+        <button id="filterProjectsActive" class="filter-chip-btn" data-filter="active">⚡ Rendering (<span id="filterActiveCount">0</span>)</button>
+        <button id="filterProjectsReady" class="filter-chip-btn" data-filter="ready">🍿 Completed</button>
+        <button id="filterProjectsStoryboard" class="filter-chip-btn" data-filter="storyboard">🎬 Storyboards</button>
+      </div>
+      <div class="modal-body" style="padding: 0; max-height: 65vh; overflow-y: auto;">
         <div id="savedProjectsList" class="projects-grid">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Active Tasks Manager -->
+  <div id="modalActiveTasks" class="modal-backdrop">
+    <div class="modal-card glass-panel wide-modal" style="max-width: 820px;">
+      <div class="modal-header flex-between">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="status-pulse-dot" style="background:#38bdf8; box-shadow:0 0 10px #38bdf8;"></span>
+          <h3 class="modal-title" style="margin:0;">⚡ Active Background Tasks</h3>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button id="btnCancelAllActiveTasks" class="glass-btn secondary-btn compact-btn text-danger-btn" style="display:none;" title="Cancel all background tasks">
+            ⏹ Cancel All
+          </button>
+          <button id="btnRefreshActiveTasks" class="glass-btn secondary-btn compact-btn" title="Refresh task status">
+            🔄 Refresh
+          </button>
+          <button id="btnCloseActiveTasks" class="modal-close-btn">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="padding: 16px; max-height: 65vh; overflow-y: auto;">
+        <div id="activeTasksListContainer" class="active-tasks-grid">
           <!-- Rendered dynamically -->
         </div>
       </div>
@@ -1031,6 +1073,6 @@ Narration: The detective scanned the horizon for clues..."></textarea>
   <div id="toastNotification" class="toast-popup"></div>
 
   <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=3.2"></script>
+  <script src="/js/app.js?v=3.3"></script>
 </body>
 </html>

@@ -155,7 +155,9 @@ class AnimationPipeline:
 
     def save_project(self, data: Dict[str, Any]):
         project_id = data["id"]
-        meta_file = PROJECTS_DIR / project_id / "project.json"
+        meta_dir = PROJECTS_DIR / project_id
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        meta_file = meta_dir / "project.json"
         with open(meta_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
@@ -171,6 +173,31 @@ class AnimationPipeline:
                     pass
         projects.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         return projects
+
+    def list_active_tasks(self) -> list:
+        active = []
+        for p in self.list_projects():
+            status = p.get("status")
+            if status in ("rendering", "brainstorming"):
+                thumb = None
+                for sc in p.get("scenes", []):
+                    if sc.get("image_path"):
+                        thumb = sc["image_path"].replace("\\", "/")
+                        break
+                active.append({
+                    "id": p.get("id"),
+                    "title": p.get("title") or p.get("idea") or "Untitled Film",
+                    "status": status,
+                    "progress": p.get("progress", 0),
+                    "current_step": p.get("current_step", ""),
+                    "art_style": p.get("art_style", ""),
+                    "scenes_count": len(p.get("scenes", [])),
+                    "created_at": p.get("created_at", 0),
+                    "updated_at": p.get("updated_at", 0),
+                    "video_path": p.get("video_path"),
+                    "thumbnail": thumb
+                })
+        return active
 
     def delete_project(self, project_id: str) -> bool:
         p_dir = PROJECTS_DIR / project_id
@@ -318,7 +345,9 @@ class AnimationPipeline:
             title=scene.get("title", f"Scene {scene_idx + 1}"),
             image_mode=project.get("image_mode", "gemini"),
             character_desc=character_desc,
-            reference_image_path=ref_img_path
+            reference_image_path=ref_img_path,
+            api_key=project.get("api_key"),
+            provider=project.get("ai_provider")
         )
 
         # Re-fetch latest project state to avoid race condition overwrite with concurrent scene renders
@@ -578,7 +607,9 @@ class AnimationPipeline:
                     title=scene.get("title", f"Scene {idx + 1}"),
                     image_mode=project.get("image_mode", "gemini"),
                     character_desc=character_desc,
-                    reference_image_path=ref_img_path
+                    reference_image_path=ref_img_path,
+                    api_key=project.get("api_key"),
+                    provider=project.get("ai_provider")
                 )
             scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             self.save_project(project)

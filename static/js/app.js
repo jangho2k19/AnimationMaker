@@ -20,11 +20,19 @@ class AniStoryApp {
 
   constructor() {
     this.currentProject = null;
+    this.currentStage = 1;
     this.config = null;
     this.selectedStyleKey = localStorage.getItem("anistory_cfg_art_style") || "ghibli";
     this.enableVoiceover = localStorage.getItem("anistory_cfg_enable_voiceover") !== "false";
     this.enableMultivoice = localStorage.getItem("anistory_cfg_enable_multivoice") !== "false";
     this.pollInterval = null;
+
+    // Multi-task & background processing state
+    this.activeTasks = [];
+    this.trackedRenderIds = new Set();
+    this.completedNotified = new Set();
+    this.currentProjectFilter = "all";
+    this.activeTasksPollInterval = null;
 
     this.initElements();
     this.updateVoiceoverUI(this.enableVoiceover);
@@ -33,6 +41,7 @@ class AniStoryApp {
     this.restoreCachedProjectSync();
     this.attachEvents();
     this.loadConfig();
+    this.initActiveTasksMonitor();
   }
 
   saveActiveProjectState() {
@@ -240,6 +249,26 @@ class AniStoryApp {
     this.btnCloseProjects = document.getElementById("btnCloseProjects");
     this.btnNewFilmFromModal = document.getElementById("btnNewFilmFromModal");
     this.savedProjectsList = document.getElementById("savedProjectsList");
+
+    // Header Active Tasks & Modal Active Tasks
+    this.btnHeaderTasks = document.getElementById("btnHeaderTasks");
+    this.textHeaderTasksCount = document.getElementById("textHeaderTasksCount");
+    this.modalActiveTasks = document.getElementById("modalActiveTasks");
+    this.btnCloseActiveTasks = document.getElementById("btnCloseActiveTasks");
+    this.btnRefreshActiveTasks = document.getElementById("btnRefreshActiveTasks");
+    this.btnCancelAllActiveTasks = document.getElementById("btnCancelAllActiveTasks");
+    this.activeTasksListContainer = document.getElementById("activeTasksListContainer");
+
+    // Stage 3 Background Actions
+    this.btnRunInBackgroundAndCreate = document.getElementById("btnRunInBackgroundAndCreate");
+    this.btnCancelRenderCurrent = document.getElementById("btnCancelRenderCurrent");
+
+    // Projects Filter Chips
+    this.filterProjectsAll = document.getElementById("filterProjectsAll");
+    this.filterProjectsActive = document.getElementById("filterProjectsActive");
+    this.filterProjectsReady = document.getElementById("filterProjectsReady");
+    this.filterProjectsStoryboard = document.getElementById("filterProjectsStoryboard");
+    this.filterActiveCount = document.getElementById("filterActiveCount");
 
     // Stage 1 Direct Mode Switcher Elements
     this.tabModePrompt = document.getElementById("tabModePrompt");
@@ -454,6 +483,79 @@ class AniStoryApp {
         }
       });
     }
+
+    // Stage 3 Background execution & cancellation triggers
+    if (this.btnRunInBackgroundAndCreate) {
+      this.btnRunInBackgroundAndCreate.addEventListener("click", () => {
+        const runningTitle = (this.currentProject?.title || this.currentProject?.idea || "Film");
+        if (this.pollInterval) {
+          clearInterval(this.pollInterval);
+          this.pollInterval = null;
+        }
+        if (this.currentProject?.id) {
+          this.trackedRenderIds.add(this.currentProject.id);
+        }
+        this.clearActiveProjectState();
+        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
+        if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
+        localStorage.removeItem("anistory_draft_prompt");
+        this.switchStage(1);
+        this.showToast(`🚀 Film "${runningTitle}" is rendering in background! Starting fresh canvas.`);
+        this.refreshActiveTasks();
+      });
+    }
+
+    if (this.btnCancelRenderCurrent) {
+      this.btnCancelRenderCurrent.addEventListener("click", async () => {
+        if (!this.currentProject) return;
+        const projId = this.currentProject.id;
+        if (this.pollInterval) {
+          clearInterval(this.pollInterval);
+          this.pollInterval = null;
+        }
+        await this.cancelProjectRender(projId);
+      });
+    }
+
+    // Active Tasks Modal Triggers
+    if (this.btnHeaderTasks) {
+      this.btnHeaderTasks.addEventListener("click", () => {
+        if (this.modalActiveTasks) {
+          this.modalActiveTasks.classList.add("active");
+          this.renderActiveTasksModal(this.activeTasks);
+        }
+      });
+    }
+
+    if (this.btnCloseActiveTasks) {
+      this.btnCloseActiveTasks.addEventListener("click", () => {
+        if (this.modalActiveTasks) this.modalActiveTasks.classList.remove("active");
+      });
+    }
+
+    if (this.btnRefreshActiveTasks) {
+      this.btnRefreshActiveTasks.addEventListener("click", async () => {
+        await this.refreshActiveTasks();
+      });
+    }
+
+    if (this.btnCancelAllActiveTasks) {
+      this.btnCancelAllActiveTasks.addEventListener("click", () => this.cancelAllActiveRenders());
+    }
+
+    // Projects Modal Filter Chips
+    const filterChips = [this.filterProjectsAll, this.filterProjectsActive, this.filterProjectsReady, this.filterProjectsStoryboard];
+    filterChips.forEach(chip => {
+      if (!chip) return;
+      chip.addEventListener("click", () => {
+        filterChips.forEach(c => c && c.classList.remove("active"));
+        chip.classList.add("active");
+        this.currentProjectFilter = chip.getAttribute("data-filter") || "all";
+        if (this.savedProjectsList) {
+          this.loadProjectsIntoContainer(this.savedProjectsList);
+        }
+      });
+    });
 
     // Floating director navigation widget actions
     if (this.btnFloatingScrollTop) {
@@ -2379,6 +2481,7 @@ ${isAutoScenes
   }
 
   switchStage(stageNum, pushState = true) {
+    this.currentStage = stageNum;
     this.stages.forEach((panel, i) => {
       panel.classList.toggle("active", i === stageNum - 1);
     });
@@ -2404,6 +2507,16 @@ ${isAutoScenes
     setTimeout(() => {
       this.toastNotification.classList.remove("show");
     }, 3200);
+  }
+
+  escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   getEffectiveApiKey(provider) {
@@ -4216,6 +4329,13 @@ ${isAutoScenes
 
       if (!resp.ok) throw new Error("Render trigger failed");
 
+      // Track this render in background monitor
+      if (this.currentProject?.id) {
+        this.trackedRenderIds.add(this.currentProject.id);
+        this.completedNotified.delete(this.currentProject.id);
+      }
+      this.refreshActiveTasks();
+
       // Start polling
       this.pollRenderProgress();
     } catch (e) {
@@ -4429,6 +4549,16 @@ ${isAutoScenes
 
     if (targetStage === 4 || (p.status === "completed" && targetStage === 4)) {
       this.showCinemaPremiere();
+    } else if (targetStage === 3 || p.status === "rendering") {
+      this.switchStage(3);
+      const pct = p.progress || 35;
+      this.renderProgressBar.style.width = `${pct}%`;
+      this.renderProgressPercent.textContent = `${pct}%`;
+      this.renderStepDetail.textContent = p.current_step || "Processing animation...";
+      this.updateActivityLogs(pct, p.current_step);
+      if (p.status === "rendering") {
+        this.pollRenderProgress();
+      }
     } else {
       this.renderStoryboardView();
       this.switchStage(2);
@@ -4456,18 +4586,34 @@ ${isAutoScenes
     if (!containerEl) return;
     containerEl.innerHTML = "";
 
-    if (!list || list.length === 0) {
+    const activeRendersCount = (list || []).filter(p => p.status === "rendering").length;
+    if (this.filterActiveCount) {
+      this.filterActiveCount.textContent = activeRendersCount;
+    }
+
+    let displayList = list || [];
+    if (containerEl === this.savedProjectsList && this.currentProjectFilter !== "all") {
+      if (this.currentProjectFilter === "active") {
+        displayList = displayList.filter(p => p.status === "rendering");
+      } else if (this.currentProjectFilter === "ready") {
+        displayList = displayList.filter(p => p.status === "completed" || Boolean(p.video_path));
+      } else if (this.currentProjectFilter === "storyboard") {
+        displayList = displayList.filter(p => p.status !== "rendering" && p.status !== "completed" && !p.video_path);
+      }
+    }
+
+    if (!displayList || displayList.length === 0) {
       containerEl.innerHTML = `
         <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-muted);">
           <div style="font-size: 42px; margin-bottom: 8px;">🎬</div>
-          <p style="font-size: 14px; margin-bottom: 4px;">No existing projects found.</p>
+          <p style="font-size: 14px; margin-bottom: 4px;">No projects found under this view.</p>
           <span style="font-size: 12px; color: var(--text-dim);">Start a new film from an idea or import a project.json!</span>
         </div>
       `;
       return;
     }
 
-    list.forEach(p => {
+    displayList.forEach(p => {
       const item = document.createElement("div");
       item.className = "project-item-card";
 
@@ -4475,6 +4621,7 @@ ${isAutoScenes
       const dateStr = new Date(createdTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       const scenesCount = p.scenes ? p.scenes.length : 0;
       const isCompleted = p.status === "completed" || Boolean(p.video_path);
+      const isRendering = p.status === "rendering";
 
       // Find first available scene image as thumbnail
       let thumbSrc = "";
@@ -4493,9 +4640,9 @@ ${isAutoScenes
       if (p.status === "completed") {
         statusBadgeClass = "completed";
         statusBadgeText = "✓ Film Ready";
-      } else if (p.status === "rendering") {
+      } else if (isRendering) {
         statusBadgeClass = "in-progress";
-        statusBadgeText = "⚡ Rendering";
+        statusBadgeText = `⚡ ${p.progress || 35}%`;
       } else if (scenesCount > 0) {
         statusBadgeClass = "in-progress";
         statusBadgeText = "🎬 Storyboard";
@@ -4504,23 +4651,38 @@ ${isAutoScenes
       item.innerHTML = `
         <div class="project-card-thumb-wrap" title="Click to open Director's Storyboard">
           ${thumbSrc
-            ? `<img src="${thumbSrc}" class="project-card-thumb" alt="${p.title || 'Scene preview'}" loading="lazy">`
+            ? `<img src="${thumbSrc}" class="project-card-thumb" alt="${this.escapeHtml(p.title || 'Scene preview')}" loading="lazy">`
             : `<div style="font-size: 38px; color: rgba(255,255,255,0.25);">🎬</div>`
           }
           <span class="project-card-status-badge ${statusBadgeClass}">${statusBadgeText}</span>
           <span class="project-card-scenes-badge">${scenesCount} scenes</span>
         </div>
         <div class="project-card-info" title="Click to open Director's Storyboard">
-          <div class="project-card-title">${p.title || p.idea || "Untitled Film"}</div>
+          <div class="project-card-title">${this.escapeHtml(p.title || p.idea || "Untitled Film")}</div>
           <div class="project-card-meta">
             <span>📅 ${dateStr}</span>
-            <span>🎨 ${p.art_style || 'Style'}</span>
+            <span>🎨 ${this.escapeHtml(p.art_style || 'Style')}</span>
           </div>
+          ${isRendering ? `
+            <div class="project-card-rendering-bar">
+              <div class="project-card-progress-fill" style="width: ${p.progress || 35}%;"></div>
+            </div>
+            <div class="project-card-step-text">${this.escapeHtml(p.current_step || "Rendering in background...")}</div>
+          ` : ""}
         </div>
         <div class="project-card-actions">
-          <button type="button" class="glass-btn secondary-btn btn-load-storyboard" title="Open Director's Storyboard to edit script & scenes">
-            🎬 Storyboard
-          </button>
+          ${isRendering ? `
+            <button type="button" class="glass-btn primary-glow-btn btn-view-render-card" style="padding: 5px 10px; font-size: 11px;" title="View rendering progress on Stage 3">
+              📊 Live View
+            </button>
+            <button type="button" class="glass-btn secondary-btn text-danger-btn btn-cancel-render-card" style="padding: 5px 10px; font-size: 11px;" title="Cancel rendering">
+              ⏹ Cancel
+            </button>
+          ` : `
+            <button type="button" class="glass-btn secondary-btn btn-load-storyboard" title="Open Director's Storyboard to edit script & scenes">
+              🎬 Storyboard
+            </button>
+          `}
           ${isCompleted ? `
           <button type="button" class="glass-btn secondary-btn btn-watch-film" style="color: #6ee7b7; border-color: rgba(16,185,129,0.4);" title="Watch film premiere">
             🍿 Watch
@@ -4531,9 +4693,17 @@ ${isAutoScenes
         </div>
       `;
 
-      // Clicking thumbnail or info opens Storyboard
-      item.querySelector(".project-card-thumb-wrap").addEventListener("click", () => this.loadProject(p, 2));
-      item.querySelector(".project-card-info").addEventListener("click", () => this.loadProject(p, 2));
+      // Clicking thumbnail or info opens appropriate screen
+      item.querySelector(".project-card-thumb-wrap").addEventListener("click", () => {
+        if (isRendering) this.loadProject(p, 3);
+        else if (isCompleted) this.loadProject(p, 4);
+        else this.loadProject(p, 2);
+      });
+      item.querySelector(".project-card-info").addEventListener("click", () => {
+        if (isRendering) this.loadProject(p, 3);
+        else if (isCompleted) this.loadProject(p, 4);
+        else this.loadProject(p, 2);
+      });
 
       // Action buttons
       const btnStoryboard = item.querySelector(".btn-load-storyboard");
@@ -4541,6 +4711,22 @@ ${isAutoScenes
         btnStoryboard.addEventListener("click", (e) => {
           e.stopPropagation();
           this.loadProject(p, 2);
+        });
+      }
+
+      const btnViewRender = item.querySelector(".btn-view-render-card");
+      if (btnViewRender) {
+        btnViewRender.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.loadProject(p, 3);
+        });
+      }
+
+      const btnCancelRender = item.querySelector(".btn-cancel-render-card");
+      if (btnCancelRender) {
+        btnCancelRender.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          await this.cancelProjectRender(p.id);
         });
       }
 
@@ -4568,6 +4754,7 @@ ${isAutoScenes
                 this.switchStage(1);
               }
               this.refreshAllProjectLists();
+              this.refreshActiveTasks();
             } else {
               this.showToast("Failed to delete project", true);
             }
@@ -4635,6 +4822,230 @@ ${isAutoScenes
     if (this.savedProjectsList) {
       this.loadProjectsIntoContainer(this.savedProjectsList);
     }
+  }
+
+  // ============================================================
+  // MULTI-TASK & BACKGROUND RENDERING MANAGER
+  // ============================================================
+  initActiveTasksMonitor() {
+    this.refreshActiveTasks();
+    if (this.activeTasksPollInterval) clearInterval(this.activeTasksPollInterval);
+    this.activeTasksPollInterval = setInterval(() => {
+      this.refreshActiveTasks();
+    }, 2800);
+  }
+
+  async refreshActiveTasks() {
+    try {
+      const resp = await fetch("/api/tasks/active");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const tasks = data.tasks || [];
+      this.activeTasks = tasks;
+
+      // Update header task pill counter
+      if (this.btnHeaderTasks && this.textHeaderTasksCount) {
+        if (tasks.length > 0) {
+          this.btnHeaderTasks.style.display = "inline-flex";
+          this.textHeaderTasksCount.textContent = `⚡ ${tasks.length} ${tasks.length === 1 ? 'Task' : 'Tasks'}`;
+        } else {
+          this.btnHeaderTasks.style.display = "none";
+        }
+      }
+
+      // Update active count filter chip in projects drawer
+      if (this.filterActiveCount) {
+        this.filterActiveCount.textContent = tasks.length;
+      }
+
+      // Re-render active tasks modal if open
+      if (this.modalActiveTasks && this.modalActiveTasks.classList.contains("active")) {
+        this.renderActiveTasksModal(tasks);
+      }
+
+      // Track all active task IDs
+      tasks.forEach(t => {
+        if (t.id) this.trackedRenderIds.add(t.id);
+      });
+
+      // Update Stage 3 in real-time if current film is rendering
+      if (this.currentProject && this.currentStage === 3) {
+        const curMatch = tasks.find(t => t.id === this.currentProject.id);
+        if (curMatch) {
+          const pct = curMatch.progress || 35;
+          this.renderProgressBar.style.width = `${pct}%`;
+          this.renderProgressPercent.textContent = `${pct}%`;
+          this.renderStepDetail.textContent = curMatch.current_step || "Processing animation...";
+          this.updateActivityLogs(pct, curMatch.current_step);
+        }
+      }
+
+      // Check tracked tasks for background completion
+      for (const tid of Array.from(this.trackedRenderIds)) {
+        const isStillActive = tasks.some(t => t.id === tid);
+        if (!isStillActive && !this.completedNotified.has(tid)) {
+          this.completedNotified.add(tid);
+          try {
+            const pResp = await fetch(`/api/projects/${encodeURIComponent(tid)}`);
+            if (pResp.ok) {
+              const pData = await pResp.json();
+              if (pData.status === "completed") {
+                this.showCompletionToast(pData);
+                if (this.currentProject && this.currentProject.id === tid && this.currentStage === 3) {
+                  this.currentProject = pData;
+                  this.showCinemaPremiere();
+                }
+                this.refreshAllProjectLists();
+              }
+            }
+          } catch (eCheck) {
+            console.warn("Could not check completed project status:", eCheck);
+          }
+        }
+      }
+    } catch (e) {
+      // Poller silent ignore
+    }
+  }
+
+  renderActiveTasksModal(tasks) {
+    if (!this.activeTasksListContainer) return;
+    this.activeTasksListContainer.innerHTML = "";
+
+    if (!tasks || tasks.length === 0) {
+      if (this.btnCancelAllActiveTasks) this.btnCancelAllActiveTasks.style.display = "none";
+      this.activeTasksListContainer.innerHTML = `
+        <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
+          <div style="font-size: 42px; margin-bottom: 8px;">✨</div>
+          <p style="font-size: 15px; margin-bottom: 4px; font-weight:600; color:var(--text-main);">No tasks currently running</p>
+          <span style="font-size: 13px; color: var(--text-dim);">When you render films in the background, their live progress will show here.</span>
+        </div>
+      `;
+      return;
+    }
+
+    if (this.btnCancelAllActiveTasks) this.btnCancelAllActiveTasks.style.display = "inline-flex";
+
+    tasks.forEach(t => {
+      const card = document.createElement("div");
+      card.className = "task-item-card";
+
+      const pct = t.progress || 35;
+      const scenesTxt = t.scenes_count ? `${t.scenes_count} scenes` : "";
+
+      card.innerHTML = `
+        <div class="task-item-main">
+          ${t.thumbnail
+            ? `<img src="/media/${encodeURI(t.thumbnail)}" class="task-item-thumb" alt="Preview">`
+            : `<div class="task-item-placeholder">🎬</div>`
+          }
+          <div class="task-item-info">
+            <div class="task-item-title-row">
+              <span class="task-item-title">${this.escapeHtml(t.title || "Untitled Film")}</span>
+              <span class="task-item-badge">⚡ ${pct}%</span>
+              ${scenesTxt ? `<span style="font-size:11px; color:var(--text-dim);">${scenesTxt}</span>` : ""}
+            </div>
+            <div class="task-item-progress-wrap">
+              <div class="task-item-progress-track">
+                <div class="task-item-progress-fill" style="width: ${pct}%;"></div>
+              </div>
+              <div class="task-item-step-text">${this.escapeHtml(t.current_step || "Rendering in background...")}</div>
+            </div>
+          </div>
+        </div>
+        <div class="task-item-actions">
+          <button class="glass-btn secondary-btn compact-btn btn-view-board" title="Open Director's Storyboard">
+            📋 Storyboard
+          </button>
+          <button class="glass-btn primary-glow-btn compact-btn btn-view-render" title="View Stage 3 Studio Render Screen">
+            📊 View
+          </button>
+          <button class="glass-btn secondary-btn compact-btn text-danger-btn btn-cancel-task" title="Cancel this render task">
+            ⏹ Cancel
+          </button>
+        </div>
+      `;
+
+      card.querySelector(".btn-view-board")?.addEventListener("click", () => {
+        if (this.modalActiveTasks) this.modalActiveTasks.classList.remove("active");
+        this.loadProject(t.id, 2);
+      });
+
+      card.querySelector(".btn-view-render")?.addEventListener("click", () => {
+        if (this.modalActiveTasks) this.modalActiveTasks.classList.remove("active");
+        this.loadProject(t.id, 3);
+      });
+
+      card.querySelector(".btn-cancel-task")?.addEventListener("click", async () => {
+        await this.cancelProjectRender(t.id);
+      });
+
+      this.activeTasksListContainer.appendChild(card);
+    });
+  }
+
+  async cancelProjectRender(projectId) {
+    if (!confirm("Are you sure you want to cancel this background render task?")) return;
+    try {
+      this.showToast("Cancelling render task... ⏳");
+      const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/cancel`, { method: "POST" });
+      if (resp.ok) {
+        this.showToast("Task cancelled. Project returned to Storyboard.");
+        await this.refreshActiveTasks();
+        this.refreshAllProjectLists();
+        if (this.currentProject && this.currentProject.id === projectId) {
+          await this.loadProject(projectId, 2);
+        }
+      } else {
+        this.showToast("Could not cancel task", true);
+      }
+    } catch (e) {
+      console.error(e);
+      this.showToast("Error cancelling task: " + e.message, true);
+    }
+  }
+
+  async cancelAllActiveRenders() {
+    if (!confirm("Are you sure you want to cancel ALL running background render tasks?")) return;
+    try {
+      this.showToast("Cancelling all tasks... ⏳");
+      const resp = await fetch("/api/tasks/cancel-all", { method: "POST" });
+      if (resp.ok) {
+        this.showToast("All active render tasks cancelled.");
+        await this.refreshActiveTasks();
+        this.refreshAllProjectLists();
+      } else {
+        this.showToast("Could not cancel tasks", true);
+      }
+    } catch (e) {
+      console.error(e);
+      this.showToast("Error: " + e.message, true);
+    }
+  }
+
+  showCompletionToast(project) {
+    if (!this.toastNotification) return;
+    const pTitle = project.title || project.idea || "Film";
+    this.toastNotification.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%;">
+        <span>🎉 Film <strong>"${this.escapeHtml(pTitle)}"</strong> is ready!</span>
+        <button id="btnToastWatchFilm" class="glass-btn primary-glow-btn compact-btn" style="padding:4px 10px; font-size:12px; white-space:nowrap;">
+          🍿 Watch
+        </button>
+      </div>
+    `;
+    this.toastNotification.style.borderColor = "#10b981";
+    this.toastNotification.classList.add("show");
+    const watchBtn = document.getElementById("btnToastWatchFilm");
+    if (watchBtn) {
+      watchBtn.addEventListener("click", () => {
+        this.loadProject(project, 4);
+        this.toastNotification.classList.remove("show");
+      });
+    }
+    setTimeout(() => {
+      this.toastNotification.classList.remove("show");
+    }, 8000);
   }
 }
 

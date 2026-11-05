@@ -155,7 +155,9 @@ class ImageService:
         title: str = "",
         image_mode: str = "gemini",
         character_desc: str = None,
-        reference_image_path: str = None
+        reference_image_path: str = None,
+        api_key: str = None,
+        provider: str = None
     ) -> str:
         """
         Scene visual generation pipeline:
@@ -164,6 +166,8 @@ class ImageService:
         3. OpenAI DALL-E 3 (if image_mode or provider is OpenAI)
         4. Storyboard-Only Canvas (if image_mode is manual)
         """
+        eff_api_key = api_key or self.api_key
+        eff_provider = provider or self.provider
         output_path = str(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         full_prompt = self.craft_full_prompt(prompt, style_key=style_key, character_desc=character_desc)
@@ -213,13 +217,13 @@ class ImageService:
         # ============================================================
         # 2. OPENAI DALL-E 3 MODE
         # ============================================================
-        if image_mode == "openai" or (self.provider == "openai" and self.api_key):
+        if image_mode == "openai" or (eff_provider == "openai" and eff_api_key):
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     resp = await client.post(
                         "https://api.openai.com/v1/images/generations",
                         headers={
-                            "Authorization": f"Bearer {self.api_key}",
+                            "Authorization": f"Bearer {eff_api_key}",
                             "Content-Type": "application/json"
                         },
                         json={
@@ -259,18 +263,18 @@ class ImageService:
 
             # 4a. Official Google AI Studio API Key (starts with AIzaSy... or standard API key)
             is_cookie_key = bool(
-                self.api_key and (
-                    self.api_key.startswith("g.a")
-                    or "__Secure-1PSID" in self.api_key
-                    or self.provider == "gemini_cookie"
+                eff_api_key and (
+                    eff_api_key.startswith("g.a")
+                    or "__Secure-1PSID" in eff_api_key
+                    or eff_provider == "gemini_cookie"
                 )
             )
 
-            if self.api_key and not is_cookie_key:
+            if eff_api_key and not is_cookie_key:
                 try:
                     from google import genai
                     from google.genai import types
-                    client = genai.Client(api_key=self.api_key)
+                    client = genai.Client(api_key=eff_api_key)
                     for img_model in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
                         try:
                             resp = client.models.generate_images(
@@ -300,7 +304,7 @@ class ImageService:
             s_creds = get_server_credentials()
             saved_psid = s_creds.get("gemini_cookie_psid")
             saved_psidts = s_creds.get("gemini_cookie_psidts")
-            cookie_input = self.api_key if is_cookie_key else (f"{saved_psid}|{saved_psidts}" if saved_psidts else saved_psid)
+            cookie_input = eff_api_key if is_cookie_key else (f"{saved_psid}|{saved_psidts}" if saved_psidts else saved_psid)
             psid, psidts = self._parse_gemini_cookie_pair(cookie_input)
             if not psid:
                 psid = saved_psid
