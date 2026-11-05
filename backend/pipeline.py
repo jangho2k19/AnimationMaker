@@ -466,7 +466,7 @@ class AnimationPipeline:
 
         # 2. Ensure voiceover audio & subtitles exist if enabled
         enable_subtitles = project.get("enable_subtitles", True)
-        enable_voiceover = project.get("enable_voiceover", True)
+        enable_voiceover = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
         audio_file = project_dir / f"scene_{scene_idx + 1}.mp3"
         srt_file = project_dir / f"scene_{scene_idx + 1}.srt"
         narration_changed = (scene.get("voiced_narration") != (scene.get("narration") or "").strip())
@@ -616,7 +616,7 @@ class AnimationPipeline:
             if idx < total_scenes - 1:
                 await asyncio.sleep(0.8)
 
-        enable_voiceover = project.get("enable_voiceover", True)
+        enable_voiceover = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
         enable_subtitles = project.get("enable_subtitles", True)
 
         # 2. Voices & Subtitles
@@ -758,11 +758,12 @@ class AnimationPipeline:
         # 5. Final Stitch & Master Audio Mix
         notify(94, "Final mastering and encoding complete animation...")
         final_video = project_dir / "final_animation.mp4"
+        bgm_vol = 0.22 if enable_voiceover else 0.75
         engine.concatenate_and_mix(
             scene_clip_paths=scene_clips,
             output_video_path=str(final_video),
             bgm_path=str(bgm_file),
-            bgm_volume=0.12
+            bgm_volume=bgm_vol
         )
 
         project["video_path"] = str(final_video.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
@@ -805,6 +806,8 @@ class AnimationPipeline:
         curr = project.get("enable_multivoice", True)
         new_val = (not curr) if enable is None else bool(enable)
         project["enable_multivoice"] = new_val
+        if new_val:
+            project["enable_voiceover"] = True
 
         # Clear voiced_narration so next preview or render uses the updated mode
         for sc in project.get("scenes", []):

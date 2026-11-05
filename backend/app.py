@@ -966,11 +966,12 @@ async def toggle_subtitles(project_id: str):
                 w = project.get("video_width", 1280)
                 h = project.get("video_height", 720)
                 eng = VideoEngine(width=w, height=h)
+                bgm_vol = 0.22 if (project.get("enable_voiceover", True) or project.get("enable_multivoice", False)) else 0.75
                 eng.concatenate_and_mix(
                     scene_clip_paths=valid_clips,
                     output_video_path=str(final_cand),
                     bgm_path=str(bgm_file) if has_bgm else None,
-                    bgm_volume=0.12
+                    bgm_volume=bgm_vol
                 )
         except Exception as e_mix:
             print(f"Notice re-mixing film on subtitle toggle: {e_mix}")
@@ -983,8 +984,11 @@ async def toggle_voiceover(project_id: str):
     project = pipeline.get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    new_val = not project.get("enable_voiceover", True)
+    curr_active = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
+    new_val = not curr_active
     project["enable_voiceover"] = new_val
+    if not new_val:
+        project["enable_multivoice"] = False
     pipeline.save_project(project)
 
     # Re-composite any existing scene clips on disk so voiceover audio takes instant effect
@@ -1011,11 +1015,12 @@ async def toggle_voiceover(project_id: str):
                 w = project.get("video_width", 1280)
                 h = project.get("video_height", 720)
                 eng = VideoEngine(width=w, height=h)
+                bgm_vol = 0.22 if (project.get("enable_voiceover", True) or project.get("enable_multivoice", False)) else 0.75
                 eng.concatenate_and_mix(
                     scene_clip_paths=valid_clips,
                     output_video_path=str(final_cand),
                     bgm_path=str(bgm_file) if has_bgm else None,
-                    bgm_volume=0.12
+                    bgm_volume=bgm_vol
                 )
         except Exception as e_mix:
             print(f"Notice re-mixing film on voiceover toggle: {e_mix}")
@@ -1475,7 +1480,7 @@ async def upload_acting_clip(project_id: str, scene_idx: int, file: UploadFile =
         f.write(content)
 
     # Only synthesize audio/subtitles if voiceover or subtitles are enabled
-    enable_voice = project.get("enable_voiceover", True)
+    enable_voice = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
     enable_subs = project.get("enable_subtitles", True)
     if enable_voice or enable_subs:
         await pipeline.generate_scene_audio(project_id, scene_idx)
@@ -1553,7 +1558,7 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
         raise HTTPException(502, f"FlowKit Veo generation error: {str(e)}")
 
     # Only synthesize audio/subtitles if voiceover or subtitles are enabled
-    enable_voice = project.get("enable_voiceover", True)
+    enable_voice = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
     enable_subs = project.get("enable_subtitles", True)
     if enable_voice or enable_subs:
         await pipeline.generate_scene_audio(project_id, scene_idx)

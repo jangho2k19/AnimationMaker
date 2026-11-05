@@ -52,7 +52,7 @@ class MusicService:
                     sample += tone * env
 
                 # Gentle master normalization and soft limiter
-                sample = (sample / len(chord)) * 0.28
+                sample = (sample / len(chord)) * 0.70
                 sample = max(-0.95, min(0.95, sample))
                 ival = int(sample * 32767.0)
                 raw_data.extend(struct.pack("<h", ival))

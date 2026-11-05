@@ -231,7 +231,7 @@ class VideoEngine:
         scene_clip_paths: List[str],
         output_video_path: str,
         bgm_path: str = None,
-        bgm_volume: float = 0.12
+        bgm_volume: float = 0.22
     ) -> str:
         """
         Concatenates all scene clips into a master film and mixes background music.
@@ -262,7 +262,7 @@ class VideoEngine:
                     f"pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=24,format=yuv420p[vout];"
                     f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo[voice];"
                     f"[1:a]volume={bgm_volume}[music];"
-                    f"[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+                    f"[voice][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]",
                     "-map", "[vout]",
                     "-map", "[aout]",
                     "-c:v", "libx264",
@@ -317,7 +317,7 @@ class VideoEngine:
         if has_bgm:
             bgm_idx = num_scenes
             filter_chains.append(f"[{bgm_idx}:a]volume={bgm_volume}[bgm]")
-            filter_chains.append(f"[acat_pre][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]")
+            filter_chains.append(f"[acat_pre][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]")
             audio_map = "[aout]"
         else:
             audio_map = "[acat_pre]"

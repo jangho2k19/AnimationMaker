@@ -1170,6 +1170,11 @@ class AniStoryApp {
     if (this.btnToggleVoiceoverStage1) {
       this.btnToggleVoiceoverStage1.addEventListener("click", () => {
         this.enableVoiceover = !this.enableVoiceover;
+        if (!this.enableVoiceover) {
+          this.enableMultivoice = false;
+          localStorage.setItem("anistory_cfg_enable_multivoice", "false");
+          this.updateMultivoiceUI(false);
+        }
         localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
         this.updateVoiceoverUI(this.enableVoiceover);
         this.showToast(this.enableVoiceover ? "🎙️ Voiceover narration enabled" : "🔇 Voiceover narration disabled (instrumental only)");
@@ -1180,9 +1185,12 @@ class AniStoryApp {
     if (this.btnToggleVoiceoverStage2) {
       this.btnToggleVoiceoverStage2.addEventListener("click", async () => {
         if (!this.currentProject) return;
-        const oldState = this.currentProject.enable_voiceover !== false;
+        const oldState = (this.currentProject.enable_voiceover !== false) || (this.currentProject.enable_multivoice === true);
         const newState = !oldState;
         this.updateVoiceoverUI(newState);
+        if (!newState) {
+          this.updateMultivoiceUI(false);
+        }
         this.showToast(newState ? "🎙️ Enabling voiceover & updating clips... ⏳" : "🔇 Disabling voiceover & updating clips... ⏳");
         try {
           const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-voiceover`, { method: "POST" });
@@ -1194,6 +1202,11 @@ class AniStoryApp {
             this.currentProject.enable_voiceover = data.enable_voiceover;
             this.enableVoiceover = data.enable_voiceover;
             localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
+            if (data.project && data.project.enable_multivoice !== undefined) {
+              this.enableMultivoice = data.project.enable_multivoice;
+              localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
+              this.updateMultivoiceUI(this.enableMultivoice);
+            }
             this.saveActiveProjectState();
             this.updateVoiceoverUI(this.currentProject.enable_voiceover);
             this.renderStoryboardView();
@@ -1211,6 +1224,11 @@ class AniStoryApp {
     if (this.btnToggleMultivoiceStage1) {
       this.btnToggleMultivoiceStage1.addEventListener("click", () => {
         this.enableMultivoice = !this.enableMultivoice;
+        if (this.enableMultivoice) {
+          this.enableVoiceover = true;
+          localStorage.setItem("anistory_cfg_enable_voiceover", "true");
+          this.updateVoiceoverUI(true);
+        }
         localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
         this.updateMultivoiceUI(this.enableMultivoice);
         this.showToast(this.enableMultivoice ? "🎭 Multi-Voice enabled (auto-casts character voices)" : "🎙️ Multi-Voice disabled (single narrator reads all)");
@@ -1224,6 +1242,9 @@ class AniStoryApp {
         const oldState = this.currentProject.enable_multivoice !== false;
         const newState = !oldState;
         this.updateMultivoiceUI(newState);
+        if (newState) {
+          this.updateVoiceoverUI(true);
+        }
         try {
           const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-multivoice`, {
             method: "POST",
@@ -1238,6 +1259,11 @@ class AniStoryApp {
             this.currentProject.enable_multivoice = data.enable_multivoice;
             this.enableMultivoice = data.enable_multivoice;
             localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
+            if (data.project && data.project.enable_voiceover !== undefined) {
+              this.enableVoiceover = data.project.enable_voiceover;
+              localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
+              this.updateVoiceoverUI(this.enableVoiceover);
+            }
             this.saveActiveProjectState();
             this.updateMultivoiceUI(this.currentProject.enable_multivoice);
             this.renderStoryboardView();
@@ -3218,9 +3244,11 @@ ${isAutoScenes
       }
     }
 
+    const multivoiceActive = this.currentProject.enable_multivoice !== false;
+    const voiceoverActive = (this.currentProject.enable_voiceover !== false) || multivoiceActive;
     this.updateSubtitlesUI(this.currentProject.enable_subtitles !== false);
-    this.updateVoiceoverUI(this.currentProject.enable_voiceover !== false);
-    this.updateMultivoiceUI(this.currentProject.enable_multivoice !== false);
+    this.updateVoiceoverUI(voiceoverActive);
+    this.updateMultivoiceUI(multivoiceActive);
     this.renderCharacterVoiceCasting();
     if (this.selectVoiceStage2 && this.currentProject.voice) {
       this.selectVoiceStage2.value = this.currentProject.voice;
@@ -3385,7 +3413,7 @@ ${isAutoScenes
                 <label class="field-label" style="margin-bottom:0;">🎙️ Voiceover Narration</label>
                 <button class="scene-action-pill btn-sync-scene-dialogue" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#6ee7b7; border-color:rgba(16,185,129,0.45); background:rgba(16,185,129,0.15);" title="Add/sync dialogue from story to Voiceover Narration, Image & Video Clip prompts">💬 +Dialogue</button>
                 <button class="scene-action-pill btn-revoice-scene" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#c4b5fd; border-color:rgba(139,92,246,0.45); background:rgba(139,92,246,0.15);" title="Re-synthesize audio for this scene with assigned character voices">🎙️ Re-Voice</button>
-                ${this.currentProject.enable_voiceover === false ? '<span class="tag-badge" style="background:rgba(239,68,68,0.15); color:#f87171; font-size:10px; padding:1px 6px;">🔇 Muted</span>' : ''}
+                ${(this.currentProject.enable_voiceover === false && !this.currentProject.enable_multivoice) ? '<span class="tag-badge" style="background:rgba(239,68,68,0.15); color:#f87171; font-size:10px; padding:1px 6px;">🔇 Muted</span>' : ''}
               </div>
               <span class="narration-badge" id="badgeNarr_${idx}" style="font-size:11px; padding:2px 7px; border-radius:12px; font-weight:500;"></span>
             </div>
@@ -5142,9 +5170,9 @@ ${isAutoScenes
 
     if (!p || !p.id) return;
     this.currentProject = p;
-    this.enableVoiceover = p.enable_voiceover !== false;
-    this.enableSubtitles = p.enable_subtitles !== false;
     this.enableMultivoice = p.enable_multivoice !== false;
+    this.enableVoiceover = (p.enable_voiceover !== false) || this.enableMultivoice;
+    this.enableSubtitles = p.enable_subtitles !== false;
     localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
     localStorage.setItem("anistory_cfg_enable_subtitles", this.enableSubtitles ? "true" : "false");
     localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
