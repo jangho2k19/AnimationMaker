@@ -211,6 +211,53 @@ class AniStoryApp {
     this.inputCharacterConsistency = document.getElementById("inputCharacterConsistency");
     this.btnLockCharacter = document.getElementById("btnLockCharacter");
 
+    // Studio Tools Dropdown elements
+    this.btnToggleStudioTools = document.getElementById("btnToggleStudioTools");
+    this.menuStudioTools = document.getElementById("menuStudioTools");
+    this.wrapStudioToolsDropdown = document.getElementById("wrapStudioToolsDropdown");
+    this.btnAddNewSceneDropdown = document.getElementById("btnAddNewSceneDropdown");
+    this.btnAddNewSceneToolbar = document.getElementById("btnAddNewSceneToolbar");
+    this.textPaintAllBtn = document.getElementById("textPaintAllBtn");
+    this.textAnimateAllBtn = document.getElementById("textAnimateAllBtn");
+
+    // Storyboard Control Toolbar & View Switcher elements
+    this.storyboardViewToolbar = document.getElementById("storyboardViewToolbar");
+    this.btnViewModeGrid = document.getElementById("btnViewModeGrid");
+    this.btnViewModeScript = document.getElementById("btnViewModeScript");
+    this.btnViewModeFilmstrip = document.getElementById("btnViewModeFilmstrip");
+    this.storyboardScriptView = document.getElementById("storyboardScriptView");
+    this.storyboardFilmstripView = document.getElementById("storyboardFilmstripView");
+    this.storyboardScriptScenesList = document.getElementById("storyboardScriptScenesList");
+    this.storyboardFilmstripTrack = document.getElementById("storyboardFilmstripTrack");
+
+    // Filter elements
+    this.filterBtnAll = document.getElementById("filterBtnAll");
+    this.filterBtnNeedArt = document.getElementById("filterBtnNeedArt");
+    this.filterBtnNeedVideo = document.getElementById("filterBtnNeedVideo");
+    this.filterBtnDialogue = document.getElementById("filterBtnDialogue");
+    this.filterCountAll = document.getElementById("filterCountAll");
+    this.filterCountNeedArt = document.getElementById("filterCountNeedArt");
+    this.filterCountNeedVideo = document.getElementById("filterCountNeedVideo");
+    this.filterCountDialogue = document.getElementById("filterCountDialogue");
+
+    // Prompt field toggle elements
+    this.btnPromptFieldScript = document.getElementById("btnPromptFieldScript");
+    this.btnPromptFieldImage = document.getElementById("btnPromptFieldImage");
+    this.btnPromptFieldVideo = document.getElementById("btnPromptFieldVideo");
+    this.btnPromptFieldAll = document.getElementById("btnPromptFieldAll");
+
+    // Screenplay & Filmstrip stats
+    this.scriptViewTitle = document.getElementById("scriptViewTitle");
+    this.scriptStatsTotalWords = document.getElementById("scriptStatsTotalWords");
+    this.scriptStatsEstDuration = document.getElementById("scriptStatsEstDuration");
+    this.scriptStatsDialogueCount = document.getElementById("scriptStatsDialogueCount");
+    this.filmstripStatsSummary = document.getElementById("filmstripStatsSummary");
+
+    // Storyboard state
+    this.storyboardViewMode = "grid"; // "grid" | "script" | "filmstrip"
+    this.storyboardSceneFilter = "all"; // "all" | "needArt" | "needVideo" | "dialogue"
+    this.activePromptField = "script"; // "script" | "image" | "video" | "all"
+
     // Scene Video Modal & Cinema Clips elements
     this.modalSceneVideo = document.getElementById("modalSceneVideo");
     this.btnCloseSceneVideoModal = document.getElementById("btnCloseSceneVideoModal");
@@ -912,6 +959,75 @@ class AniStoryApp {
     }
     if (this.btnLockCharacter) {
       this.btnLockCharacter.addEventListener("click", () => this.saveCharacterConsistency());
+    }
+
+    // Studio Tools Dropdown Toggle
+    if (this.btnToggleStudioTools && this.menuStudioTools) {
+      this.btnToggleStudioTools.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isHidden = this.menuStudioTools.style.display === "none";
+        this.menuStudioTools.style.display = isHidden ? "flex" : "none";
+        this.btnToggleStudioTools.classList.toggle("active", isHidden);
+      });
+      this.menuStudioTools.querySelectorAll(".menu-item-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          this.menuStudioTools.style.display = "none";
+          this.btnToggleStudioTools.classList.remove("active");
+        });
+      });
+      window.addEventListener("click", (e) => {
+        if (this.menuStudioTools.style.display !== "none" && !this.wrapStudioToolsDropdown?.contains(e.target)) {
+          this.menuStudioTools.style.display = "none";
+          this.btnToggleStudioTools.classList.remove("active");
+        }
+      });
+    }
+
+    // Add Scene Buttons
+    if (this.btnAddNewSceneToolbar) {
+      this.btnAddNewSceneToolbar.addEventListener("click", () => this.addNewScene());
+    }
+    if (this.btnAddNewSceneDropdown) {
+      this.btnAddNewSceneDropdown.addEventListener("click", () => this.addNewScene());
+    }
+
+    // View Mode Switcher
+    if (this.btnViewModeGrid) {
+      this.btnViewModeGrid.addEventListener("click", () => this.setStoryboardViewMode("grid"));
+    }
+    if (this.btnViewModeScript) {
+      this.btnViewModeScript.addEventListener("click", () => this.setStoryboardViewMode("script"));
+    }
+    if (this.btnViewModeFilmstrip) {
+      this.btnViewModeFilmstrip.addEventListener("click", () => this.setStoryboardViewMode("filmstrip"));
+    }
+
+    // Storyboard Scene Filters
+    if (this.filterBtnAll) {
+      this.filterBtnAll.addEventListener("click", () => this.setStoryboardSceneFilter("all"));
+    }
+    if (this.filterBtnNeedArt) {
+      this.filterBtnNeedArt.addEventListener("click", () => this.setStoryboardSceneFilter("needArt"));
+    }
+    if (this.filterBtnNeedVideo) {
+      this.filterBtnNeedVideo.addEventListener("click", () => this.setStoryboardSceneFilter("needVideo"));
+    }
+    if (this.filterBtnDialogue) {
+      this.filterBtnDialogue.addEventListener("click", () => this.setStoryboardSceneFilter("dialogue"));
+    }
+
+    // Global Prompt Field Switcher
+    if (this.btnPromptFieldScript) {
+      this.btnPromptFieldScript.addEventListener("click", () => this.setActivePromptField("script"));
+    }
+    if (this.btnPromptFieldImage) {
+      this.btnPromptFieldImage.addEventListener("click", () => this.setActivePromptField("image"));
+    }
+    if (this.btnPromptFieldVideo) {
+      this.btnPromptFieldVideo.addEventListener("click", () => this.setActivePromptField("video"));
+    }
+    if (this.btnPromptFieldAll) {
+      this.btnPromptFieldAll.addEventListener("click", () => this.setActivePromptField("all"));
     }
     if (this.btnCloseSceneVideoModal) {
       this.btnCloseSceneVideoModal.addEventListener("click", () => this.closeSceneVideoModal());
@@ -3214,7 +3330,13 @@ ${isAutoScenes
               🎬 Video Ready
             </span>
           </div>
-          <span class="scene-card-title">${scene.title || "Scene " + (idx + 1)}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="scene-card-title">${scene.title || "Scene " + (idx + 1)}</span>
+            <div class="scene-card-tools" style="display:flex; align-items:center; gap:4px;">
+              <button type="button" class="scene-icon-btn btn-duplicate-scene" data-idx="${idx}" title="Duplicate this scene">📄</button>
+              ${scenes.length > 1 ? `<button type="button" class="scene-icon-btn danger btn-delete-scene" data-idx="${idx}" title="Delete this scene">🗑️</button>` : ''}
+            </div>
+          </div>
         </div>
         <div class="scene-preview-container">
           <div class="scene-preview-placeholder" id="scenePlaceholder_${idx}" style="${hasSavedImage ? 'display:none;' : ''}">
@@ -3240,8 +3362,24 @@ ${isAutoScenes
           </div>
         </div>
         <div class="scene-card-body">
-          <!-- Voiceover Narration -->
-          <div>
+          <!-- Smart Card Inner Prompt Tabs -->
+          <div class="scene-prompt-tabs-nav" data-idx="${idx}">
+            <button type="button" class="scene-prompt-tab-btn ${this.activePromptField === 'script' ? 'active' : ''}" data-tab="script" data-idx="${idx}">
+              💬 Script &amp; Dialogue
+            </button>
+            <button type="button" class="scene-prompt-tab-btn ${this.activePromptField === 'image' ? 'active' : ''}" data-tab="image" data-idx="${idx}">
+              🎨 Image Prompt
+            </button>
+            <button type="button" class="scene-prompt-tab-btn ${this.activePromptField === 'video' ? 'active' : ''}" data-tab="video" data-idx="${idx}">
+              🎬 Video Prompt
+            </button>
+            <button type="button" class="scene-prompt-tab-btn-expand ${this.activePromptField === 'all' ? 'active' : ''}" data-idx="${idx}" title="Expand or collapse all prompt fields">
+              ${this.activePromptField === 'all' ? '⊟ Compact' : '↔ All'}
+            </button>
+          </div>
+
+          <!-- PANE 1: Voiceover Narration & Dialogue -->
+          <div class="scene-prompt-tab-pane pane-script ${this.activePromptField === 'script' || this.activePromptField === 'all' ? 'active' : ''}" id="paneScript_${idx}">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
               <div style="display:flex; align-items:center; gap:6px;">
                 <label class="field-label" style="margin-bottom:0;">🎙️ Voiceover Narration</label>
@@ -3255,8 +3393,8 @@ ${isAutoScenes
             ${dialogueBreakdownHtml}
           </div>
 
-          <!-- SEPARATE PROMPT 1: Image Prompt (Still Art / Imagen 3 / Midjourney) -->
-          <div class="scene-prompt-section">
+          <!-- PANE 2: Image Prompt (Still Art / Imagen 3 / Midjourney) -->
+          <div class="scene-prompt-tab-pane pane-image ${this.activePromptField === 'image' || this.activePromptField === 'all' ? 'active' : ''}" id="paneImage_${idx}">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
               <div style="display:flex; align-items:center; gap:6px;">
                 <label class="field-label" style="margin-bottom:0;">🎨 Image Prompt <span style="font-size:10.5px; color:var(--text-muted); font-weight:normal;">(Midjourney / Imagen 3)</span></label>
@@ -3267,8 +3405,8 @@ ${isAutoScenes
             <textarea class="styled-input scene-visual-input" id="visual_prompt_${idx}" rows="2" style="resize:vertical; min-height:54px; font-size:11.5px; line-height:1.45; font-family:inherit;" placeholder="Detailed still illustration prompt: environment, character clothing & features, art style, framing, lighting...">${scene.visual_prompt || ""}</textarea>
           </div>
 
-          <!-- SEPARATE PROMPT 2: Video Prompt (Acting & Motion / Veo 3 / Google Flow / Kling) -->
-          <div class="scene-prompt-section">
+          <!-- PANE 3: Video Prompt (Acting & Motion / Veo 3 / Google Flow / Kling) -->
+          <div class="scene-prompt-tab-pane pane-video ${this.activePromptField === 'video' || this.activePromptField === 'all' ? 'active' : ''}" id="paneVideo_${idx}">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
               <div style="display:flex; align-items:center; gap:6px;">
                 <label class="field-label" style="margin-bottom:0;">🎬 Video Prompt <span style="font-size:10.5px; color:var(--text-muted); font-weight:normal;">(Veo 3 / Google Flow / Kling)</span></label>
@@ -3281,6 +3419,37 @@ ${isAutoScenes
           </div>
         </div>
       `;
+
+      // Inner tabs switching logic
+      card.querySelectorAll(".scene-prompt-tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const tab = btn.dataset.tab;
+          card.classList.remove("show-all-prompts");
+          card.querySelectorAll(".scene-prompt-tab-btn").forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          card.querySelectorAll(".scene-prompt-tab-pane").forEach(p => p.classList.remove("active"));
+          const targetPane = card.querySelector(`.pane-${tab}`);
+          if (targetPane) targetPane.classList.add("active");
+        });
+      });
+      const expandBtn = card.querySelector(".scene-prompt-tab-btn-expand");
+      if (expandBtn) {
+        expandBtn.addEventListener("click", () => {
+          card.classList.toggle("show-all-prompts");
+          const isAll = card.classList.contains("show-all-prompts");
+          expandBtn.textContent = isAll ? "⊟ Compact" : "↔ All";
+        });
+      }
+
+      // Duplicate & Delete scene handlers
+      const dupBtn = card.querySelector(".btn-duplicate-scene");
+      if (dupBtn) {
+        dupBtn.addEventListener("click", () => this.duplicateScene(idx));
+      }
+      const delBtn = card.querySelector(".btn-delete-scene");
+      if (delBtn) {
+        delBtn.addEventListener("click", () => this.deleteScene(idx));
+      }
 
       // Real-time voiceover duration calculator for 8s acting video fit
       const narrTextarea = card.querySelector(`#narration_${idx}`);
@@ -3398,6 +3567,351 @@ ${isAutoScenes
 
       this.storyboardScenesGrid.appendChild(card);
     });
+
+    // Compute filter counts
+    const totalScenes = scenes.length;
+    const needArtCount = scenes.filter(s => !s.image_path).length;
+    const needVideoCount = scenes.filter(s => !s.video_path).length;
+    const dialogueCount = scenes.filter(s => s.dialogues && s.dialogues.length > 0).length;
+
+    if (this.filterCountAll) this.filterCountAll.textContent = totalScenes;
+    if (this.filterCountNeedArt) this.filterCountNeedArt.textContent = needArtCount;
+    if (this.filterCountNeedVideo) this.filterCountNeedVideo.textContent = needVideoCount;
+    if (this.filterCountDialogue) this.filterCountDialogue.textContent = dialogueCount;
+
+    if (this.textPaintAllBtn) {
+      this.textPaintAllBtn.textContent = needArtCount > 0 ? `Paint All (${needArtCount})` : "Paint All";
+    }
+    if (this.textAnimateAllBtn) {
+      this.textAnimateAllBtn.textContent = needVideoCount > 0 ? `Animate All (${needVideoCount})` : "Animate All";
+    }
+
+    // Render Script & Filmstrip alternate views
+    this.renderStoryboardScriptView(scenes);
+    this.renderStoryboardFilmstripView(scenes);
+
+    // Apply active view mode & filters
+    this.setStoryboardViewMode(this.storyboardViewMode);
+    this.setStoryboardSceneFilter(this.storyboardSceneFilter);
+    this.setActivePromptField(this.activePromptField);
+  }
+
+  setStoryboardViewMode(mode) {
+    this.storyboardViewMode = mode;
+    [this.btnViewModeGrid, this.btnViewModeScript, this.btnViewModeFilmstrip].forEach(b => {
+      if (b) b.classList.remove("active");
+    });
+    if (mode === "grid" && this.btnViewModeGrid) this.btnViewModeGrid.classList.add("active");
+    if (mode === "script" && this.btnViewModeScript) this.btnViewModeScript.classList.add("active");
+    if (mode === "filmstrip" && this.btnViewModeFilmstrip) this.btnViewModeFilmstrip.classList.add("active");
+
+    if (this.storyboardScenesGrid) this.storyboardScenesGrid.style.display = mode === "grid" ? "grid" : "none";
+    if (this.storyboardScriptView) this.storyboardScriptView.style.display = mode === "script" ? "block" : "none";
+    if (this.storyboardFilmstripView) this.storyboardFilmstripView.style.display = mode === "filmstrip" ? "block" : "none";
+
+    // Re-apply filter on view change
+    this.setStoryboardSceneFilter(this.storyboardSceneFilter);
+  }
+
+  setStoryboardSceneFilter(filter) {
+    this.storyboardSceneFilter = filter;
+    [this.filterBtnAll, this.filterBtnNeedArt, this.filterBtnNeedVideo, this.filterBtnDialogue].forEach(b => {
+      if (b) b.classList.remove("active");
+    });
+    if (filter === "all" && this.filterBtnAll) this.filterBtnAll.classList.add("active");
+    if (filter === "needArt" && this.filterBtnNeedArt) this.filterBtnNeedArt.classList.add("active");
+    if (filter === "needVideo" && this.filterBtnNeedVideo) this.filterBtnNeedVideo.classList.add("active");
+    if (filter === "dialogue" && this.filterBtnDialogue) this.filterBtnDialogue.classList.add("active");
+
+    const scenes = this.currentProject?.scenes || [];
+    scenes.forEach((sc, idx) => {
+      let match = true;
+      if (filter === "needArt") match = !sc.image_path;
+      else if (filter === "needVideo") match = !sc.video_path;
+      else if (filter === "dialogue") match = Boolean(sc.dialogues && sc.dialogues.length > 0);
+
+      const cardEl = document.getElementById(`sceneCard_${idx}`);
+      if (cardEl) cardEl.classList.toggle("filter-hidden", !match);
+
+      const scriptEl = document.getElementById(`scriptScene_${idx}`);
+      if (scriptEl) scriptEl.classList.toggle("filter-hidden", !match);
+
+      const filmstripEl = document.getElementById(`filmstripCard_${idx}`);
+      if (filmstripEl) filmstripEl.classList.toggle("filter-hidden", !match);
+    });
+  }
+
+  setActivePromptField(field) {
+    this.activePromptField = field;
+    [this.btnPromptFieldScript, this.btnPromptFieldImage, this.btnPromptFieldVideo, this.btnPromptFieldAll].forEach(b => {
+      if (b) b.classList.remove("active");
+    });
+    if (field === "script" && this.btnPromptFieldScript) this.btnPromptFieldScript.classList.add("active");
+    if (field === "image" && this.btnPromptFieldImage) this.btnPromptFieldImage.classList.add("active");
+    if (field === "video" && this.btnPromptFieldVideo) this.btnPromptFieldVideo.classList.add("active");
+    if (field === "all" && this.btnPromptFieldAll) this.btnPromptFieldAll.classList.add("active");
+
+    const cards = this.storyboardScenesGrid?.querySelectorAll(".scene-card") || [];
+    cards.forEach(card => {
+      if (field === "all") {
+        card.classList.add("show-all-prompts");
+        const expandBtn = card.querySelector(".scene-prompt-tab-btn-expand");
+        if (expandBtn) expandBtn.textContent = "⊟ Compact";
+      } else {
+        card.classList.remove("show-all-prompts");
+        const expandBtn = card.querySelector(".scene-prompt-tab-btn-expand");
+        if (expandBtn) expandBtn.textContent = "↔ All";
+
+        card.querySelectorAll(".scene-prompt-tab-btn").forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.tab === field);
+        });
+        card.querySelectorAll(".scene-prompt-tab-pane").forEach(pane => {
+          pane.classList.toggle("active", pane.classList.contains(`pane-${field}`));
+        });
+      }
+    });
+  }
+
+  renderStoryboardScriptView(scenes) {
+    if (!this.storyboardScriptScenesList) return;
+    this.storyboardScriptScenesList.innerHTML = "";
+    if (!scenes || !scenes.length) return;
+
+    let totalWords = 0;
+    let totalDialogues = 0;
+
+    if (this.scriptViewTitle) {
+      this.scriptViewTitle.textContent = `${this.currentProject?.title || "Screenplay"} (${scenes.length} Scenes)`;
+    }
+
+    scenes.forEach((scene, idx) => {
+      const narr = (scene.narration || "").trim();
+      const words = narr ? narr.split(/\s+/).filter(Boolean).length : 0;
+      totalWords += words;
+      const dialCount = scene.dialogues ? scene.dialogues.length : 0;
+      totalDialogues += dialCount;
+
+      const cleanImgPath = scene.image_path ? scene.image_path.replace(/\\/g, "/") : "";
+      const hasSavedImage = Boolean(cleanImgPath);
+      const imgSrc = hasSavedImage ? `/media/${encodeURI(cleanImgPath)}?t=${Date.now()}` : "";
+      const cleanVideoPath = scene.video_path ? scene.video_path.replace(/\\/g, "/") : "";
+      const hasVideo = Boolean(cleanVideoPath);
+
+      const scriptCard = document.createElement("div");
+      scriptCard.className = "script-scene-card";
+      scriptCard.id = `scriptScene_${idx}`;
+      scriptCard.dataset.index = idx;
+
+      const dialoguesHtml = (scene.dialogues && scene.dialogues.length > 0) ? `
+        <div class="script-dialogues-box">
+          <label class="field-label" style="font-size:11px; margin-bottom:2px;">🎭 Character Dialogues (${scene.dialogues.length})</label>
+          ${scene.dialogues.map(d => `
+            <div class="dialogue-segment-row">
+              <span class="dialogue-speaker-pill ${(d.speaker || '').toLowerCase() === 'narrator' ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
+              <span class="dialogue-text-bubble">"${d.text || ''}"</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : '';
+
+      scriptCard.innerHTML = `
+        <div class="script-scene-thumb-col">
+          <div class="script-thumb-box">
+            ${hasSavedImage ? `<img src="${imgSrc}" class="script-thumb-img" alt="Scene ${idx + 1}" loading="lazy">` : `<div class="script-thumb-placeholder">🎨</div>`}
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" style="font-size:10px; padding:2px 6px; text-align:center;">
+              ${hasSavedImage ? '✓ Painted' : '⏳ Unpainted'}
+            </span>
+            ${hasVideo ? '<span class="scene-status-pill ready" style="font-size:10px; padding:2px 6px; text-align:center;">🎬 Video Ready</span>' : ''}
+            <div style="display:flex; gap:4px; justify-content:center; margin-top:2px;">
+              <button class="scene-action-pill btn-reroll-img" data-idx="${idx}" style="padding:2px 6px; font-size:10px;" title="AI Paint">🎨</button>
+              <button class="scene-action-pill btn-upload-img" data-idx="${idx}" style="padding:2px 6px; font-size:10px;" title="Upload Art">📁</button>
+              ${hasVideo ? `<button class="scene-action-pill btn-play-script-clip" data-idx="${idx}" style="padding:2px 6px; font-size:10px;" title="Play Clip">▶️</button>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="script-scene-content-col">
+          <div class="script-scene-heading">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="scene-badge">SCENE ${scene.scene_number || idx + 1}</span>
+              <span>${scene.title || "Scene " + (idx + 1)}</span>
+              ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.2); color:#c4b5fd; font-size:10.5px;">🎭 ${scene.archetype}</span>` : ''}
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <button class="scene-action-pill btn-sync-scene-dialogue" data-idx="${idx}" style="padding:2px 8px; font-size:10.5px; height:22px; color:#6ee7b7; border-color:rgba(16,185,129,0.45); background:rgba(16,185,129,0.15);" title="Sync Dialogues">💬 +Dialogue</button>
+              <button class="scene-action-pill btn-revoice-scene" data-idx="${idx}" style="padding:2px 8px; font-size:10.5px; height:22px; color:#c4b5fd; border-color:rgba(139,92,246,0.45); background:rgba(139,92,246,0.15);" title="Re-Voice">🎙️ Re-Voice</button>
+            </div>
+          </div>
+          <div class="script-narration-box">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label class="field-label" style="font-size:11px; margin-bottom:2px;">🎙️ Screenplay Narration / Action Voiceover</label>
+              <span class="narration-badge" id="scriptBadgeNarr_${idx}" style="font-size:10.5px; padding:1px 6px; border-radius:10px;">${words}w • ~${(words / 2.2).toFixed(1)}s</span>
+            </div>
+            <textarea class="styled-input script-narration-input" id="scriptNarration_${idx}" placeholder="Voiceover narration...">${scene.narration || ""}</textarea>
+          </div>
+          ${dialoguesHtml}
+        </div>
+      `;
+
+      // Sync script narration with card narration
+      const scriptNarEl = scriptCard.querySelector(`#scriptNarration_${idx}`);
+      if (scriptNarEl) {
+        scriptNarEl.addEventListener("input", (e) => {
+          const val = e.target.value;
+          const mainNarEl = document.getElementById(`narration_${idx}`);
+          if (mainNarEl) {
+            mainNarEl.value = val;
+            mainNarEl.dispatchEvent(new Event("input"));
+          }
+          scene.narration = val;
+        });
+      }
+
+      // Bind action pills inside script card
+      const scriptPaintBtn = scriptCard.querySelector(".btn-reroll-img");
+      if (scriptPaintBtn) {
+        scriptPaintBtn.addEventListener("click", () => this.rerollSceneImage(idx, scriptPaintBtn));
+      }
+      const scriptUploadBtn = scriptCard.querySelector(".btn-upload-img");
+      if (scriptUploadBtn) {
+        scriptUploadBtn.addEventListener("click", () => {
+          const fi = card.querySelector(".scene-file-input") || document.getElementById(`fileInput_${idx}`);
+          if (fi) fi.click();
+        });
+      }
+      const scriptPlayClipBtn = scriptCard.querySelector(".btn-play-script-clip");
+      if (scriptPlayClipBtn) {
+        scriptPlayClipBtn.addEventListener("click", () => {
+          const ovBtn = document.getElementById(`btnPlayOverlay_${idx}`);
+          if (ovBtn) ovBtn.click();
+        });
+      }
+      const scriptSyncDialBtn = scriptCard.querySelector(".btn-sync-scene-dialogue");
+      if (scriptSyncDialBtn) {
+        scriptSyncDialBtn.addEventListener("click", () => this.syncStoryDialogues(idx, "all", scriptSyncDialBtn));
+      }
+      const scriptRevoiceBtn = scriptCard.querySelector(".btn-revoice-scene");
+      if (scriptRevoiceBtn) {
+        scriptRevoiceBtn.addEventListener("click", () => this.revoiceSceneAudio(idx, scriptRevoiceBtn));
+      }
+
+      this.storyboardScriptScenesList.appendChild(scriptCard);
+    });
+
+    if (this.scriptStatsTotalWords) this.scriptStatsTotalWords.textContent = `💬 ${totalWords} words total`;
+    if (this.scriptStatsEstDuration) this.scriptStatsEstDuration.textContent = `⏱️ ~${(totalWords / 2.2).toFixed(0)}s narration (${scenes.length * 8}s video)`;
+    if (this.scriptStatsDialogueCount) this.scriptStatsDialogueCount.textContent = `🎭 ${totalDialogues} dialogue segments`;
+  }
+
+  renderStoryboardFilmstripView(scenes) {
+    if (!this.storyboardFilmstripTrack) return;
+    this.storyboardFilmstripTrack.innerHTML = "";
+    if (!scenes || !scenes.length) return;
+
+    scenes.forEach((scene, idx) => {
+      const cleanImgPath = scene.image_path ? scene.image_path.replace(/\\/g, "/") : "";
+      const hasSavedImage = Boolean(cleanImgPath);
+      const imgSrc = hasSavedImage ? `/media/${encodeURI(cleanImgPath)}?t=${Date.now()}` : "";
+      const cleanVideoPath = scene.video_path ? scene.video_path.replace(/\\/g, "/") : "";
+      const hasVideo = Boolean(cleanVideoPath);
+
+      const card = document.createElement("div");
+      card.className = "filmstrip-card";
+      card.id = `filmstripCard_${idx}`;
+      card.dataset.index = idx;
+
+      card.innerHTML = `
+        <div class="filmstrip-media-wrap">
+          <span class="filmstrip-scene-num-badge">Sc ${scene.scene_number || idx + 1}</span>
+          ${hasSavedImage ? `<img src="${imgSrc}" class="filmstrip-img" alt="Scene ${idx + 1}" loading="lazy">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0d1124;color:var(--text-muted);font-size:24px;">🎨</div>`}
+          ${hasVideo ? `<button class="scene-play-overlay-btn btn-filmstrip-play" data-idx="${idx}" style="display:flex;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);" title="Play Video">▶️</button>` : ''}
+        </div>
+        <div class="filmstrip-info">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="filmstrip-scene-title">${scene.title || "Scene " + (idx + 1)}</span>
+            <button class="scene-action-pill btn-reroll-img" data-idx="${idx}" style="padding:2px 6px; font-size:10px;" title="AI Paint">🎨 Paint</button>
+          </div>
+          <p class="filmstrip-narration-snippet" title="${scene.narration || ''}">${scene.narration || '(No narration)'}</p>
+        </div>
+      `;
+
+      const playBtn = card.querySelector(".btn-filmstrip-play");
+      if (playBtn) {
+        playBtn.addEventListener("click", () => {
+          const ovBtn = document.getElementById(`btnPlayOverlay_${idx}`);
+          if (ovBtn) ovBtn.click();
+        });
+      }
+
+      const paintBtn = card.querySelector(".btn-reroll-img");
+      if (paintBtn) {
+        paintBtn.addEventListener("click", () => this.rerollSceneImage(idx, paintBtn));
+      }
+
+      this.storyboardFilmstripTrack.appendChild(card);
+    });
+
+    if (this.filmstripStatsSummary) {
+      this.filmstripStatsSummary.textContent = `${scenes.length} Scenes • ~${scenes.length * 8}s Film Length`;
+    }
+  }
+
+  addNewScene() {
+    if (!this.currentProject) return;
+    const scenes = this.currentProject.scenes || [];
+    const nextNum = scenes.length + 1;
+    const newScene = {
+      scene_number: nextNum,
+      title: `Scene ${nextNum}`,
+      narration: "",
+      visual_prompt: "",
+      acting_prompt: "",
+      camera_motion: "zoom_in",
+      dialogues: []
+    };
+    scenes.push(newScene);
+    this.currentProject.scenes = scenes;
+    this.saveActiveProjectState();
+    this.renderStoryboardView();
+    this.saveStoryboardEdits(true);
+    this.showToast(`Added Scene ${nextNum}! 🎬`);
+  }
+
+  duplicateScene(idx) {
+    if (!this.currentProject || !this.currentProject.scenes) return;
+    const orig = this.currentProject.scenes[idx];
+    const copy = JSON.parse(JSON.stringify(orig));
+    copy.title = `${orig.title || 'Scene ' + (idx + 1)} (Copy)`;
+    copy.image_path = null;
+    copy.video_path = null;
+    copy.audio_path = null;
+    copy.srt_path = null;
+    this.currentProject.scenes.splice(idx + 1, 0, copy);
+    this.currentProject.scenes.forEach((sc, i) => {
+      sc.scene_number = i + 1;
+    });
+    this.saveActiveProjectState();
+    this.renderStoryboardView();
+    this.saveStoryboardEdits(true);
+    this.showToast(`Scene ${idx + 1} duplicated! 📄`);
+  }
+
+  deleteScene(idx) {
+    if (!this.currentProject || !this.currentProject.scenes) return;
+    if (this.currentProject.scenes.length <= 1) {
+      this.showToast("Cannot delete the only scene in the film", true);
+      return;
+    }
+    if (!confirm(`Delete Scene ${idx + 1}?`)) return;
+    this.currentProject.scenes.splice(idx, 1);
+    this.currentProject.scenes.forEach((sc, i) => {
+      sc.scene_number = i + 1;
+    });
+    this.saveActiveProjectState();
+    this.renderStoryboardView();
+    this.saveStoryboardEdits(true);
+    this.showToast(`Scene deleted! 🗑️`);
   }
 
   renderSceneQuickJumpRibbon(scenes) {

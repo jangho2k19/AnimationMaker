@@ -558,35 +558,76 @@
 
             <!-- Primary Action Buttons Group -->
             <div class="director-actions-group">
-              <!-- Studio Tools Cluster -->
-              <div class="tools-cluster">
-                <button id="btnExportStoryboard" class="glass-btn secondary-btn tool-btn" title="1-Click copy all scene acting & visual prompts formatted for Google Flow / Veo 3 / Kling / Midjourney">
-                  <span>📋</span> Prompts
+              <!-- Studio Tools Popover / Dropdown Menu -->
+              <div class="studio-tools-dropdown-wrap" id="wrapStudioToolsDropdown">
+                <button id="btnToggleStudioTools" class="glass-btn secondary-btn tool-btn studio-tools-trigger" type="button" title="Story & script production tools">
+                  <span>✨</span> Studio Tools <span class="dropdown-chevron">▾</span>
                 </button>
-                <button id="btnExportScript" class="glass-btn secondary-btn tool-btn" title="Export complete screenplay text with scenes & narration">
-                  <span>📄</span> Script
-                </button>
-                <button id="btnRefineAllPrompts" class="glass-btn secondary-btn tool-btn refine-all-btn" title="Upgrade all scene video prompts to professional director-grade standard" style="color: #c4b5fd; border-color: rgba(167, 139, 250, 0.45); background: rgba(139, 92, 246, 0.14);">
-                  <span>✨</span> Refine Prompts
-                </button>
-                <button id="btnSyncDialogues" class="glass-btn secondary-btn tool-btn" title="Extract dialogues from story and add to Voiceover Narration, Image & Video Clip prompts" style="color: #6ee7b7; border-color: rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.14);">
-                  <span>💬</span> Add Dialogues
-                </button>
-                <button id="btnOpenGoogleFlow" class="glass-btn secondary-btn tool-btn flow-btn" title="Open signed-in Google Flow Studio (Veo) in Chromium">
-                  <span>🌐</span> Veo Flow
-                </button>
-                <button id="btnSwitchProject" class="glass-btn secondary-btn tool-btn" title="Open or switch to another animated project">
-                  <span>📂</span> Switch
-                </button>
+                <div id="menuStudioTools" class="studio-tools-menu glass-panel" style="display: none;">
+                  <div class="menu-group-header">Prompt Engineering</div>
+                  <button id="btnExportStoryboard" class="menu-item-btn" type="button" title="1-Click copy formatted prompts">
+                    <span class="menu-icon">📋</span>
+                    <div class="menu-text-wrap">
+                      <span class="menu-item-title">Copy All Prompts</span>
+                      <span class="menu-item-desc">Formatted for Midjourney, Veo 3 &amp; Kling</span>
+                    </div>
+                  </button>
+                  <button id="btnRefineAllPrompts" class="menu-item-btn" type="button" title="Upgrade all video prompts">
+                    <span class="menu-icon">✨</span>
+                    <div class="menu-text-wrap">
+                      <span class="menu-item-title">Refine Video Prompts</span>
+                      <span class="menu-item-desc">Upgrade to director-grade cinematic beats</span>
+                    </div>
+                  </button>
+                  <button id="btnOpenGoogleFlow" class="menu-item-btn" type="button" title="Open Google Flow Studio">
+                    <span class="menu-icon">🌐</span>
+                    <div class="menu-text-wrap">
+                      <span class="menu-item-title">Veo Flow Studio</span>
+                      <span class="menu-item-desc">Launch Google Flow Chromium bridge</span>
+                    </div>
+                  </button>
+
+                  <div class="menu-group-header">Screenplay &amp; Story</div>
+                  <button id="btnExportScript" class="menu-item-btn" type="button" title="Export screenplay text">
+                    <span class="menu-icon">📄</span>
+                    <div class="menu-text-wrap">
+                      <span class="menu-item-title">Export Screenplay (.txt)</span>
+                      <span class="menu-item-desc">Formatted scene actions &amp; narration</span>
+                    </div>
+                  </button>
+                  <button id="btnSyncDialogues" class="menu-item-btn" type="button" title="Auto-detect &amp; sync dialogues">
+                    <span class="menu-icon">💬</span>
+                    <div class="menu-text-wrap">
+                      <span class="menu-item-title">Auto-Add Dialogues</span>
+                      <span class="menu-item-desc">Extract character dialogue lines from story</span>
+                    </div>
+                  </button>
+                  <button id="btnAddNewSceneDropdown" class="menu-item-btn" type="button" title="Add a new scene to this film">
+                    <span class="menu-icon">➕</span>
+                    <div class="menu-text-wrap">
+                      <span class="menu-item-title">Add New Scene</span>
+                      <span class="menu-item-desc">Insert a new storyboard scene card</span>
+                    </div>
+                  </button>
+
+                  <div class="menu-group-header">Project</div>
+                  <button id="btnSwitchProject" class="menu-item-btn" type="button" title="Switch or import project">
+                    <span class="menu-icon">📂</span>
+                    <div class="menu-text-wrap">
+                      <span class="menu-item-title">Switch / Load Project</span>
+                      <span class="menu-item-desc">Open project library or import JSON</span>
+                    </div>
+                  </button>
+                </div>
               </div>
 
               <!-- Batch Production & Final Render CTA -->
               <div class="production-cluster">
                 <button id="btnPaintAllImages" class="glass-btn secondary-btn batch-btn" title="Paint all scenes sequentially one by one while keeping character consistency">
-                  <span>🎨</span> Paint All
+                  <span>🎨</span> <span id="textPaintAllBtn">Paint All</span>
                 </button>
                 <button id="btnAnimateAllScenes" class="glass-btn secondary-btn batch-btn animate-btn" title="Render animated video clips for every scene sequentially">
-                  <span>🎬</span> Animate All
+                  <span>🎬</span> <span id="textAnimateAllBtn">Animate All</span>
                 </button>
                 <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn batch-btn" title="Save script and narration edits">
                   <span>💾</span> Save
@@ -642,6 +683,61 @@
           </div>
         </div>
 
+        <!-- Storyboard Control & View Mode Navigation Toolbar -->
+        <div id="storyboardViewToolbar" class="storyboard-view-toolbar glass-panel">
+          <!-- View Switcher Tabs -->
+          <div class="view-mode-switcher" role="tablist" aria-label="Storyboard View Modes">
+            <button id="btnViewModeGrid" type="button" class="view-mode-btn active" data-mode="grid" title="Detailed Scene Cards Grid View">
+              <span class="view-icon">🎬</span> Cards Grid
+            </button>
+            <button id="btnViewModeScript" type="button" class="view-mode-btn" data-mode="script" title="Screenplay & Dialogue Reading View">
+              <span class="view-icon">📋</span> Script &amp; Dialogue
+            </button>
+            <button id="btnViewModeFilmstrip" type="button" class="view-mode-btn" data-mode="filmstrip" title="Visual Reel Filmstrip View">
+              <span class="view-icon">🖼️</span> Filmstrip
+            </button>
+          </div>
+
+          <!-- Quick Filters & Progress Counters -->
+          <div class="storyboard-filter-group">
+            <span class="toolbar-label">Filter:</span>
+            <button id="filterBtnAll" type="button" class="filter-chip-btn active" data-filter="all">
+              All (<span id="filterCountAll">0</span>)
+            </button>
+            <button id="filterBtnNeedArt" type="button" class="filter-chip-btn" data-filter="needArt" title="Show only unpainted scenes">
+              🎨 Need Art (<span id="filterCountNeedArt">0</span>)
+            </button>
+            <button id="filterBtnNeedVideo" type="button" class="filter-chip-btn" data-filter="needVideo" title="Show scenes needing video clips">
+              🎬 Need Video (<span id="filterCountNeedVideo">0</span>)
+            </button>
+            <button id="filterBtnDialogue" type="button" class="filter-chip-btn" data-filter="dialogue" title="Show scenes with character dialogues">
+              💬 Dialogues (<span id="filterCountDialogue">0</span>)
+            </button>
+          </div>
+
+          <!-- Prompt Fields Global Toggle & Add Scene -->
+          <div class="prompt-tabs-controller">
+            <div class="field-toggle-pill-group" title="Switch prompt view across all scene cards">
+              <span class="toolbar-label">Field:</span>
+              <button id="btnPromptFieldScript" type="button" class="prompt-field-pill active" data-field="script" title="Show Script & Dialogue on cards">
+                💬 Script
+              </button>
+              <button id="btnPromptFieldImage" type="button" class="prompt-field-pill" data-field="image" title="Show Image Art prompt on cards">
+                🎨 Image
+              </button>
+              <button id="btnPromptFieldVideo" type="button" class="prompt-field-pill" data-field="video" title="Show Video Motion prompt on cards">
+                🎥 Video
+              </button>
+              <button id="btnPromptFieldAll" type="button" class="prompt-field-pill" data-field="all" title="Expand all prompt fields on cards">
+                ↔ All
+              </button>
+            </div>
+            <button id="btnAddNewSceneToolbar" type="button" class="glass-btn secondary-btn compact-action-pill add-scene-btn" title="Add a new scene to this film">
+              <span>➕ Add Scene</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Sticky Scene Quick-Jump Ribbon -->
         <nav id="sceneQuickJumpBar" class="scene-quick-jump-ribbon" aria-label="Scene Quick Navigation">
           <!-- Populated dynamically by app.js: [Sc 1 ✓] [Sc 2 ✓] [Sc 3 ⏳] ... -->
@@ -672,9 +768,43 @@
           </div>
         </div>
 
-        <!-- Scene Cards Masonry Grid -->
+        <!-- View 1: Scene Cards Masonry Grid -->
         <div id="storyboardScenesGrid" class="scenes-masonry-grid compact-grid">
           <!-- Populated dynamically with scene cards -->
+        </div>
+
+        <!-- View 2: Screenplay & Dialogue Reader View -->
+        <div id="storyboardScriptView" class="storyboard-script-container glass-panel" style="display:none;">
+          <div class="script-view-header">
+            <div class="script-view-heading">
+              <span class="script-badge">📋 Screenplay Reader</span>
+              <h3 id="scriptViewTitle" class="script-title">Film Screenplay</h3>
+            </div>
+            <div class="script-stats-strip">
+              <span id="scriptStatsTotalWords" class="script-stat-pill">💬 0 words</span>
+              <span id="scriptStatsEstDuration" class="script-stat-pill">⏱️ ~0s narration</span>
+              <span id="scriptStatsDialogueCount" class="script-stat-pill">🎭 0 dialogue lines</span>
+            </div>
+          </div>
+          <div id="storyboardScriptScenesList" class="script-scenes-list">
+            <!-- Populated dynamically by app.js -->
+          </div>
+        </div>
+
+        <!-- View 3: Visual Filmstrip Reel View -->
+        <div id="storyboardFilmstripView" class="storyboard-filmstrip-container glass-panel" style="display:none;">
+          <div class="filmstrip-view-header">
+            <div class="filmstrip-heading">
+              <span class="filmstrip-badge">🖼️ Visual Reel Filmstrip</span>
+              <h3 class="filmstrip-title">Cinematic Sequence Deck</h3>
+            </div>
+            <div class="filmstrip-stats-strip">
+              <span id="filmstripStatsSummary" class="script-stat-pill">0 Scenes in Sequence</span>
+            </div>
+          </div>
+          <div id="storyboardFilmstripTrack" class="filmstrip-track">
+            <!-- Populated dynamically by app.js -->
+          </div>
         </div>
 
         <!-- Floating Quick Scroll to Top & Render Pill -->
