@@ -393,7 +393,8 @@ class VoiceAgent:
         default_voice: Optional[str] = None,
         api_key: Optional[str] = None,
         max_duration: Optional[float] = None,
-        pause_gap: float = 0.25
+        pause_gap: float = 0.25,
+        include_narrator: bool = True
     ) -> dict:
         """
         Synthesizes multi-voice character dialogues for a scene.
@@ -433,6 +434,36 @@ class VoiceAgent:
         if not segments:
             segments = [{"speaker": "Narrator", "text": narration.strip() or "Scene action."}]
 
+        all_segments = list(segments)
+        if not include_narrator:
+            segments = [
+                s for s in segments
+                if (s.get("speaker") or "").strip().lower() not in ("narrator", "người kể chuyện", "none", "")
+            ]
+            if not segments:
+                # Scene has no character dialogue (only narrator description): generate clean silent audio
+                sil_dur = 4.0
+                subprocess.run([
+                    FFMPEG_PATH, "-y",
+                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                    "-t", str(sil_dur),
+                    "-c:a", "libmp3lame", "-q:a", "4",
+                    output_audio_path
+                ], capture_output=True)
+                if output_srt_path:
+                    with open(output_srt_path, "w", encoding="utf-8") as srt_f:
+                        srt_f.write("")
+                return {
+                    "audio_path": output_audio_path,
+                    "srt_path": output_srt_path,
+                    "duration": sil_dur,
+                    "voice": def_voice,
+                    "character_voices": char_voices,
+                    "dialogues": all_segments,
+                    "is_multivoice": True,
+                    "dialogue_only_silent": True
+                }
+
         # Voice resolver
         def get_voice_for_speaker(speaker_name: str) -> str:
             spk = (speaker_name or "").strip()
@@ -470,7 +501,7 @@ class VoiceAgent:
                 max_duration=max_duration,
                 enable_multivoice=False
             )
-            res["dialogues"] = segments
+            res["dialogues"] = all_segments
             res["character_voices"] = char_voices
             res["is_multivoice"] = False
             return res
@@ -587,7 +618,7 @@ class VoiceAgent:
                 "duration": duration,
                 "voice": def_voice,
                 "character_voices": char_voices,
-                "dialogues": segments,
+                "dialogues": all_segments,
                 "is_multivoice": True
             }
 
@@ -608,15 +639,16 @@ class VoiceAgent:
         max_duration: Optional[float] = None,
         dialogues: Optional[List[Dict[str, Any]]] = None,
         character_voices: Optional[Dict[str, str]] = None,
-        enable_multivoice: bool = False
+        enable_multivoice: bool = False,
+        include_narrator: bool = True
     ) -> dict:
         """
         Synthesizes scene audio and subtitles.
-        When enable_multivoice is True and character_voices or dialogues are supplied,
-        routes to synthesize_multivoice() to voice each character with distinct personas.
+        When enable_multivoice is True, routes to synthesize_multivoice() to voice
+        each character with distinct personas (and optionally skip Narrator when include_narrator=False).
         When single-voice narration is desired, synthesizes using ONE consistent voice.
         """
-        if enable_multivoice and (dialogues or character_voices):
+        if enable_multivoice:
             return await self.synthesize_multivoice(
                 dialogues=dialogues,
                 narration=text,
@@ -625,7 +657,8 @@ class VoiceAgent:
                 output_srt_path=output_srt_path,
                 default_voice=voice or self.default_voice,
                 api_key=api_key,
-                max_duration=max_duration
+                max_duration=max_duration,
+                include_narrator=include_narrator
             )
 
         clean_text = self._normalize_text_for_tts(text)

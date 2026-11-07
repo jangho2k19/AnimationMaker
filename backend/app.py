@@ -985,14 +985,21 @@ async def toggle_voiceover(project_id: str):
     project = pipeline.get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    curr_active = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
-    new_val = not curr_active
+    curr = project.get("enable_voiceover", True)
+    new_val = not curr
     project["enable_voiceover"] = new_val
-    if not new_val:
-        project["enable_multivoice"] = False
+
+    # If Multi-Voice is active, toggling Voiceover switches between Narrator+Dialogue and Dialogue-Only,
+    # so mark scenes for audio re-synthesis on next preview/render.
+    if project.get("enable_multivoice", False):
+        for sc in project.get("scenes", []):
+            sc["voiced_narration"] = ""
+        pipeline.save_project(project)
+        return {"enable_voiceover": new_val, "project": project}
+
     pipeline.save_project(project)
 
-    # Re-composite any existing scene clips on disk so voiceover audio takes instant effect
+    # Re-composite any existing scene clips on disk so voiceover mute/unmute takes instant effect
     p_dir = Path(OUTPUT_DIR) / "projects" / project_id
     re_composited_any = False
     scenes = project.get("scenes", [])

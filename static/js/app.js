@@ -1170,14 +1170,15 @@ class AniStoryApp {
     if (this.btnToggleVoiceoverStage1) {
       this.btnToggleVoiceoverStage1.addEventListener("click", () => {
         this.enableVoiceover = !this.enableVoiceover;
-        if (!this.enableVoiceover) {
-          this.enableMultivoice = false;
-          localStorage.setItem("anistory_cfg_enable_multivoice", "false");
-          this.updateMultivoiceUI(false);
-        }
         localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
         this.updateVoiceoverUI(this.enableVoiceover);
-        this.showToast(this.enableVoiceover ? "🎙️ Voiceover narration enabled" : "🔇 Voiceover narration disabled (instrumental only)");
+        if (this.enableVoiceover) {
+          this.showToast("🎙️ Voiceover narration enabled");
+        } else if (this.enableMultivoice) {
+          this.showToast("🎭 Narrator voiceover OFF (Character dialogues only)");
+        } else {
+          this.showToast("🔇 Voiceover narration disabled (instrumental only)");
+        }
       });
     }
 
@@ -1185,13 +1186,13 @@ class AniStoryApp {
     if (this.btnToggleVoiceoverStage2) {
       this.btnToggleVoiceoverStage2.addEventListener("click", async () => {
         if (!this.currentProject) return;
-        const oldState = (this.currentProject.enable_voiceover !== false) || (this.currentProject.enable_multivoice === true);
+        const oldState = this.currentProject.enable_voiceover !== false;
         const newState = !oldState;
         this.updateVoiceoverUI(newState);
-        if (!newState) {
-          this.updateMultivoiceUI(false);
+        const mvActive = this.currentProject.enable_multivoice !== false;
+        if (!mvActive) {
+          this.showToast(newState ? "🎙️ Enabling voiceover & updating clips... ⏳" : "🔇 Disabling voiceover & updating clips... ⏳");
         }
-        this.showToast(newState ? "🎙️ Enabling voiceover & updating clips... ⏳" : "🔇 Disabling voiceover & updating clips... ⏳");
         try {
           const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-voiceover`, { method: "POST" });
           if (resp.ok) {
@@ -1202,15 +1203,16 @@ class AniStoryApp {
             this.currentProject.enable_voiceover = data.enable_voiceover;
             this.enableVoiceover = data.enable_voiceover;
             localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
-            if (data.project && data.project.enable_multivoice !== undefined) {
-              this.enableMultivoice = data.project.enable_multivoice;
-              localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
-              this.updateMultivoiceUI(this.enableMultivoice);
-            }
             this.saveActiveProjectState();
             this.updateVoiceoverUI(this.currentProject.enable_voiceover);
             this.renderStoryboardView();
-            this.showToast(data.enable_voiceover ? "🎙️ Voiceover enabled" : "🔇 Voiceover disabled (clips updated with clean audio)");
+            if (data.enable_voiceover) {
+              this.showToast(mvActive ? "🎙️ Narrator + Character dialogues enabled" : "🎙️ Voiceover enabled");
+            } else if (mvActive) {
+              this.showToast("🎭 Narrator OFF — Character dialogues only (click Re-Voice or Render to update audio)");
+            } else {
+              this.showToast("🔇 Voiceover disabled (instrumental only)");
+            }
           }
         } catch (e) {
           console.error(e);
@@ -1224,14 +1226,9 @@ class AniStoryApp {
     if (this.btnToggleMultivoiceStage1) {
       this.btnToggleMultivoiceStage1.addEventListener("click", () => {
         this.enableMultivoice = !this.enableMultivoice;
-        if (this.enableMultivoice) {
-          this.enableVoiceover = true;
-          localStorage.setItem("anistory_cfg_enable_voiceover", "true");
-          this.updateVoiceoverUI(true);
-        }
         localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
         this.updateMultivoiceUI(this.enableMultivoice);
-        this.showToast(this.enableMultivoice ? "🎭 Multi-Voice enabled (auto-casts character voices)" : "🎙️ Multi-Voice disabled (single narrator reads all)");
+        this.showToast(this.enableMultivoice ? "🎭 Multi-Voice enabled (character dialogues active)" : (this.enableVoiceover ? "🎙️ Multi-Voice disabled (single narrator reads all)" : "🔇 Multi-Voice & Voiceover disabled (instrumental only)"));
       });
     }
 
@@ -1242,9 +1239,6 @@ class AniStoryApp {
         const oldState = this.currentProject.enable_multivoice !== false;
         const newState = !oldState;
         this.updateMultivoiceUI(newState);
-        if (newState) {
-          this.updateVoiceoverUI(true);
-        }
         try {
           const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-multivoice`, {
             method: "POST",
@@ -1259,15 +1253,15 @@ class AniStoryApp {
             this.currentProject.enable_multivoice = data.enable_multivoice;
             this.enableMultivoice = data.enable_multivoice;
             localStorage.setItem("anistory_cfg_enable_multivoice", this.enableMultivoice ? "true" : "false");
-            if (data.project && data.project.enable_voiceover !== undefined) {
-              this.enableVoiceover = data.project.enable_voiceover;
-              localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
-              this.updateVoiceoverUI(this.enableVoiceover);
-            }
             this.saveActiveProjectState();
             this.updateMultivoiceUI(this.currentProject.enable_multivoice);
             this.renderStoryboardView();
-            this.showToast(data.enable_multivoice ? "🎭 Multi-Voice enabled" : "🎙️ Multi-Voice disabled (single narrator)");
+            const voActive = this.currentProject.enable_voiceover !== false;
+            if (data.enable_multivoice) {
+              this.showToast(voActive ? "🎭 Multi-Voice enabled (Narrator + Character dialogues)" : "🎭 Multi-Voice enabled (Character dialogues only)");
+            } else {
+              this.showToast(voActive ? "🎙️ Multi-Voice disabled (single narrator)" : "🔇 Multi-Voice & Voiceover disabled (instrumental only)");
+            }
           }
         } catch (e) {
           console.error(e);
@@ -3251,7 +3245,7 @@ ${isAutoScenes
     }
 
     const multivoiceActive = this.currentProject.enable_multivoice !== false;
-    const voiceoverActive = (this.currentProject.enable_voiceover !== false) || multivoiceActive;
+    const voiceoverActive = this.currentProject.enable_voiceover !== false;
     this.updateSubtitlesUI(this.currentProject.enable_subtitles !== false);
     this.updateVoiceoverUI(voiceoverActive);
     this.updateMultivoiceUI(multivoiceActive);
@@ -3341,12 +3335,16 @@ ${isAutoScenes
       );
       const dialogueBreakdownHtml = (isMultiVoiceScene && scene.dialogues) ? `
         <div class="scene-dialogue-breakdown">
-          ${scene.dialogues.map(d => `
-            <div class="dialogue-segment-row">
-              <span class="dialogue-speaker-pill ${(d.speaker || '').toLowerCase() === 'narrator' ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
+          ${scene.dialogues.map(d => {
+            const isNarr = (d.speaker || '').toLowerCase() === 'narrator' || (d.speaker || '').toLowerCase() === 'người kể chuyện';
+            const skipNarr = isNarr && this.currentProject.enable_voiceover === false;
+            return `
+            <div class="dialogue-segment-row" style="${skipNarr ? 'opacity:0.42; text-decoration:line-through;' : ''}" title="${skipNarr ? 'Narrator voiceover is OFF (skipped in Dialogue-Only mode)' : ''}">
+              <span class="dialogue-speaker-pill ${isNarr ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
               <span class="dialogue-text-bubble">"${d.text || ''}"</span>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       ` : '';
 
@@ -3420,6 +3418,7 @@ ${isAutoScenes
                 <button class="scene-action-pill btn-sync-scene-dialogue" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#6ee7b7; border-color:rgba(16,185,129,0.45); background:rgba(16,185,129,0.15);" title="Add/sync dialogue from story to Voiceover Narration, Image & Video Clip prompts">💬 +Dialogue</button>
                 <button class="scene-action-pill btn-revoice-scene" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#c4b5fd; border-color:rgba(139,92,246,0.45); background:rgba(139,92,246,0.15);" title="Re-synthesize audio for this scene with assigned character voices">🎙️ Re-Voice</button>
                 ${(this.currentProject.enable_voiceover === false && !this.currentProject.enable_multivoice) ? '<span class="tag-badge" style="background:rgba(239,68,68,0.15); color:#f87171; font-size:10px; padding:1px 6px;">🔇 Muted</span>' : ''}
+                ${(this.currentProject.enable_voiceover === false && this.currentProject.enable_multivoice !== false) ? '<span class="tag-badge" style="background:rgba(139,92,246,0.18); color:#c4b5fd; font-size:10px; padding:1px 6px;" title="Narrator voiceover is OFF — only character dialogues are voiced">🎭 Dialogue Only</span>' : ''}
               </div>
               <span class="narration-badge" id="badgeNarr_${idx}" style="font-size:11px; padding:2px 7px; border-radius:12px; font-weight:500;"></span>
             </div>
@@ -5177,7 +5176,7 @@ ${isAutoScenes
     if (!p || !p.id) return;
     this.currentProject = p;
     this.enableMultivoice = p.enable_multivoice !== false;
-    this.enableVoiceover = (p.enable_voiceover !== false) || this.enableMultivoice;
+    this.enableVoiceover = p.enable_voiceover !== false;
     this.enableSubtitles = p.enable_subtitles !== false;
     localStorage.setItem("anistory_cfg_enable_voiceover", this.enableVoiceover ? "true" : "false");
     localStorage.setItem("anistory_cfg_enable_subtitles", this.enableSubtitles ? "true" : "false");

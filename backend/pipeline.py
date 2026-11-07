@@ -400,6 +400,7 @@ class AnimationPipeline:
                 max_dur = max(3.0, round(act_dur - 0.2, 2))
 
         enable_mv = project.get("enable_multivoice", True)
+        enable_narrator = project.get("enable_voiceover", True)
         char_voices = project.get("character_voices") or {}
         sc_dialogues = scene.get("dialogues")
 
@@ -428,7 +429,8 @@ class AnimationPipeline:
                 max_duration=max_dur,
                 dialogues=sc_dialogues,
                 character_voices=char_voices,
-                enable_multivoice=enable_mv
+                enable_multivoice=enable_mv,
+                include_narrator=enable_narrator
             )
         except Exception:
             res = await self.voice_agent.synthesize(
@@ -441,7 +443,8 @@ class AnimationPipeline:
                 max_duration=max_dur,
                 dialogues=sc_dialogues,
                 character_voices=char_voices,
-                enable_multivoice=enable_mv
+                enable_multivoice=enable_mv,
+                include_narrator=enable_narrator
             )
 
         scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
@@ -680,6 +683,7 @@ class AnimationPipeline:
                 if narration_changed or not audio_file.exists() or not srt_file.exists():
                     notify(52 + int((idx / total_scenes) * 15), f"Narrating scene {idx + 1} of {total_scenes}..." if enable_voiceover else f"Preparing scene {idx + 1} subtitles...")
                     enable_mv = project.get("enable_multivoice", True)
+                    enable_narrator = project.get("enable_voiceover", True)
                     char_voices = project.get("character_voices") or {}
                     sc_dialogues = scene.get("dialogues")
                     try:
@@ -692,7 +696,8 @@ class AnimationPipeline:
                             allow_voice_fallback=False,
                             dialogues=sc_dialogues,
                             character_voices=char_voices,
-                            enable_multivoice=enable_mv
+                            enable_multivoice=enable_mv,
+                            include_narrator=enable_narrator
                         )
                     except Exception as e_voice_fail:
                         print(f"Scene {idx + 1} primary voice notice ({e_voice_fail}). Engaging resilient fallback...")
@@ -706,7 +711,8 @@ class AnimationPipeline:
                             allow_voice_fallback=True,
                             dialogues=sc_dialogues,
                             character_voices=char_voices,
-                            enable_multivoice=enable_mv
+                            enable_multivoice=enable_mv,
+                            include_narrator=enable_narrator
                         )
                         # If this scene resolved to a fallback voice, update clip_voice so subsequent scenes stay consistent
                         if res.get("is_fallback") and res.get("voice"):
@@ -820,8 +826,6 @@ class AnimationPipeline:
         curr = project.get("enable_multivoice", True)
         new_val = (not curr) if enable is None else bool(enable)
         project["enable_multivoice"] = new_val
-        if new_val:
-            project["enable_voiceover"] = True
 
         # Clear voiced_narration so next preview or render uses the updated mode
         for sc in project.get("scenes", []):
