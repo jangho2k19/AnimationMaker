@@ -89,7 +89,8 @@ class ScriptAgent:
         art_style: str = "ghibli",
         language: str = "en",
         audience: str = "general",
-        title: str = None
+        title: str = None,
+        camera_on_speaker: bool = False
     ) -> Dict[str, Any]:
         """
         Brainstorms and structures an animated short film from a user idea.
@@ -102,6 +103,10 @@ class ScriptAgent:
         - NVIDIA NIM (meta/llama-3.1-70b-instruct, deepseek-r1, etc.)
         - Built-in Genre-Aware Creative Story Architect (offline/zero-key manual mode only)
         """
+        if art_style == "dialogue_cinema":
+            art_style = "ghibli"
+            camera_on_speaker = True
+
         # 1. If user supplied an existing multi-scene screenplay/script, parse it directly
         # so their original story, characters, and scenes are 100% preserved.
         imported = self.parse_imported_storyboard(idea)
@@ -110,7 +115,7 @@ class ScriptAgent:
             if title and (not imported.get("title") or imported.get("title") == "Imported Film"):
                 imported["title"] = title
             imported["scenes"] = [
-                self.ensure_separate_prompts(sc, art_style=art_style, language=language)
+                self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
                 for sc in imported["scenes"]
                 if isinstance(sc, dict)
             ]
@@ -120,7 +125,8 @@ class ScriptAgent:
                 art_style=art_style,
                 language=language,
                 target="all",
-                characters=imported.get("characters")
+                characters=imported.get("characters"),
+                camera_on_speaker=camera_on_speaker
             )
             return imported
 
@@ -130,7 +136,7 @@ class ScriptAgent:
             story = self._generate_with_story_architect(idea, num_scenes, art_style, language, audience)
             if story and isinstance(story.get("scenes"), list):
                 story["scenes"] = [
-                    self.ensure_separate_prompts(sc, art_style=art_style, language=language)
+                    self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
                     for sc in story["scenes"]
                     if isinstance(sc, dict)
                 ]
@@ -140,17 +146,27 @@ class ScriptAgent:
                     art_style=art_style,
                     language=language,
                     target="all",
-                    characters=story.get("characters")
+                    characters=story.get("characters"),
+                    camera_on_speaker=camera_on_speaker
                 )
             return story
 
-        prompt = self._build_story_prompt(idea, num_scenes, target_duration, art_style, language, audience, title=title)
+        prompt = self._build_story_prompt(
+            idea,
+            num_scenes,
+            target_duration,
+            art_style,
+            language,
+            audience,
+            title=title,
+            camera_on_speaker=camera_on_speaker
+        )
 
         try:
             story = await self._dispatch_llm_request(prompt)
             if story and isinstance(story, dict) and "scenes" in story and isinstance(story["scenes"], list):
                 story["scenes"] = [
-                    self.ensure_separate_prompts(sc, art_style=art_style, language=language)
+                    self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
                     for sc in story["scenes"]
                     if isinstance(sc, dict)
                 ]
@@ -160,7 +176,8 @@ class ScriptAgent:
                     art_style=art_style,
                     language=language,
                     target="all",
-                    characters=story.get("characters")
+                    characters=story.get("characters"),
+                    camera_on_speaker=camera_on_speaker
                 )
             return story
 
@@ -353,7 +370,8 @@ class ScriptAgent:
         art_style: str = "ghibli",
         language: str = "en",
         audience: str = "general",
-        title: str = None
+        title: str = None,
+        camera_on_speaker: bool = False
     ) -> str:
         is_auto_scenes = not num_scenes or num_scenes <= 0
         est_scenes = self.estimate_optimal_scene_count(idea, target_duration) if is_auto_scenes else num_scenes
@@ -410,12 +428,13 @@ class ScriptAgent:
         title_clause = f'Film Title: "{title}"' if title else f'Film Title: Catchy, cinematic title in {language}'
 
         dialogue_cinema_directive = ""
-        if art_style == "dialogue_cinema":
-            dialogue_cinema_directive = """
-   - DIALOGUE FILM (CAMERA ON SPEAKING CHARACTER — SHOT-REVERSE-SHOT MANDATE):
+        if camera_on_speaker or art_style == "dialogue_cinema":
+            dialogue_cinema_directive = f"""
+   - DIALOGUE FILM (CAMERA ON SPEAKING CHARACTER — SHOT-REVERSE-SHOT MANDATE IN {art_style.upper()} VISUAL STYLE):
+     * Render all visuals in the chosen **{art_style}** animation style while directing the camera like a cinematic dialogue film.
      * Whenever a character speaks in a scene, the camera MUST focus directly on the SPEAKING CHARACTER (Medium Close-Up on the active speaker's face & upper body, or Over-The-Shoulder shot looking directly at the character who is speaking).
      * Across conversational exchanges, use Shot-Reverse-Shot editing: cut the camera focus to whichever character is speaking in that scene.
-     * In `visual_prompt`, explicitly state which character the camera is focused on (e.g. "Medium close-up camera focused directly on [Speaker Name] speaking expressively with natural mouth articulation, warm key lighting on [Speaker Name]'s face, shallow 50mm depth of field...").
+     * In `visual_prompt`, explicitly state which character the camera is focused on in {art_style} style (e.g. "Medium close-up camera focused directly on [Speaker Name] speaking expressively with natural mouth articulation in {art_style} style, warm key lighting on [Speaker Name]'s face, shallow 50mm depth of field...").
      * In `acting_prompt`, explicitly state the camera focus on the speaking character (e.g. "Medium close-up focused directly on [Speaker Name] as they speak. The camera executes a smooth intimate push-in toward [Speaker Name]'s face at eye level... 3-6s: Camera holds focus on [Speaker Name] speaking with expressive facial micro-expressions and natural lip-sync mouth movement. [Speaker Name] says in an expressive voice: \\"...\\" (no subtitles).").
      * Set `camera_motion` to `"speaker_focus"` for all scenes where a character is speaking."""
 
@@ -524,7 +543,8 @@ Return ONLY raw JSON matching this structure:
         title: str = "",
         art_style: str = "ghibli",
         is_commercial: bool = False,
-        speaker_name: str = ""
+        speaker_name: str = "",
+        camera_on_speaker: bool = False
     ) -> str:
         """
         Transforms any raw, robotic, or placeholder video prompt into a professional,
@@ -572,7 +592,8 @@ Return ONLY raw JSON matching this structure:
         # 3. Detect and Map Camera Motion to Director-Grade Prose
         cam_match = re.search(r'(?i)Camera\s*:\s*([a-zA-Z_\-]+)', raw_prompt)
         detected_cam = (cam_match.group(1) if cam_match else camera_motion or "zoom_in").lower().replace("-", "_")
-        if style_key == "dialogue_cinema" and dialogue_text and detected_cam in ("zoom_in", "subtle_drift"):
+        is_speaker_focus = bool(camera_on_speaker or style_key == "dialogue_cinema" or detected_cam == "speaker_focus")
+        if is_speaker_focus and dialogue_text and detected_cam in ("zoom_in", "subtle_drift"):
             detected_cam = "speaker_focus"
 
         spk_label = (speaker_name or "").strip()
@@ -665,7 +686,7 @@ Return ONLY raw JSON matching this structure:
                 char_ref = spk_label or "The character"
                 beat1 = f"0-3s: {char_ref} initiates natural, measured movement in the setting, hair and clothing gently stirring in the ambient breeze."
                 if dialogue_text:
-                    if style_key == "dialogue_cinema" or detected_cam == "speaker_focus":
+                    if is_speaker_focus or detected_cam == "speaker_focus":
                         beat2 = f'3-6s: Camera holds intimate focus on {char_ref} speaking with expressive facial micro-expressions and natural lip-sync articulation. {char_ref} says in a clear, expressive voice: "{dialogue_text}" (no subtitles).'
                     else:
                         beat2 = f'3-6s: {char_ref} pauses with focused poise. {char_ref} says in a calm, resolute voice: "{dialogue_text}" (no subtitles).'
@@ -767,8 +788,6 @@ Return ONLY raw JSON matching this structure:
         # 7. Optics & Atmospheric Lighting
         if is_commercial:
             lighting_prose = "Commercial studio softbox key light with crisp edge reflections and immaculate specular highlights, shot on 50mm f/1.8 lens."
-        elif "dialogue" in style_key or detected_cam == "speaker_focus":
-            lighting_prose = "Warm cinematic key light focused on the speaking character's face with soft 50mm f/1.8 shallow depth of field and creamy background bokeh."
         elif "realistic" in style_key:
             lighting_prose = "Volumetric cinematic rim lighting, shot on 35mm anamorphic lens with shallow depth of field and creamy background falloff."
         elif "ghibli" in style_key or "anime" in style_key:
@@ -777,6 +796,8 @@ Return ONLY raw JSON matching this structure:
             lighting_prose = "Soft studio-grade three-point lighting with gentle specular highlights, rich cinematic 3D depth of field."
         elif "stick" in style_key or "stickman" in style_key:
             lighting_prose = "Clean high-contrast vector lighting, sharp silhouette outlines, Alan Becker stick figure animation aesthetics."
+        elif is_speaker_focus or detected_cam == "speaker_focus":
+            lighting_prose = "Warm cinematic key light focused on the speaking character's face with soft 50mm f/1.8 shallow depth of field and creamy background bokeh."
         else:
             lighting_prose = "Atmospheric volumetric lighting with rich highlights and gentle shadow roll-off, shallow depth of field."
 
@@ -1328,7 +1349,8 @@ Return ONLY raw JSON matching this structure:
         target: str = "all",
         target_scene_idx: int = None,
         auto_invent: bool = False,
-        characters: Union[List[str], str, None] = None
+        characters: Union[List[str], str, None] = None,
+        camera_on_speaker: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Extracts dialogues from the story (`idea`) and scene fields, and synchronizes/adds them to:
@@ -1605,14 +1627,15 @@ Return ONLY raw JSON matching this structure:
                     active_speaker = s_cand
                     break
 
-            if art_style == "dialogue_cinema" and primary_clip_quote:
+            is_speaker_focus = bool(camera_on_speaker or art_style == "dialogue_cinema" or camera == "speaker_focus")
+            if is_speaker_focus and primary_clip_quote:
                 camera = "speaker_focus"
                 sc["camera_motion"] = "speaker_focus"
 
             # Update Image Prompt (`visual_prompt`) with expressive dialogue visual cues if scene has dialogue
             if update_image and primary_clip_quote and vis:
                 vis_is_vi = any(ord(c) > 127 for c in vis)
-                if art_style == "dialogue_cinema" and active_speaker:
+                if is_speaker_focus and active_speaker:
                     if vis_is_vi:
                         spk_prefix = f"Góc máy cận cảnh tập trung trực tiếp vào {active_speaker} đang nói chuyện, "
                         if active_speaker.lower() not in vis[:45].lower() and "góc máy cận cảnh tập trung" not in vis.lower():
@@ -1654,18 +1677,27 @@ Return ONLY raw JSON matching this structure:
                     camera_motion=camera,
                     title=title,
                     art_style=art_style,
-                    speaker_name=active_speaker
+                    speaker_name=active_speaker,
+                    camera_on_speaker=is_speaker_focus
                 )
 
         return scenes
 
     @staticmethod
-    def ensure_separate_prompts(scene: Dict[str, Any], art_style: str = "ghibli", language: str = "en") -> Dict[str, Any]:
+    def ensure_separate_prompts(
+        scene: Dict[str, Any],
+        art_style: str = "ghibli",
+        language: str = "en",
+        camera_on_speaker: bool = False
+    ) -> Dict[str, Any]:
         """
         Guarantees that visual_prompt (for still image generation), acting_prompt (for video motion),
         and narration (story-tied voiceover) are distinctly populated, correctly formatted, and never identical.
         Applies professional cinematic standards to acting_prompt.
         """
+        if art_style == "dialogue_cinema":
+            art_style = "ghibli"
+            camera_on_speaker = True
         raw_vis = str(scene.get("visual_prompt") or scene.get("image_prompt") or scene.get("visual") or scene.get("prompt") or "").strip()
         raw_act = str(scene.get("acting_prompt") or scene.get("video_prompt") or scene.get("motion_prompt") or scene.get("acting") or "").strip()
         title = scene.get("title", f"Scene {scene.get('scene_number', 1)}")
@@ -1686,22 +1718,22 @@ Return ONLY raw JSON matching this structure:
             c = re.sub(r'\s+', ' ', c).strip(' .,-')
             return c
 
-        if art_style == "realistic":
-            style_tag = "Photorealistic cinematic live-action"
-            render_word = "masterpiece photography"
-        elif art_style == "stick_figure":
-            style_tag = "Minimalist Stick Figure Animation"
-            render_word = "masterpiece stickman animation"
-        elif art_style == "dialogue_cinema":
-            style_tag = "Cinematic Dialogue Film (Camera on Speaking Character)"
-            render_word = "intimate shot-reverse-shot cinema"
-        else:
-            style_tag = f"{art_style.capitalize()} art"
-            render_word = "masterpiece illustration"
+        style_name_map = {
+            "ghibli": ("Studio Ghibli 2D hand-drawn anime", "masterpiece anime illustration"),
+            "pixar": ("3D Pixar / Disney Animation", "masterpiece 3D animation render"),
+            "storybook": ("Classic Storybook Watercolor Fairy Tale", "masterpiece storybook illustration"),
+            "anime_cinematic": ("Makoto Shinkai Modern Anime Cinema", "masterpiece cinematic anime still"),
+            "cyberpunk": ("Cyberpunk Neon Sci-Fi Anime", "masterpiece cyberpunk illustration"),
+            "comic": ("Modern Graphic Novel / Comic Art", "masterpiece comic book illustration"),
+            "stick_figure": ("Minimalist Stick Figure Animation", "masterpiece stickman animation"),
+            "realistic": ("Photorealistic cinematic live-action", "masterpiece photography")
+        }
+        style_tag, render_word = style_name_map.get(art_style, (f"{art_style.capitalize()} art", "masterpiece illustration"))
+        speaker_framing_note = " Intimate medium close-up camera focused on the speaking character." if camera_on_speaker else ""
 
         # Case 1: Both are completely empty
         if not raw_vis and not raw_act:
-            raw_vis = f"{style_tag} style. {title}. Cinematic composition, rich atmospheric lighting, detailed background."
+            raw_vis = f"{style_tag} style. {title}.{speaker_framing_note} Cinematic composition, rich atmospheric lighting, detailed background."
             raw_act = ""
 
         # Case 2: Only acting prompt was provided
@@ -1709,7 +1741,7 @@ Return ONLY raw JSON matching this structure:
             clean_desc = clean_acting_to_visual(raw_act)
             if not clean_desc or len(clean_desc) < 10:
                 clean_desc = title
-            raw_vis = f"{style_tag} style. {clean_desc}. Cinematic composition, {render_word}, intricate environmental details."
+            raw_vis = f"{style_tag} style. {clean_desc}.{speaker_framing_note} Cinematic composition, {render_word}, intricate environmental details."
 
         # Case 3: Only visual prompt was provided
         elif raw_vis and not raw_act:
@@ -1719,7 +1751,7 @@ Return ONLY raw JSON matching this structure:
         elif raw_vis == raw_act:
             if "0-3s:" in raw_act or "Camera:" in raw_act or "Negative:" in raw_act:
                 clean_desc = clean_acting_to_visual(raw_act)
-                raw_vis = f"{style_tag} style. {clean_desc or title}. Cinematic composition, beautiful lighting, rich details."
+                raw_vis = f"{style_tag} style. {clean_desc or title}.{speaker_framing_note} Cinematic composition, beautiful lighting, rich details."
             else:
                 raw_act = ""
 
@@ -1739,7 +1771,8 @@ Return ONLY raw JSON matching this structure:
             narration=narration,
             camera_motion=camera,
             title=title,
-            art_style=art_style
+            art_style=art_style,
+            camera_on_speaker=camera_on_speaker
         )
 
         scene["visual_prompt"] = raw_vis

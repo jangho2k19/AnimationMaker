@@ -6,7 +6,7 @@ import urllib.parse
 from pathlib import Path
 import httpx
 from PIL import Image, ImageDraw, ImageFont
-from backend.config import ART_STYLES
+from backend.config import ART_STYLES, SPEAKER_FOCUS_PROMPT_SUFFIX
 
 class ImageService:
     def __init__(self, default_style: str = "ghibli", api_key: str = None, provider: str = "gemini"):
@@ -47,13 +47,24 @@ class ImageService:
         p = p.strip(',').strip()
         return p
 
-    def craft_full_prompt(self, base_prompt: str, style_key: str = None, character_desc: str = None) -> str:
-        """Combine base scene prompt with character consistency anchors, subject/prop disambiguation, artistic style keywords, and anti-text constraints."""
+    def craft_full_prompt(
+        self,
+        base_prompt: str,
+        style_key: str = None,
+        character_desc: str = None,
+        camera_on_speaker: bool = False
+    ) -> str:
+        """Combine base scene prompt with character consistency anchors, subject/prop disambiguation, artistic style keywords, optional speaker-focus framing, and anti-text constraints."""
         clean_base = self.sanitize_visual_prompt(base_prompt)
         lower_base = clean_base.lower()
 
-        # Auto-harmonize style if the visual prompt explicitly specifies 3D Pixar, Ghibli, Realistic, or Stick Figure
+        # Legacy fallback if style_key was saved as "dialogue_cinema"
         effective_style = style_key or self.default_style or "ghibli"
+        if effective_style == "dialogue_cinema":
+            effective_style = "ghibli"
+            camera_on_speaker = True
+
+        # Auto-harmonize style if the visual prompt explicitly specifies 3D Pixar, Ghibli, Realistic, or Stick Figure
         if any(k in lower_base for k in ("pixar", "3d animated", "3d animation", "disney 3d")):
             effective_style = "pixar"
         elif any(k in lower_base for k in ("studio ghibli", "ghibli", "2d hand-drawn", "cel-shaded anime")):
@@ -70,6 +81,15 @@ class ImageService:
             suffix = ", consistent 3D Pixar-inspired character proportions, warm subsurface scattering, cinematic lighting"
         elif effective_style == "stick_figure" and any(k in lower_base for k in ("stick figure", "stickman")):
             suffix = ", clean bold line-drawn stickman silhouette, Alan Becker aesthetic, smooth 2D vector animation style"
+
+        has_speaker_cue = any(k in lower_base for k in (
+            "camera focused directly on",
+            "góc máy cận cảnh tập trung",
+            "speaking, ",
+            "đang nói chuyện",
+            "expressive speaking pose"
+        ))
+        speaker_addon = SPEAKER_FOCUS_PROMPT_SUFFIX if (camera_on_speaker or has_speaker_cue) else ""
 
         char_addon = ""
         clean_char = ""
@@ -107,7 +127,7 @@ class ImageService:
             anti_text = ", clean textless stickman illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark, not photorealistic, no realistic human faces, no detailed skin, no 3D rendering"
         else:
             anti_text = ", clean textless illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark"
-        return f"{clean_base}{disambiguation_addon}{char_addon}{suffix}{anti_text}"
+        return f"{clean_base}{disambiguation_addon}{char_addon}{suffix}{speaker_addon}{anti_text}"
 
     def extract_keywords(self, prompt: str, title: str = "") -> list:
         """Extract clean, meaningful visual keywords for thematic asset discovery."""
@@ -157,7 +177,8 @@ class ImageService:
         character_desc: str = None,
         reference_image_path: str = None,
         api_key: str = None,
-        provider: str = None
+        provider: str = None,
+        camera_on_speaker: bool = False
     ) -> str:
         """
         Scene visual generation pipeline:
@@ -170,7 +191,12 @@ class ImageService:
         eff_provider = provider or self.provider
         output_path = str(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        full_prompt = self.craft_full_prompt(prompt, style_key=style_key, character_desc=character_desc)
+        full_prompt = self.craft_full_prompt(
+            prompt,
+            style_key=style_key,
+            character_desc=character_desc,
+            camera_on_speaker=camera_on_speaker
+        )
 
         # Determine best aspect ratios
         curr_ratio = width / float(height)

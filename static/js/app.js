@@ -22,7 +22,14 @@ class AniStoryApp {
     this.currentProject = null;
     this.currentStage = 1;
     this.config = null;
-    this.selectedStyleKey = localStorage.getItem("anistory_cfg_art_style") || "ghibli";
+    let savedStyleKey = localStorage.getItem("anistory_cfg_art_style") || "ghibli";
+    if (savedStyleKey === "dialogue_cinema") {
+      savedStyleKey = "ghibli";
+      localStorage.setItem("anistory_cfg_art_style", "ghibli");
+      localStorage.setItem("anistory_cfg_camera_on_speaker", "true");
+    }
+    this.selectedStyleKey = savedStyleKey;
+    this.cameraOnSpeaker = localStorage.getItem("anistory_cfg_camera_on_speaker") !== "false";
     this.enableVoiceover = localStorage.getItem("anistory_cfg_enable_voiceover") !== "false";
     this.enableMultivoice = localStorage.getItem("anistory_cfg_enable_multivoice") !== "false";
     this.pollInterval = null;
@@ -35,6 +42,7 @@ class AniStoryApp {
     this.activeTasksPollInterval = null;
 
     this.initElements();
+    this.updateSpeakerCamUI(this.cameraOnSpeaker);
     this.updateVoiceoverUI(this.enableVoiceover);
     this.updateMultivoiceUI(this.enableMultivoice);
     this.updateAutoPaintUI(localStorage.getItem("anistory_autopaint") === "true");
@@ -400,6 +408,14 @@ class AniStoryApp {
     this.btnToggleVoiceoverStage1 = document.getElementById("btnToggleVoiceoverStage1");
     this.iconVoiceoverStage1 = document.getElementById("iconVoiceoverStage1");
     this.textVoiceoverStage1 = document.getElementById("textVoiceoverStage1");
+    this.btnToggleSpeakerCamStage1 = document.getElementById("btnToggleSpeakerCamStage1");
+    this.iconSpeakerCamStage1 = document.getElementById("iconSpeakerCamStage1");
+    this.textSpeakerCamStage1 = document.getElementById("textSpeakerCamStage1");
+    this.speakerCamBannerStage1 = document.getElementById("speakerCamBannerStage1");
+    this.btnToggleSpeakerCamStage2 = document.getElementById("btnToggleSpeakerCamStage2");
+    this.iconSpeakerCamStage2 = document.getElementById("iconSpeakerCamStage2");
+    this.textSpeakerCamStage2 = document.getElementById("textSpeakerCamStage2");
+    this.selectArtStyleStage2 = document.getElementById("selectArtStyleStage2");
     this.btnToggleMultivoiceStage1 = document.getElementById("btnToggleMultivoiceStage1");
     this.iconMultivoiceStage1 = document.getElementById("iconMultivoiceStage1");
     this.textMultivoiceStage1 = document.getElementById("textMultivoiceStage1");
@@ -1222,6 +1238,92 @@ class AniStoryApp {
       });
     }
 
+    // Toggle Camera on Speaker (Dialogue Film) in Stage 1
+    if (this.btnToggleSpeakerCamStage1) {
+      this.btnToggleSpeakerCamStage1.addEventListener("click", () => {
+        this.cameraOnSpeaker = !this.cameraOnSpeaker;
+        localStorage.setItem("anistory_cfg_camera_on_speaker", this.cameraOnSpeaker ? "true" : "false");
+        this.updateSpeakerCamUI(this.cameraOnSpeaker);
+        const curStyleName = this.config?.art_styles?.[this.selectedStyleKey]?.name || "selected Visual Style";
+        if (this.cameraOnSpeaker) {
+          this.showToast(`🗣️ Camera on Speaker: ON — Camera focuses on speaking characters in ${curStyleName}!`);
+        } else {
+          this.showToast(`🎬 Camera on Speaker: OFF — Standard cinematic camera movements in ${curStyleName}`);
+        }
+      });
+    }
+
+    // Toggle Camera on Speaker (Dialogue Film) in Stage 2
+    if (this.btnToggleSpeakerCamStage2) {
+      this.btnToggleSpeakerCamStage2.addEventListener("click", async () => {
+        if (!this.currentProject) return;
+        const oldState = Boolean(this.currentProject.camera_on_speaker || this.currentProject.art_style === "dialogue_cinema");
+        const newState = !oldState;
+        this.updateSpeakerCamUI(newState);
+        try {
+          const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-speaker-camera`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enable: newState })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            }
+            this.currentProject.camera_on_speaker = data.camera_on_speaker;
+            this.cameraOnSpeaker = data.camera_on_speaker;
+            localStorage.setItem("anistory_cfg_camera_on_speaker", this.cameraOnSpeaker ? "true" : "false");
+            this.saveActiveProjectState();
+            this.updateSpeakerCamUI(this.currentProject.camera_on_speaker);
+            this.renderStoryboardView();
+            const curStyleName = this.config?.art_styles?.[this.currentProject.art_style]?.name || this.currentProject.art_style;
+            this.showToast(data.camera_on_speaker
+              ? `🗣️ Camera on Speaker: ON (${curStyleName}) — Prompts updated to focus on speaking characters!`
+              : `🎬 Camera on Speaker: OFF (${curStyleName}) — Standard camera framing restored`);
+          }
+        } catch (e) {
+          console.error(e);
+          this.updateSpeakerCamUI(oldState);
+          this.showToast("Failed to toggle Speaker Camera: " + e.message, true);
+        }
+      });
+    }
+
+    // Change Visual Animation Style in Stage 2
+    if (this.selectArtStyleStage2) {
+      this.selectArtStyleStage2.addEventListener("change", async () => {
+        const newStyle = this.selectArtStyleStage2.value;
+        this.selectedStyleKey = newStyle;
+        localStorage.setItem("anistory_cfg_art_style", newStyle);
+        document.querySelectorAll(".style-card-item").forEach(c => {
+          c.classList.toggle("selected", c.dataset.styleKey === newStyle);
+        });
+        if (!this.currentProject) return;
+        try {
+          const resp = await fetch(`/api/projects/${this.currentProject.id}/set-art-style`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ art_style: newStyle })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            } else {
+              this.currentProject.art_style = newStyle;
+            }
+            this.saveActiveProjectState();
+            const styleName = this.config?.art_styles?.[newStyle]?.name || newStyle;
+            this.showToast(`🎨 Visual Animation Style set to: ${styleName}`);
+          }
+        } catch (e) {
+          console.error(e);
+          this.showToast("Failed to update visual style: " + e.message, true);
+        }
+      });
+    }
+
     // Toggle Multi-Voice in Stage 1
     if (this.btnToggleMultivoiceStage1) {
       this.btnToggleMultivoiceStage1.addEventListener("click", () => {
@@ -1822,6 +1924,42 @@ class AniStoryApp {
     }
   }
 
+  updateSpeakerCamUI(enabled) {
+    if (this.btnToggleSpeakerCamStage1) {
+      if (this.iconSpeakerCamStage1) this.iconSpeakerCamStage1.textContent = enabled ? "🗣️" : "🎬";
+      if (this.textSpeakerCamStage1) this.textSpeakerCamStage1.textContent = enabled ? "Camera on Speaker: ON" : "Camera on Speaker: OFF";
+      if (enabled) {
+        this.btnToggleSpeakerCamStage1.style.background = "rgba(16,185,129,0.18)";
+        this.btnToggleSpeakerCamStage1.style.color = "#34d399";
+        this.btnToggleSpeakerCamStage1.style.borderColor = "rgba(16,185,129,0.4)";
+      } else {
+        this.btnToggleSpeakerCamStage1.style.background = "rgba(255,255,255,0.05)";
+        this.btnToggleSpeakerCamStage1.style.color = "var(--text-muted)";
+        this.btnToggleSpeakerCamStage1.style.borderColor = "rgba(255,255,255,0.12)";
+      }
+    }
+    if (this.speakerCamBannerStage1) {
+      if (enabled) {
+        const curStyleName = this.config?.art_styles?.[this.selectedStyleKey]?.name || "selected Visual Style";
+        this.speakerCamBannerStage1.style.display = "flex";
+        this.speakerCamBannerStage1.innerHTML = `<span>🗣️ <strong>Dialogue Film (Camera on Speaker)</strong> + 🎨 <strong>${this.escapeHtml(curStyleName)}</strong> active!</span>`;
+      } else {
+        this.speakerCamBannerStage1.style.display = "none";
+      }
+    }
+    if (this.btnToggleSpeakerCamStage2) {
+      if (this.iconSpeakerCamStage2) this.iconSpeakerCamStage2.textContent = enabled ? "🗣️" : "🎬";
+      if (this.textSpeakerCamStage2) this.textSpeakerCamStage2.textContent = enabled ? "Camera on Speaker: ON" : "Camera on Speaker: OFF";
+      if (enabled) {
+        this.btnToggleSpeakerCamStage2.style.borderColor = "rgba(16,185,129,0.45)";
+        this.btnToggleSpeakerCamStage2.style.color = "#34d399";
+      } else {
+        this.btnToggleSpeakerCamStage2.style.borderColor = "rgba(255,255,255,0.12)";
+        this.btnToggleSpeakerCamStage2.style.color = "var(--text-muted)";
+      }
+    }
+  }
+
   updateMultivoiceUI(enabled) {
     if (this.btnToggleMultivoiceStage1) {
       if (this.iconMultivoiceStage1) this.iconMultivoiceStage1.textContent = enabled ? "🎭" : "🎙️";
@@ -2142,7 +2280,7 @@ class AniStoryApp {
     const styleInfo = this.config?.art_styles?.[this.selectedStyleKey];
     const styleName = styleInfo ? styleInfo.name : "Studio Ghibli 2D";
 
-    const isDialogueCinema = this.selectedStyleKey === "dialogue_cinema";
+    const isDialogueCinema = Boolean(this.cameraOnSpeaker);
     const motionCycles = isDialogueCinema
       ? ["speaker_focus", "speaker_focus", "pan_right", "speaker_focus", "pan_left"]
       : ["zoom_in", "pan_right", "pan_left", "subtle_drift", "zoom_out"];
@@ -2659,11 +2797,21 @@ ${isAutoScenes
 
   renderStyles(styles) {
     this.styleOptionsGrid.innerHTML = "";
-    const savedStyle = localStorage.getItem("anistory_cfg_art_style") || this.selectedStyleKey || "ghibli";
+    let savedStyle = localStorage.getItem("anistory_cfg_art_style") || this.selectedStyleKey || "ghibli";
+    if (savedStyle === "dialogue_cinema" || !styles[savedStyle]) {
+      savedStyle = "ghibli";
+      localStorage.setItem("anistory_cfg_art_style", "ghibli");
+    }
     this.selectedStyleKey = savedStyle;
+
+    if (this.selectArtStyleStage2) {
+      this.selectArtStyleStage2.innerHTML = "";
+    }
+
     Object.entries(styles).forEach(([key, info]) => {
       const card = document.createElement("div");
       card.className = "style-card-item" + (key === this.selectedStyleKey ? " selected" : "");
+      card.dataset.styleKey = key;
       card.innerHTML = `
         <div class="style-card-header">
           <span class="style-card-icon">${info.icon || "🎨"}</span>
@@ -2676,15 +2824,24 @@ ${isAutoScenes
         card.classList.add("selected");
         this.selectedStyleKey = key;
         localStorage.setItem("anistory_cfg_art_style", key);
-        if (key === "dialogue_cinema") {
-          this.enableMultivoice = true;
-          localStorage.setItem("anistory_cfg_enable_multivoice", "true");
-          this.updateMultivoiceUI(true);
-          this.showToast("🗣️ Dialogue Film selected: Camera focuses on characters when speaking!");
+        if (this.selectArtStyleStage2) {
+          this.selectArtStyleStage2.value = key;
         }
+        this.updateSpeakerCamUI(this.cameraOnSpeaker);
       });
       this.styleOptionsGrid.appendChild(card);
+
+      if (this.selectArtStyleStage2) {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = `${info.icon || "🎨"} ${info.name}`;
+        if (key === (this.currentProject?.art_style || this.selectedStyleKey)) {
+          opt.selected = true;
+        }
+        this.selectArtStyleStage2.appendChild(opt);
+      }
     });
+    this.updateSpeakerCamUI(this.cameraOnSpeaker);
   }
 
   renderVoices(voices) {
@@ -2885,7 +3042,8 @@ ${isAutoScenes
         image_mode: this.imageMode || "server",
         enable_voiceover: this.enableVoiceover !== false,
         enable_subtitles: this.enableSubtitles !== false,
-        enable_multivoice: this.enableMultivoice !== false
+        enable_multivoice: this.enableMultivoice !== false,
+        camera_on_speaker: this.cameraOnSpeaker !== false
       };
 
       const resp = await fetch("/api/create-story", {
@@ -3157,7 +3315,8 @@ ${isAutoScenes
           image_mode: this.imageMode || "server",
           enable_voiceover: this.enableVoiceover !== false,
           enable_subtitles: this.enableSubtitles !== false,
-          enable_multivoice: this.enableMultivoice !== false
+          enable_multivoice: this.enableMultivoice !== false,
+          camera_on_speaker: this.cameraOnSpeaker !== false
         })
       });
 
@@ -3256,9 +3415,17 @@ ${isAutoScenes
 
     const multivoiceActive = this.currentProject.enable_multivoice !== false;
     const voiceoverActive = this.currentProject.enable_voiceover !== false;
+    const speakerCamActive = Boolean(this.currentProject.camera_on_speaker || this.currentProject.art_style === "dialogue_cinema");
     this.updateSubtitlesUI(this.currentProject.enable_subtitles !== false);
     this.updateVoiceoverUI(voiceoverActive);
     this.updateMultivoiceUI(multivoiceActive);
+    this.updateSpeakerCamUI(speakerCamActive);
+    if (this.selectArtStyleStage2) {
+      const effStyle = (this.currentProject.art_style === "dialogue_cinema" || !this.currentProject.art_style)
+        ? "ghibli"
+        : this.currentProject.art_style;
+      this.selectArtStyleStage2.value = effStyle;
+    }
     this.renderCharacterVoiceCasting();
     if (this.selectVoiceStage2 && this.currentProject.voice) {
       this.selectVoiceStage2.value = this.currentProject.voice;

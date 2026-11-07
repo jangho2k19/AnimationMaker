@@ -49,6 +49,7 @@ class CreateStoryRequest(BaseModel):
     enable_voiceover: bool = True
     enable_subtitles: bool = True
     enable_multivoice: bool = True
+    camera_on_speaker: bool = False
 
 class ImportStoryRequest(BaseModel):
     text: str
@@ -62,6 +63,7 @@ class ImportStoryRequest(BaseModel):
     enable_voiceover: bool = True
     enable_subtitles: bool = True
     enable_multivoice: bool = True
+    camera_on_speaker: bool = False
 
 class SetCharacterVoiceRequest(BaseModel):
     character_name: str
@@ -69,6 +71,12 @@ class SetCharacterVoiceRequest(BaseModel):
 
 class ToggleMultivoiceRequest(BaseModel):
     enable: Optional[bool] = None
+
+class ToggleSpeakerCameraRequest(BaseModel):
+    enable: Optional[bool] = None
+
+class SetArtStyleRequest(BaseModel):
+    art_style: str
 
 class UpdateScenesRequest(BaseModel):
     title: Optional[str] = None
@@ -469,7 +477,8 @@ async def create_story(req: CreateStoryRequest):
             image_mode=req.image_mode,
             enable_voiceover=req.enable_voiceover,
             enable_subtitles=req.enable_subtitles,
-            enable_multivoice=req.enable_multivoice
+            enable_multivoice=req.enable_multivoice,
+            camera_on_speaker=req.camera_on_speaker
         )
         project["video_mode"] = req.video_mode or "acting"
 
@@ -527,7 +536,8 @@ async def import_story(req: ImportStoryRequest):
             enable_voiceover=req.enable_voiceover,
             enable_subtitles=req.enable_subtitles,
             num_scenes=len(story_data["scenes"]),
-            enable_multivoice=req.enable_multivoice
+            enable_multivoice=req.enable_multivoice,
+            camera_on_speaker=req.camera_on_speaker
         )
         project["title"] = req.title or story_data.get("title", "Imported Animated Story")
         project["logline"] = story_data.get("logline", "")
@@ -768,7 +778,8 @@ async def refine_scene_video_prompt(project_id: str, scene_idx: int):
         camera_motion=scene.get("camera_motion", "zoom_in"),
         title=scene.get("title", f"Scene {scene_idx + 1}"),
         art_style=project.get("art_style", "ghibli"),
-        is_commercial=bool(scene.get("is_product_photo"))
+        is_commercial=bool(scene.get("is_product_photo")),
+        camera_on_speaker=bool(project.get("camera_on_speaker", False))
     )
     scene["acting_prompt"] = refined
     pipeline.save_project(project)
@@ -780,6 +791,7 @@ async def refine_all_video_prompts(project_id: str):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     scenes = project.get("scenes", [])
+    is_spk_cam = bool(project.get("camera_on_speaker", False))
     for idx, scene in enumerate(scenes):
         current_act = scene.get("acting_prompt") or scene.get("visual_prompt") or scene.get("title") or ""
         refined = ScriptAgent.professionalize_video_prompt(
@@ -789,7 +801,8 @@ async def refine_all_video_prompts(project_id: str):
             camera_motion=scene.get("camera_motion", "zoom_in"),
             title=scene.get("title", f"Scene {idx + 1}"),
             art_style=project.get("art_style", "ghibli"),
-            is_commercial=bool(scene.get("is_product_photo"))
+            is_commercial=bool(scene.get("is_product_photo")),
+            camera_on_speaker=is_spk_cam
         )
         scene["acting_prompt"] = refined
     pipeline.save_project(project)
@@ -890,7 +903,8 @@ async def sync_project_dialogues(project_id: str, req: SyncDialoguesRequest = Bo
         target=req.target or "all",
         target_scene_idx=req.scene_idx,
         auto_invent=(req.scene_idx is not None),
-        characters=project.get("characters")
+        characters=project.get("characters"),
+        camera_on_speaker=bool(project.get("camera_on_speaker", False))
     )
 
     p_dir = Path(OUTPUT_DIR) / "projects" / project_id
@@ -1072,6 +1086,26 @@ async def toggle_project_multivoice(project_id: str, req: Optional[ToggleMultivo
         return {"status": "ok", "enable_multivoice": updated.get("enable_multivoice", True), "project": updated}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/toggle-speaker-camera")
+async def toggle_project_speaker_camera(project_id: str, req: Optional[ToggleSpeakerCameraRequest] = None):
+    try:
+        updated = pipeline.toggle_camera_on_speaker(project_id, enable=req.enable if req else None)
+        return {"status": "ok", "camera_on_speaker": updated.get("camera_on_speaker", False), "project": updated}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/set-art-style")
+async def set_project_art_style(project_id: str, req: SetArtStyleRequest):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    new_style = (req.art_style or "ghibli").strip()
+    if new_style not in ART_STYLES:
+        raise HTTPException(status_code=400, detail=f"Invalid art style '{new_style}'")
+    project["art_style"] = new_style
+    pipeline.save_project(project)
+    return {"status": "ok", "art_style": new_style, "project": project}
 
 @app.post("/api/projects/{project_id}/set-character-voice")
 async def set_project_character_voice(project_id: str, req: SetCharacterVoiceRequest):

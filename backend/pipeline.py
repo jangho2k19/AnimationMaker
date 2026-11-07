@@ -68,9 +68,13 @@ class AnimationPipeline:
         enable_subtitles: bool = True,
         project_type: str = "animation",
         product_info: Optional[Dict[str, Any]] = None,
-        enable_multivoice: bool = True
+        enable_multivoice: bool = True,
+        camera_on_speaker: bool = False
     ) -> Dict[str, Any]:
         """Initialize a new project record with folder name matching the title."""
+        if art_style == "dialogue_cinema":
+            art_style = "ghibli"
+            camera_on_speaker = True
         chosen_title = (title or "").strip()
         base_name = self.sanitize_title_for_folder(chosen_title, fallback=idea)
         project_id = self.get_unique_project_id(base_name)
@@ -88,6 +92,7 @@ class AnimationPipeline:
             "product_images": [],
             "idea": idea,
             "art_style": art_style,
+            "camera_on_speaker": bool(camera_on_speaker),
             "voice": voice,
             "enable_multivoice": enable_multivoice,
             "character_voices": {"Narrator": voice},
@@ -253,7 +258,8 @@ class AnimationPipeline:
             art_style=project["art_style"],
             language=language,
             audience=audience,
-            title=project_title
+            title=project_title,
+            camera_on_speaker=bool(project.get("camera_on_speaker", False))
         )
 
         final_title = project_title or story_data.get("title") or "Animated Short Film"
@@ -334,6 +340,11 @@ class AnimationPipeline:
         char_seed = abs(hash(project_id + (character_desc or project.get("idea", "")))) % 999999
         scene_seed = (char_seed + (scene_idx * 17)) % 999999
 
+        is_spk_cam = bool(
+            project.get("camera_on_speaker", False)
+            or scene.get("camera_motion") == "speaker_focus"
+            or project.get("art_style") == "dialogue_cinema"
+        )
         await self.image_service.generate_scene_image(
             prompt=scene["visual_prompt"],
             output_path=str(img_path),
@@ -347,7 +358,8 @@ class AnimationPipeline:
             character_desc=character_desc,
             reference_image_path=ref_img_path,
             api_key=project.get("api_key"),
-            provider=project.get("ai_provider")
+            provider=project.get("ai_provider"),
+            camera_on_speaker=is_spk_cam
         )
 
         # Re-fetch latest project state to avoid race condition overwrite with concurrent scene renders
@@ -612,6 +624,11 @@ class AnimationPipeline:
                 character_desc = (project.get("characters") or "").strip()
                 char_seed = abs(hash(project_id + (character_desc or project.get("idea", "")))) % 999999
                 scene_seed = (char_seed + (idx * 17)) % 999999
+                is_spk_cam = bool(
+                    project.get("camera_on_speaker", False)
+                    or scene.get("camera_motion") == "speaker_focus"
+                    or project.get("art_style") == "dialogue_cinema"
+                )
 
                 await self.image_service.generate_scene_image(
                     prompt=scene["visual_prompt"],
@@ -626,7 +643,8 @@ class AnimationPipeline:
                     character_desc=character_desc,
                     reference_image_path=ref_img_path,
                     api_key=project.get("api_key"),
-                    provider=project.get("ai_provider")
+                    provider=project.get("ai_provider"),
+                    camera_on_speaker=is_spk_cam
                 )
             scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             self.save_project(project)
@@ -856,5 +874,52 @@ class AnimationPipeline:
         for sc in project.get("scenes", []):
             sc["voiced_narration"] = ""
 
+        self.save_project(project)
+        return project
+
+    def toggle_camera_on_speaker(self, project_id: str, enable: Optional[bool] = None) -> Dict[str, Any]:
+        """Toggles Dialogue Film (Camera on Speaker) mode on or off while keeping the chosen Visual Art Style."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        curr = bool(project.get("camera_on_speaker", False) or project.get("art_style") == "dialogue_cinema")
+        new_val = (not curr) if enable is None else bool(enable)
+        project["camera_on_speaker"] = new_val
+        if project.get("art_style") == "dialogue_cinema":
+            project["art_style"] = "ghibli"
+
+        art_style = project.get("art_style", "ghibli")
+        scenes = project.get("scenes", [])
+        if new_val:
+            voice_id = (project.get("voice") or "en-US").lower()
+            lang = "vi" if voice_id.startswith("vi") else "en"
+            ScriptAgent.sync_story_dialogues_to_scenes(
+                scenes=scenes,
+                idea=project.get("idea", ""),
+                art_style=art_style,
+                language=lang,
+                target="clip",
+                characters=project.get("characters"),
+                camera_on_speaker=True
+            )
+        else:
+            for idx, sc in enumerate(scenes):
+                if sc.get("camera_motion") == "speaker_focus":
+                    sc["camera_motion"] = "zoom_in"
+                vis = str(sc.get("visual_prompt") or "")
+                vis = re.sub(r'(?i)^(?:Góc máy cận cảnh tập trung trực tiếp vào [^,]+ đang nói chuyện,\s*|Medium close-up camera focused directly on [^,]+ speaking,\s*)', '', vis)
+                sc["visual_prompt"] = vis
+                sc["acting_prompt"] = ScriptAgent.professionalize_video_prompt(
+                    acting_prompt=sc.get("acting_prompt", ""),
+                    visual_prompt=vis,
+                    narration=sc.get("narration", ""),
+                    camera_motion=sc.get("camera_motion", "zoom_in"),
+                    title=sc.get("title", f"Scene {idx + 1}"),
+                    art_style=art_style,
+                    camera_on_speaker=False
+                )
+
+        project["scenes"] = scenes
         self.save_project(project)
         return project

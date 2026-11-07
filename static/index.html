@@ -384,7 +384,15 @@
                 
                 <!-- Art Style Selection -->
                 <div class="config-column style-column">
-                  <label class="input-label small-label">🎨 Visual Animation Style</label>
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                    <label class="input-label small-label" style="margin-bottom:0;">🎨 Visual Animation Style</label>
+                    <button id="btnToggleSpeakerCamStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="padding:4px 10px; font-size:11px; cursor:pointer;" title="Focus camera directly on characters when they are talking/speaking (Shot-Reverse-Shot) — works with ANY Visual Animation Style!">
+                      <span id="iconSpeakerCamStage1">🗣️</span> <span id="textSpeakerCamStage1">Camera on Speaker: ON</span>
+                    </button>
+                  </div>
+                  <div id="speakerCamBannerStage1" style="margin-bottom:8px; padding:6px 10px; border-radius:8px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.28); font-size:11px; color:#6ee7b7; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                    <span>🗣️ <strong>Dialogue Film (Camera on Speaker)</strong> active — pick any Visual Style below!</span>
+                  </div>
                   <div id="styleOptionsGrid" class="style-cards-grid compact-style-grid">
                     <!-- Injected via JavaScript -->
                   </div>
@@ -643,6 +651,14 @@
           <!-- Secondary Director Options Bar (Toggles & Character Lock) -->
           <div class="director-sub-row">
             <div class="director-toggles-wrap">
+              <div class="stage2-style-selector-wrap" style="display: inline-flex; align-items: center; gap: 4px;">
+                <select id="selectArtStyleStage2" class="styled-select compact-select" style="max-width: 190px; height: 32px; font-size: 12px; padding: 2px 8px;" title="Select Visual Animation Style (Studio Ghibli 2D, 3D Pixar, Classic Storybook, etc.)">
+                  <!-- Populated via JS -->
+                </select>
+              </div>
+              <button id="btnToggleSpeakerCamStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Dialogue Film Mode: Focus camera directly on characters when they are speaking (works with any Visual Animation Style)">
+                <span id="iconSpeakerCamStage2">🗣️</span> <span id="textSpeakerCamStage2">Camera on Speaker: ON</span>
+              </button>
               <button id="btnToggleMultivoiceStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle Multi-Voice Character Dialogue">
                 <span id="iconMultivoiceStage2">🎭</span> <span id="textMultivoiceStage2">Multi-Voice: ON</span>
               </button>
