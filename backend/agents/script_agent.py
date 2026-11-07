@@ -133,7 +133,7 @@ class ScriptAgent:
         # 2. Only use offline Story Architect if explicitly requested
         if self.provider in ("builtin", "offline", "architect"):
             print("🏛️ Using offline built-in Story Architect as explicitly configured.")
-            story = self._generate_with_story_architect(idea, num_scenes, art_style, language, audience)
+            story = self._generate_with_story_architect(idea, num_scenes, art_style, language, audience, camera_on_speaker=camera_on_speaker)
             if story and isinstance(story.get("scenes"), list):
                 story["scenes"] = [
                     self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
@@ -2396,7 +2396,8 @@ Return ONLY raw JSON matching this structure:
         art_style: str,
         language: str,
         audience: str,
-        title: str
+        title: str,
+        camera_on_speaker: bool = False
     ) -> Dict[str, Any]:
         """
         Dynamically extracts and adapts scenes from a user's rich narrative or fairy tale text.
@@ -2508,7 +2509,7 @@ Return ONLY raw JSON matching this structure:
                 "visual_prompt": vis_prompt,
                 "acting_prompt": acting_prompt,
                 "narration": narr_raw,
-                "camera_motion": motions[idx % len(motions)]
+                "camera_motion": "speaker_focus" if (camera_on_speaker or art_style == "dialogue_cinema") else motions[idx % len(motions)]
             })
 
         return {
@@ -2524,7 +2525,8 @@ Return ONLY raw JSON matching this structure:
         num_scenes: int,
         art_style: str,
         language: str,
-        audience: str
+        audience: str,
+        camera_on_speaker: bool = False
     ) -> Dict[str, Any]:
         """
         Genre-Aware Creative Story Architect: Generates unique, non-generic,
@@ -2553,7 +2555,8 @@ Return ONLY raw JSON matching this structure:
                 art_style=art_style,
                 language=language,
                 audience=audience,
-                title=extracted_title or fallback_title
+                title=extracted_title or fallback_title,
+                camera_on_speaker=camera_on_speaker
             )
 
         # 2. Extract character roster from input if specified
@@ -2895,7 +2898,7 @@ Return ONLY raw JSON matching this structure:
                 "visual_prompt": f"{beat['prompt']}, character consistency: {chosen_char}",
                 "acting_prompt": acting_prompt,
                 "narration": narration,
-                "camera_motion": beat.get("motion", "zoom_in")
+                "camera_motion": "speaker_focus" if (camera_on_speaker or art_style == "dialogue_cinema") else beat.get("motion", "zoom_in")
             })
 
         return {

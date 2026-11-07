@@ -133,7 +133,7 @@ class VideoEngine:
             zoompan_expr = self._get_zoompan_filter(motion_type, total_frames)
             vf_filters.append(zoompan_expr)
 
-        if enable_subtitles and srt_path and os.path.exists(srt_path):
+        if enable_subtitles and srt_path and os.path.exists(srt_path) and os.path.getsize(srt_path) > 5:
             escaped_srt = self._escape_path_for_ffmpeg_filter(srt_path)
             font_size = max(16, min(22, int(self.width * 0.026)))
             margin_v = max(24, min(65, int(self.height * 0.065)))

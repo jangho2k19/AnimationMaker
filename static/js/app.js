@@ -3531,6 +3531,7 @@ ${isAutoScenes
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
             ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.25); color:#c4b5fd; font-weight:600; border:1px solid rgba(139,92,246,0.4);">🎭 ${scene.archetype}</span>` : ''}
+            ${camMotion === 'speaker_focus' ? `<span class="scene-badge scene-speakercam-badge" id="sceneSpeakerCamBadge_${idx}" title="Camera focuses on speaking character (Medium Close-Up)">🗣️ Speaker Cam</span>` : `<span class="scene-badge scene-speakercam-badge" id="sceneSpeakerCamBadge_${idx}" style="display:none;" title="Camera focuses on speaking character (Medium Close-Up)">🗣️ Speaker Cam</span>`}
             ${isMultiVoiceScene ? `<span class="scene-badge scene-multivoice-badge" title="Multi-Voice Scene: ${scene.dialogues.length} character dialogue segments">🎭 Multi-Voice (${scene.dialogues.length})</span>` : ''}
             ${scene.is_product_photo ? `<span class="scene-badge" style="background:rgba(16,185,129,0.2); color:#6ee7b7; border:1px solid rgba(16,185,129,0.4); font-weight:600;">🛍️ Product Photo</span>` : ''}
             <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" id="sceneStatusPill_${idx}">
@@ -3618,9 +3619,17 @@ ${isAutoScenes
 
           <!-- PANE 3: Video Prompt (Acting & Motion / Veo 3 / Google Flow / Kling) -->
           <div class="scene-prompt-tab-pane pane-video ${this.activePromptField === 'video' || this.activePromptField === 'all' ? 'active' : ''}" id="paneVideo_${idx}">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <div style="display:flex; align-items:center; gap:6px;">
-                <label class="field-label" style="margin-bottom:0;">🎬 Video Prompt <span style="font-size:10.5px; color:var(--text-muted); font-weight:normal;">(Veo 3 / Google Flow / Kling)</span></label>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:6px;">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <label class="field-label" style="margin-bottom:0;">🎬 Video Prompt</label>
+                <select class="scene-camera-select" id="motion_${idx}" data-idx="${idx}" title="Select 2.5D &amp; AI Video Camera Motion for this scene">
+                  <option value="speaker_focus" ${camMotion === 'speaker_focus' ? 'selected' : ''}>🗣️ Speaker Focus (Close-Up)</option>
+                  <option value="zoom_in" ${camMotion === 'zoom_in' ? 'selected' : ''}>🔍 Smooth Zoom In</option>
+                  <option value="zoom_out" ${camMotion === 'zoom_out' ? 'selected' : ''}>🔭 Reveal Zoom Out</option>
+                  <option value="pan_left" ${camMotion === 'pan_left' ? 'selected' : ''}>⬅️ Tracking Pan Left</option>
+                  <option value="pan_right" ${camMotion === 'pan_right' ? 'selected' : ''}>➡️ Tracking Pan Right</option>
+                  <option value="subtle_drift" ${camMotion === 'subtle_drift' ? 'selected' : ''}>🍃 Subtle Organic Drift</option>
+                </select>
                 <button class="scene-action-pill btn-copy-video-prompt" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1;" title="Copy video acting prompt to clipboard">📋 Copy</button>
                 <button class="scene-action-pill btn-refine-video-prompt" data-idx="${idx}" style="padding:2px 9px; font-size:10.5px; height:21px; line-height:1; color:#f5f3ff; background:rgba(139,92,246,0.3); border:1px solid rgba(167,139,250,0.6); font-weight:600;" title="Upgrade to director-grade professional cinematic video prompt">✨ Refine</button>
               </div>
@@ -3775,6 +3784,27 @@ ${isAutoScenes
       card.querySelectorAll(".btn-revoice-scene").forEach(btn => {
         btn.addEventListener("click", () => this.revoiceSceneAudio(idx, btn));
       });
+      const motionSelect = card.querySelector(`#motion_${idx}`);
+      if (motionSelect) {
+        motionSelect.addEventListener("change", (e) => {
+          const newMotion = e.target.value;
+          const oldMotion = scene.camera_motion || "zoom_in";
+          scene.camera_motion = newMotion;
+          const spkBadge = card.querySelector(`#sceneSpeakerCamBadge_${idx}`);
+          if (spkBadge) {
+            spkBadge.style.display = newMotion === "speaker_focus" ? "" : "none";
+          }
+          const actingTextarea = card.querySelector(`#acting_prompt_${idx}`);
+          if (actingTextarea && cameraProseMap[oldMotion] && cameraProseMap[newMotion]) {
+            if (actingTextarea.value.includes(cameraProseMap[oldMotion])) {
+              actingTextarea.value = actingTextarea.value.replace(cameraProseMap[oldMotion], cameraProseMap[newMotion]);
+              scene.acting_prompt = actingTextarea.value;
+            }
+          }
+          this.saveStoryboardEdits(false);
+          this.showToast(`🎥 Scene ${idx + 1} camera motion set to ${motionSelect.options[motionSelect.selectedIndex].text}`);
+        });
+      }
 
       this.storyboardScenesGrid.appendChild(card);
     });
@@ -5266,7 +5296,10 @@ ${isAutoScenes
     }
 
     const styleInfo = this.config?.art_styles?.[this.currentProject.art_style];
-    this.specArtStyle.textContent = styleInfo ? styleInfo.name : this.currentProject.art_style;
+    const baseStyleName = styleInfo ? styleInfo.name : (this.currentProject.art_style || "Studio Ghibli 2D");
+    this.specArtStyle.textContent = this.currentProject.camera_on_speaker
+      ? `${baseStyleName} • 🗣️ Camera on Speaker`
+      : baseStyleName;
 
     // Populate Individual Scene Clips Gallery
     if (this.cinemaSceneClipsGrid) {

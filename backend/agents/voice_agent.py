@@ -277,12 +277,13 @@ class VoiceAgent:
                 cumulative_time += sent_dur
                 await asyncio.sleep(0.3)
 
-            filter_inputs = "".join(f"[{i}:a]" for i in range(len(temp_files)))
-            filter_str = f"{filter_inputs}concat=n={len(temp_files)}:v=0:a=1[outa]"
+            norm_clauses = [f"[{i}:a]aformat=sample_rates=24000:channel_layouts=mono[a{i}]" for i in range(len(temp_files))]
+            filter_inputs = "".join(f"[a{i}]" for i in range(len(temp_files)))
+            filter_str = ";".join(norm_clauses) + f";{filter_inputs}concat=n={len(temp_files)}:v=0:a=1[outa]"
             cmd = [FFMPEG_PATH, "-y"]
             for tf in temp_files:
                 cmd.extend(["-i", tf])
-            cmd.extend(["-filter_complex", filter_str, "-map", "[outa]", output_audio_path])
+            cmd.extend(["-filter_complex", filter_str, "-map", "[outa]", "-b:a", "192k", output_audio_path])
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.returncode != 0 or not os.path.exists(output_audio_path) or os.path.getsize(output_audio_path) == 0:
                 raise RuntimeError(f"FFmpeg sentence concat failed: {proc.stderr}")
@@ -513,12 +514,13 @@ class VoiceAgent:
         sil_file = os.path.join(temp_dir, "speech_gap.mp3")
 
         try:
-            # Generate silence gap
+            # Generate silence gap matching 24kHz mono speech streams
             if pause_gap > 0:
                 subprocess.run([
                     FFMPEG_PATH, "-y",
-                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                    "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
                     "-t", str(pause_gap),
+                    "-c:a", "libmp3lame", "-b:a", "192k",
                     sil_file
                 ], capture_output=True)
 
@@ -558,12 +560,13 @@ class VoiceAgent:
                 # Pacing between Edge-TTS requests
                 await asyncio.sleep(0.4)
 
-            # Concatenate with FFmpeg
+            # Concatenate with FFmpeg (normalize sample rate & channels across all parts and gaps)
             inputs = []
             for tf in temp_files:
                 inputs.extend(["-i", str(tf)])
-            filter_inputs = "".join(f"[{i}:a]" for i in range(len(temp_files)))
-            filter_complex = f"{filter_inputs}concat=n={len(temp_files)}:v=0:a=1[aout]"
+            norm_clauses = [f"[{i}:a]aformat=sample_rates=24000:channel_layouts=mono[a{i}]" for i in range(len(temp_files))]
+            filter_inputs = "".join(f"[a{i}]" for i in range(len(temp_files)))
+            filter_complex = ";".join(norm_clauses) + f";{filter_inputs}concat=n={len(temp_files)}:v=0:a=1[aout]"
 
             concat_cmd = [
                 FFMPEG_PATH, "-y",

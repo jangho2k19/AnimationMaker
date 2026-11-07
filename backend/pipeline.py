@@ -127,6 +127,13 @@ class AnimationPipeline:
                 data = json.load(f)
                 p_dir = PROJECTS_DIR / project_id
                 changed = False
+                # Normalize legacy 'dialogue_cinema' art_style into combinable visual style + camera_on_speaker
+                if data.get("art_style") == "dialogue_cinema":
+                    data["art_style"] = "ghibli"
+                    data["camera_on_speaker"] = True
+                    changed = True
+                elif "camera_on_speaker" not in data:
+                    data["camera_on_speaker"] = False
                 for idx, sc in enumerate(data.get("scenes", [])):
                     # Auto-recover image_path from disk if missing or file deleted/recreated
                     cur_img = sc.get("image_path")
@@ -667,32 +674,34 @@ class AnimationPipeline:
         else:
             notify(52, "Recording voice actor narration & subtitles..." if enable_voiceover else "Preparing scene subtitles...")
 
-            # Enforce exactly ONE voice consistently across the entire clip (no mid-clip fallback or swapping)
+            # Enforce narrator voice consistently across the entire clip (no mid-clip fallback or swapping)
             clip_voice = project.get("voice") or "en-US-ChristopherNeural"
+            enable_narrator = project.get("enable_voiceover", True)
 
-            # Up-front audition probe to verify voice operational health and establish 100% clip voice consistency
-            try:
-                probe_path = project_dir / ".probe_voice.mp3"
-                probe_text = "Xin chào, bắt đầu câu chuyện." if ("vi" in clip_voice.lower() or any(ord(c) > 127 for c in scenes[0].get("narration", ""))) else "Welcome, beginning the story."
-                probe_res = await self.voice_agent.synthesize(
-                    text=probe_text,
-                    output_audio_path=str(probe_path),
-                    voice=clip_voice,
-                    api_key=project.get("api_key"),
-                    allow_voice_fallback=True
-                )
-                if probe_path.exists():
-                    try:
-                        os.remove(probe_path)
-                    except Exception:
-                        pass
-                if probe_res.get("is_fallback") and probe_res.get("voice"):
-                    clip_voice = probe_res["voice"]
-                    project["voice"] = clip_voice
-                    self.save_project(project)
-                    print(f"Audition probe established consistent clip voice: {clip_voice}")
-            except Exception as e_probe:
-                print(f"Voice probe notice: {e_probe}")
+            # Up-front audition probe to verify narrator voice health when voiceover is enabled
+            if enable_narrator:
+                try:
+                    probe_path = project_dir / ".probe_voice.mp3"
+                    probe_text = "Xin chào, bắt đầu câu chuyện." if ("vi" in clip_voice.lower() or any(ord(c) > 127 for c in scenes[0].get("narration", ""))) else "Welcome, beginning the story."
+                    probe_res = await self.voice_agent.synthesize(
+                        text=probe_text,
+                        output_audio_path=str(probe_path),
+                        voice=clip_voice,
+                        api_key=project.get("api_key"),
+                        allow_voice_fallback=True
+                    )
+                    if probe_path.exists():
+                        try:
+                            os.remove(probe_path)
+                        except Exception:
+                            pass
+                    if probe_res.get("is_fallback") and probe_res.get("voice"):
+                        clip_voice = probe_res["voice"]
+                        project["voice"] = clip_voice
+                        self.save_project(project)
+                        print(f"Audition probe established consistent clip voice: {clip_voice}")
+                except Exception as e_probe:
+                    print(f"Voice probe notice: {e_probe}")
 
             for idx, scene in enumerate(scenes):
                 audio_file = project_dir / f"scene_{idx + 1}.mp3"
@@ -701,9 +710,24 @@ class AnimationPipeline:
                 if narration_changed or not audio_file.exists() or not srt_file.exists():
                     notify(52 + int((idx / total_scenes) * 15), f"Narrating scene {idx + 1} of {total_scenes}..." if enable_voiceover else f"Preparing scene {idx + 1} subtitles...")
                     enable_mv = project.get("enable_multivoice", True)
-                    enable_narrator = project.get("enable_voiceover", True)
                     char_voices = project.get("character_voices") or {}
                     sc_dialogues = scene.get("dialogues")
+                    if enable_mv:
+                        has_generic_char = any(
+                            (d.get("speaker") or "").strip().lower() == "character"
+                            for d in (sc_dialogues or [])
+                        )
+                        named_chars = [
+                            k for k in char_voices.keys()
+                            if k.lower() not in ("narrator", "người kể chuyện", "character")
+                        ]
+                        if not sc_dialogues or (has_generic_char and named_chars):
+                            sc_dialogues = self.script_agent.extract_scene_dialogue_segments(
+                                scene.get("narration", ""),
+                                scene.get("character_consistency", "") or project.get("character_consistency", ""),
+                                known_speakers=named_chars
+                            )
+                            scene["dialogues"] = sc_dialogues
                     try:
                         res = await self.voice_agent.synthesize(
                             text=scene["narration"],
