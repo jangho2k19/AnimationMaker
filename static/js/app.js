@@ -2142,8 +2142,12 @@ class AniStoryApp {
     const styleInfo = this.config?.art_styles?.[this.selectedStyleKey];
     const styleName = styleInfo ? styleInfo.name : "Studio Ghibli 2D";
 
-    const motionCycles = ["zoom_in", "pan_right", "pan_left", "subtle_drift", "zoom_out"];
+    const isDialogueCinema = this.selectedStyleKey === "dialogue_cinema";
+    const motionCycles = isDialogueCinema
+      ? ["speaker_focus", "speaker_focus", "pan_right", "speaker_focus", "pan_left"]
+      : ["zoom_in", "pan_right", "pan_left", "subtle_drift", "zoom_out"];
     const cameraProseMap = {
+      speaker_focus: "The camera focuses directly on the speaking character in an intimate medium close-up, executing a smooth slow push-in toward their face at eye level as they speak.",
       zoom_in: "The camera executes a smooth slow dolly push-in toward the subject at eye level with fluid stabilization.",
       zoom_out: "The camera smoothly dollies out with a steady pedestal pull-back, revealing the expansive atmospheric environment.",
       pan_left: "The camera performs a graceful horizontal tracking pan to the left, following the subject's eyeline.",
@@ -2189,7 +2193,7 @@ CRITICAL INSTRUCTION 1 - VOICEOVER NARRATION MUST TIE DIRECTLY TO THE STORY:
 - When read sequentially from Scene 1 to Scene ${numScenes}, "narration" MUST tell the complete, coherent story from start to finish.
 - If the story includes key character dialogue, questions, reveals, or a climactic punchline, "narration" MUST explicitly include/quote those key lines so the listener hears the full story and punchline—never replace key dialogue with vague third-person meta-summaries or disconnected scenery fragments.
 
-CRITICAL INSTRUCTION 2 - SEPARATE PROMPTS FOR IMAGE & VIDEO:
+CRITICAL INSTRUCTION 2 - SEPARATE PROMPTS FOR IMAGE & VIDEO:${isDialogueCinema ? `\n- DIALOGUE FILM (CAMERA ON SPEAKING CHARACTER MANDATE): Whenever a character speaks in a scene, frame the camera DIRECTLY ON THE SPEAKING CHARACTER (Medium Close-Up on the active speaker's face & upper body, or Over-The-Shoulder shot looking at the speaking character). Use Shot-Reverse-Shot editing across conversational turns so each scene focuses on whichever character is currently speaking, explicitly naming the active speaker in both "visual_prompt" and "acting_prompt", and set "camera_motion" to "speaker_focus".` : ""}
 Every scene MUST have TWO SEPARATE, DISTINCT prompts:
 1. "visual_prompt" (STILL IMAGE PROMPT for Midjourney / Google Imagen 3 / Puter):
    - Detailed visual description of the frozen single frame in ${styleName} art style.
@@ -2672,6 +2676,12 @@ ${isAutoScenes
         card.classList.add("selected");
         this.selectedStyleKey = key;
         localStorage.setItem("anistory_cfg_art_style", key);
+        if (key === "dialogue_cinema") {
+          this.enableMultivoice = true;
+          localStorage.setItem("anistory_cfg_enable_multivoice", "true");
+          this.updateMultivoiceUI(true);
+          this.showToast("🗣️ Dialogue Film selected: Camera focuses on characters when speaking!");
+        }
       });
       this.styleOptionsGrid.appendChild(card);
     });
@@ -3275,6 +3285,7 @@ ${isAutoScenes
       let actPrompt = (scene.acting_prompt || "").trim();
 
       const cameraProseMap = {
+        speaker_focus: "The camera focuses directly on the speaking character in an intimate medium close-up, executing a smooth slow push-in toward their face at eye level as they speak.",
         zoom_in: "The camera executes a smooth slow dolly push-in toward the subject at eye level with fluid stabilization.",
         zoom_out: "The camera smoothly dollies out with a steady pedestal pull-back, revealing the expansive atmospheric environment.",
         pan_left: "The camera performs a graceful horizontal tracking pan to the left, smoothly following the subject's eyeline.",

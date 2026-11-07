@@ -409,6 +409,16 @@ class ScriptAgent:
 
         title_clause = f'Film Title: "{title}"' if title else f'Film Title: Catchy, cinematic title in {language}'
 
+        dialogue_cinema_directive = ""
+        if art_style == "dialogue_cinema":
+            dialogue_cinema_directive = """
+   - DIALOGUE FILM (CAMERA ON SPEAKING CHARACTER — SHOT-REVERSE-SHOT MANDATE):
+     * Whenever a character speaks in a scene, the camera MUST focus directly on the SPEAKING CHARACTER (Medium Close-Up on the active speaker's face & upper body, or Over-The-Shoulder shot looking directly at the character who is speaking).
+     * Across conversational exchanges, use Shot-Reverse-Shot editing: cut the camera focus to whichever character is speaking in that scene.
+     * In `visual_prompt`, explicitly state which character the camera is focused on (e.g. "Medium close-up camera focused directly on [Speaker Name] speaking expressively with natural mouth articulation, warm key lighting on [Speaker Name]'s face, shallow 50mm depth of field...").
+     * In `acting_prompt`, explicitly state the camera focus on the speaking character (e.g. "Medium close-up focused directly on [Speaker Name] as they speak. The camera executes a smooth intimate push-in toward [Speaker Name]'s face at eye level... 3-6s: Camera holds focus on [Speaker Name] speaking with expressive facial micro-expressions and natural lip-sync mouth movement. [Speaker Name] says in an expressive voice: \\"...\\" (no subtitles).").
+     * Set `camera_motion` to `"speaker_focus"` for all scenes where a character is speaking."""
+
         return f"""You are a master animation director at Pixar, Studio Ghibli, and premier cinematic AI studios (Google Flow / Google Veo 3 / Imagen 3).
 Transform the provided input into a breathtaking, emotionally resonant animated short film storyboard tailored for ACTING VIDEO GENERATION (8-second scenes, Google Flow / Veo 3 I2V).
 
@@ -426,7 +436,7 @@ CINEMATIC DIRECTIVES:
 {arc_header}
    - Act I (Exposition & Catalyst): Establish the world, introduce the protagonist's specific situation, and ignite the central conflict or adventure.
    - Act II (Rising Action & Confrontation): Escalating obstacles, key character interactions and dialogues, stakes rising to peak tension.
-   - Act III (Climax & Resolution): Deliver the decisive emotional climax, twist, or punchline, followed by a resonant conclusion tied directly to the premise.
+   - Act III (Climax & Resolution): Deliver the decisive emotional climax, twist, or punchline, followed by a resonant conclusion tied directly to the premise.{dialogue_cinema_directive}
 
 2. SEPARATE PROMPTS FOR IMAGE & VIDEO (MANDATORY REQUIREMENT):
    - You MUST generate TWO ENTIRELY SEPARATE, DIFFERENT prompts for each scene:
@@ -455,8 +465,8 @@ CINEMATIC DIRECTIVES:
    - MANDATORY: Every `visual_prompt` MUST include these EXACT visual anchor tokens whenever that character appears to guarantee cross-scene character consistency in Imagen 3 and Veo 3.
 
 4. CAMERA SHOT GRAMMAR:
-   - Progress shots dynamically across the arc: "Extreme Wide Establishing Shot", "Medium Character Profile", "Intimate Two-Shot Dialogue", "Dynamic Low-Angle Action Tracking", "Close-Up Heroic Climax", "Sweeping Panoramic Pull-Out".
-   - `camera_motion`: Choose kinetic, purposeful movement: "zoom_in", "zoom_out", "pan_left", "pan_right", or "subtle_drift".
+   - Progress shots dynamically across the arc: "Extreme Wide Establishing Shot", "Medium Character Profile", "Speaker Close-Up Focus", "Over-The-Shoulder Dialogue Shot", "Intimate Two-Shot Dialogue", "Dynamic Low-Angle Action Tracking", "Close-Up Heroic Climax", "Sweeping Panoramic Pull-Out".
+   - `camera_motion`: Choose kinetic, purposeful movement: "speaker_focus" (when a character is speaking), "zoom_in", "zoom_out", "pan_left", "pan_right", or "subtle_drift".
 
 5. VOICEOVER NARRATION — MUST TIE DIRECTLY TO THE STORY (CRITICAL MANDATE):
    - `narration`: Engaging, story-driven voiceover narration in {language} that serves as the primary storytelling audio and subtitle track of the film.
@@ -513,7 +523,8 @@ Return ONLY raw JSON matching this structure:
         camera_motion: str = "zoom_in",
         title: str = "",
         art_style: str = "ghibli",
-        is_commercial: bool = False
+        is_commercial: bool = False,
+        speaker_name: str = ""
     ) -> str:
         """
         Transforms any raw, robotic, or placeholder video prompt into a professional,
@@ -561,9 +572,16 @@ Return ONLY raw JSON matching this structure:
         # 3. Detect and Map Camera Motion to Director-Grade Prose
         cam_match = re.search(r'(?i)Camera\s*:\s*([a-zA-Z_\-]+)', raw_prompt)
         detected_cam = (cam_match.group(1) if cam_match else camera_motion or "zoom_in").lower().replace("-", "_")
+        if style_key == "dialogue_cinema" and dialogue_text and detected_cam in ("zoom_in", "subtle_drift"):
+            detected_cam = "speaker_focus"
+
+        spk_label = (speaker_name or "").strip()
+        if spk_label.lower() in ("narrator", "người kể chuyện", "character", "none"):
+            spk_label = ""
 
         if is_commercial:
             camera_prose_map = {
+                "speaker_focus": "The camera performs a smooth, high-precision motorized slider push-in toward the hero subject.",
                 "zoom_in": "The camera performs a smooth, high-precision motorized slider push-in toward the product hero silhouette.",
                 "dolly_in": "The camera performs a smooth, high-precision motorized slider push-in toward the product hero silhouette.",
                 "zoom_out": "The camera smoothly dollies out with a steady pedestal pull-back, revealing the full premium product lineup.",
@@ -576,7 +594,9 @@ Return ONLY raw JSON matching this structure:
                 "tilt_up": "The camera slowly tilts upward along the product contours, highlighting its sculpted architectural lines."
             }
         else:
+            spk_target = f"{spk_label}'s face" if spk_label else "the speaking character's face"
             camera_prose_map = {
+                "speaker_focus": f"The camera focuses directly on {spk_label or 'the speaking character'} in an intimate medium close-up, executing a smooth slow push-in toward {spk_target} at eye level as they speak.",
                 "zoom_in": "The camera executes a smooth, slow cinematic dolly push-in toward the subject at eye level with fluid stabilization.",
                 "dolly_in": "The camera executes a smooth, slow cinematic dolly push-in toward the subject at eye level with fluid stabilization.",
                 "zoom_out": "The camera smoothly dollies out with a steady pedestal pull-back, gradually revealing the expansive atmospheric environment.",
@@ -642,14 +662,18 @@ Return ONLY raw JSON matching this structure:
                 beat2 = "3-6s: Dynamic tactile interaction highlights responsive controls and fine material craftsmanship."
                 beat3 = "6-8s: The composition settles into an authoritative hero angle with ultimate brand prestige."
             else:
-                beat1 = f"0-3s: The character initiates natural, measured movement in the setting, hair and clothing gently stirring in the ambient breeze."
+                char_ref = spk_label or "The character"
+                beat1 = f"0-3s: {char_ref} initiates natural, measured movement in the setting, hair and clothing gently stirring in the ambient breeze."
                 if dialogue_text:
-                    beat2 = f'3-6s: The character pauses with focused poise. Character says in a calm, resolute voice: "{dialogue_text}" (no subtitles).'
+                    if style_key == "dialogue_cinema" or detected_cam == "speaker_focus":
+                        beat2 = f'3-6s: Camera holds intimate focus on {char_ref} speaking with expressive facial micro-expressions and natural lip-sync articulation. {char_ref} says in a clear, expressive voice: "{dialogue_text}" (no subtitles).'
+                    else:
+                        beat2 = f'3-6s: {char_ref} pauses with focused poise. {char_ref} says in a calm, resolute voice: "{dialogue_text}" (no subtitles).'
                 elif narr_text and len(narr_text) < 40:
                     beat2 = "3-6s: The character performs a focused, deliberate interaction with the immediate setting, eyes reflecting thoughtful determination."
                 else:
                     beat2 = "3-6s: The character performs a focused, deliberate interaction with the immediate environment, their gaze steady and expressive."
-                beat3 = "6-8s: The character takes a steadying breath, settling into a grounded posture as their expression deepens with quiet confidence."
+                beat3 = f"6-8s: {char_ref} takes a steadying breath, settling into a grounded posture as their expression deepens with quiet confidence."
             body_beats = f"{beat1} {beat2} {beat3}"
         else:
             # Clean existing prompt from clunky metadata tags and bracketed tags
@@ -743,6 +767,8 @@ Return ONLY raw JSON matching this structure:
         # 7. Optics & Atmospheric Lighting
         if is_commercial:
             lighting_prose = "Commercial studio softbox key light with crisp edge reflections and immaculate specular highlights, shot on 50mm f/1.8 lens."
+        elif "dialogue" in style_key or detected_cam == "speaker_focus":
+            lighting_prose = "Warm cinematic key light focused on the speaking character's face with soft 50mm f/1.8 shallow depth of field and creamy background bokeh."
         elif "realistic" in style_key:
             lighting_prose = "Volumetric cinematic rim lighting, shot on 35mm anamorphic lens with shallow depth of field and creamy background falloff."
         elif "ghibli" in style_key or "anime" in style_key:
@@ -1571,9 +1597,30 @@ Return ONLY raw JSON matching this structure:
                 matched_dialogues=matched_d
             )
 
+            # Identify active speaking character in this scene
+            active_speaker = ""
+            for d_seg in (sc.get("dialogues") or []):
+                s_cand = (d_seg.get("speaker") or "").strip()
+                if s_cand and s_cand.lower() not in ("narrator", "người kể chuyện", "character", "none"):
+                    active_speaker = s_cand
+                    break
+
+            if art_style == "dialogue_cinema" and primary_clip_quote:
+                camera = "speaker_focus"
+                sc["camera_motion"] = "speaker_focus"
+
             # Update Image Prompt (`visual_prompt`) with expressive dialogue visual cues if scene has dialogue
             if update_image and primary_clip_quote and vis:
                 vis_is_vi = any(ord(c) > 127 for c in vis)
+                if art_style == "dialogue_cinema" and active_speaker:
+                    if vis_is_vi:
+                        spk_prefix = f"Góc máy cận cảnh tập trung trực tiếp vào {active_speaker} đang nói chuyện, "
+                        if active_speaker.lower() not in vis[:45].lower() and "góc máy cận cảnh tập trung" not in vis.lower():
+                            vis = spk_prefix + vis
+                    else:
+                        spk_prefix = f"Medium close-up camera focused directly on {active_speaker} speaking, "
+                        if active_speaker.lower() not in vis[:55].lower() and "camera focused directly on" not in vis.lower():
+                            vis = spk_prefix + vis
                 if vis_is_vi:
                     if "biểu cảm đối thoại" not in vis.lower() and "khẩu hình" not in vis.lower():
                         vis = vis.rstrip(' .') + ", biểu cảm gương mặt và khẩu hình đối thoại sinh động, ánh mắt giao tiếp tự nhiên, không bong bóng thoại, không chữ."
@@ -1598,13 +1645,16 @@ Return ONLY raw JSON matching this structure:
                         count=1,
                         flags=re.IGNORECASE
                     )
+                if active_speaker:
+                    act = re.sub(r'\bCharacter says\b', f'{active_speaker} says', act)
                 sc["acting_prompt"] = ScriptAgent.professionalize_video_prompt(
                     acting_prompt=act,
                     visual_prompt=sc.get("visual_prompt", vis),
                     narration=sc.get("narration", narr),
                     camera_motion=camera,
                     title=title,
-                    art_style=art_style
+                    art_style=art_style,
+                    speaker_name=active_speaker
                 )
 
         return scenes
@@ -1642,6 +1692,9 @@ Return ONLY raw JSON matching this structure:
         elif art_style == "stick_figure":
             style_tag = "Minimalist Stick Figure Animation"
             render_word = "masterpiece stickman animation"
+        elif art_style == "dialogue_cinema":
+            style_tag = "Cinematic Dialogue Film (Camera on Speaking Character)"
+            render_word = "intimate shot-reverse-shot cinema"
         else:
             style_tag = f"{art_style.capitalize()} art"
             render_word = "masterpiece illustration"

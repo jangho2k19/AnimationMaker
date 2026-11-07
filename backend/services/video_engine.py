@@ -27,7 +27,11 @@ class VideoEngine:
         w, h = self.width, self.height
         motion = motion_type.lower()
 
-        if motion == "zoom_in":
+        if motion == "speaker_focus":
+            # Smoothly pushes in from 1.04 to 1.24 focused at upper-center (eye/face level of speaking character)
+            return f"zoompan=z='if(lte(zoom,1.0),1.04,min(zoom+0.0012,1.24))':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2.5-(ih/zoom/2.5)':s={w}x{h}:fps={self.fps}"
+
+        elif motion == "zoom_in":
             # Gradually zooms in from 1.0 to 1.20 centered
             return f"zoompan=z='min(zoom+0.0010,1.20)':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={self.fps}"
 

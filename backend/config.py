@@ -78,6 +78,12 @@ ART_STYLES = {
         "prompt_suffix": ", minimalist stick figure animation style, iconic stickman character design, simple circular head, clean bold line-drawn limbs and torso, expressive stick figure posing and energetic action choreography, Alan Becker Animation vs Animator aesthetic, clean high-contrast minimalist background, crisp 2D vector lineart, action silhouette, textless, no photorealistic human faces, no detailed human skin, no complex rendered clothing, classic stickman animation masterpiece",
         "icon": "🏃"
     },
+    "dialogue_cinema": {
+        "name": "Dialogue Film (Camera on Speaker)",
+        "description": "Shot-reverse-shot cinema where the camera focuses directly on characters as they speak, expressive close-ups & natural lip-sync",
+        "prompt_suffix": ", cinematic dialogue film aesthetic, camera focused directly on the speaking character, medium close-up and over-the-shoulder shot-reverse-shot conversation framing, expressive facial acting and natural lip-sync mouth articulation while speaking, warm key light on the active speaker's face, shallow 50mm f/1.8 depth of field with soft background bokeh, intimate eye-level storytelling composition, clean textless frame, no speech bubbles",
+        "icon": "🗣️"
+    },
     "realistic": {
         "name": "Realistic / Live-Action Cinema",
         "description": "Hyper-realistic cinema, 35mm photography, natural lighting & lifelike textures",
@@ -135,6 +141,7 @@ VOICES = [
 
 # Camera Motion presets for Ken Burns effect
 CAMERA_MOTIONS = [
+    {"id": "speaker_focus", "name": "Speaker Close-Up Focus", "description": "Smoothly pushes in on the speaking character's face & expression"},
     {"id": "zoom_in", "name": "Smooth Zoom In", "description": "Slowly moves in toward the focal subject"},
     {"id": "zoom_out", "name": "Reveal Zoom Out", "description": "Starts close and widens to reveal the scene"},
     {"id": "pan_left", "name": "Cinematic Pan Left", "description": "Glides camera horizontally leftward"},
