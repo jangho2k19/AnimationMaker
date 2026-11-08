@@ -41,11 +41,23 @@ class AniStoryApp {
     this.currentProjectFilter = "all";
     this.activeTasksPollInterval = null;
 
+    // Step 1 -> 4 Automation Workflow state
+    this.autoWorkflowEnabled = localStorage.getItem("anistory_cfg_auto_workflow") === "true";
+    this.autoWorkflowState = {
+      active: false,
+      paused: false,
+      step: 0,
+      startTime: 0,
+      timerId: null,
+      skipCountdown: false
+    };
+
     this.initElements();
     this.updateSpeakerCamUI(this.cameraOnSpeaker);
     this.updateVoiceoverUI(this.enableVoiceover);
     this.updateMultivoiceUI(this.enableMultivoice);
     this.updateAutoPaintUI(localStorage.getItem("anistory_autopaint") === "true");
+    this.updateAutoWorkflowToggleUI(this.autoWorkflowEnabled);
     this.restoreCachedProjectSync();
     this.attachEvents();
     this.loadConfig();
@@ -487,6 +499,37 @@ class AniStoryApp {
     this.floatingDirectorWidget = document.getElementById("floatingDirectorWidget");
     this.btnFloatingScrollTop = document.getElementById("btnFloatingScrollTop");
     this.btnFloatingRenderFilm = document.getElementById("btnFloatingRenderFilm");
+
+    // Step 1 -> 4 Automation Workflow elements
+    this.autoWorkflowBanner = document.getElementById("autoWorkflowBanner");
+    this.badgeAutoWfState = document.getElementById("badgeAutoWfState");
+    this.textAutoWfStatus = document.getElementById("textAutoWfStatus");
+    this.textAutoWfTimer = document.getElementById("textAutoWfTimer");
+    this.btnAutoWfPauseResume = document.getElementById("btnAutoWfPauseResume");
+    this.btnAutoWfSkipToRender = document.getElementById("btnAutoWfSkipToRender");
+    this.btnAutoWfCancel = document.getElementById("btnAutoWfCancel");
+    this.btnToggleAutoWorkflowStage1 = document.getElementById("btnToggleAutoWorkflowStage1");
+    this.iconAutoWorkflowStage1 = document.getElementById("iconAutoWorkflowStage1");
+    this.textAutoWorkflowStage1 = document.getElementById("textAutoWorkflowStage1");
+    this.chkAutoRefinePrompts = document.getElementById("chkAutoRefinePrompts");
+    this.chkAutoPaintStep2 = document.getElementById("chkAutoPaintStep2");
+    this.chkAutoReviewPause = document.getElementById("chkAutoReviewPause");
+    this.chkAutoDownloadMp4 = document.getElementById("chkAutoDownloadMp4");
+    this.btnAutoWorkflowStep1To4 = document.getElementById("btnAutoWorkflowStep1To4");
+    this.btnAutoRunStage2To4 = document.getElementById("btnAutoRunStage2To4");
+
+    if (this.chkAutoRefinePrompts && localStorage.getItem("anistory_wf_refine") !== null) {
+      this.chkAutoRefinePrompts.checked = localStorage.getItem("anistory_wf_refine") !== "false";
+    }
+    if (this.chkAutoPaintStep2 && localStorage.getItem("anistory_wf_paint") !== null) {
+      this.chkAutoPaintStep2.checked = localStorage.getItem("anistory_wf_paint") !== "false";
+    }
+    if (this.chkAutoReviewPause && localStorage.getItem("anistory_wf_review") !== null) {
+      this.chkAutoReviewPause.checked = localStorage.getItem("anistory_wf_review") !== "false";
+    }
+    if (this.chkAutoDownloadMp4 && localStorage.getItem("anistory_wf_download") !== null) {
+      this.chkAutoDownloadMp4.checked = localStorage.getItem("anistory_wf_download") === "true";
+    }
 
     this.detectedModelsData = null;
     this.activeModelFilter = "all";
@@ -948,6 +991,51 @@ class AniStoryApp {
 
     // Story generation
     this.btnGenerateStoryboard.addEventListener("click", () => this.handleGenerateStoryboard());
+
+    // Step 1 -> 4 Automation Workflow triggers & controls
+    if (this.btnToggleAutoWorkflowStage1) {
+      this.btnToggleAutoWorkflowStage1.addEventListener("click", () => {
+        this.autoWorkflowEnabled = !this.autoWorkflowEnabled;
+        localStorage.setItem("anistory_cfg_auto_workflow", this.autoWorkflowEnabled ? "true" : "false");
+        this.updateAutoWorkflowToggleUI(this.autoWorkflowEnabled);
+        this.showToast(
+          this.autoWorkflowEnabled
+            ? "🤖 Auto-Pilot (Step 1 → 4) ON: Story generation will automatically run through Cinema Premiere!"
+            : "🤖 Auto-Pilot (Step 1 → 4) OFF: Manual review on Stage 2 Storyboard."
+        );
+      });
+    }
+    if (this.chkAutoRefinePrompts) {
+      this.chkAutoRefinePrompts.addEventListener("change", (e) => localStorage.setItem("anistory_wf_refine", e.target.checked ? "true" : "false"));
+    }
+    if (this.chkAutoPaintStep2) {
+      this.chkAutoPaintStep2.addEventListener("change", (e) => localStorage.setItem("anistory_wf_paint", e.target.checked ? "true" : "false"));
+    }
+    if (this.chkAutoReviewPause) {
+      this.chkAutoReviewPause.addEventListener("change", (e) => localStorage.setItem("anistory_wf_review", e.target.checked ? "true" : "false"));
+    }
+    if (this.chkAutoDownloadMp4) {
+      this.chkAutoDownloadMp4.addEventListener("change", (e) => localStorage.setItem("anistory_wf_download", e.target.checked ? "true" : "false"));
+    }
+    if (this.btnAutoWorkflowStep1To4) {
+      this.btnAutoWorkflowStep1To4.addEventListener("click", () => this.runAutoWorkflowStep1To4());
+    }
+    if (this.btnAutoRunStage2To4) {
+      this.btnAutoRunStage2To4.addEventListener("click", () => this.runAutoWorkflowFromStep2To4());
+    }
+    if (this.btnAutoWfPauseResume) {
+      this.btnAutoWfPauseResume.addEventListener("click", () => this.togglePauseAutoWorkflow());
+    }
+    if (this.btnAutoWfSkipToRender) {
+      this.btnAutoWfSkipToRender.addEventListener("click", () => {
+        this.autoWorkflowState.skipCountdown = true;
+        this.autoWorkflowState.paused = false;
+        this.showToast("⏭ Skipping directly to Step 3 Full Film Render!");
+      });
+    }
+    if (this.btnAutoWfCancel) {
+      this.btnAutoWfCancel.addEventListener("click", () => this.stopAutoWorkflow(true));
+    }
 
     // Storyboard Actions
     this.btnSaveStoryboardEdits.addEventListener("click", () => this.saveStoryboardEdits(true));
@@ -2957,12 +3045,12 @@ ${isAutoScenes
     return localStorage.getItem(`anistory_key_${provider}`) || "";
   }
 
-  async handleGenerateStoryboard() {
+  async handleGenerateStoryboard(fromAutoWorkflow = false) {
     const idea = this.inputIdeaPrompt.value.trim();
     if (!idea) {
       this.showToast("Please enter a story idea or choose a quick spark! 💡", true);
       this.inputIdeaPrompt.focus();
-      return;
+      return false;
     }
 
     this.btnGenerateStoryboard.disabled = true;
@@ -3063,18 +3151,22 @@ ${isAutoScenes
       this.switchStage(2);
       const titleDisplay = this.currentProject.title ? `"${this.currentProject.title}"` : `${this.currentProject.scenes.length} scenes`;
       this.showToast(`✨ Generated ${titleDisplay} (${this.currentProject.scenes.length} scenes in ${elapsedSec}s)! Review your script, then click '🎨 Paint All' to paint. 🎬`);
-      if (localStorage.getItem("anistory_autopaint") === "true") {
+      if (!fromAutoWorkflow && this.autoWorkflowEnabled) {
+        this.runAutoWorkflowFromStep2To4();
+      } else if (!fromAutoWorkflow && localStorage.getItem("anistory_autopaint") === "true") {
         this.autoGenerateMissingSceneImages();
       }
+      return true;
     } catch (e) {
       console.error(e);
       this.showToast(e.message, true);
+      return false;
     } finally {
       clearInterval(timerInterval);
       this.btnGenerateStoryboard.disabled = false;
       this.btnGenerateStoryboard.innerHTML = `
         <span class="btn-glow-layer"></span>
-        <span class="btn-text">Generate Storyboard with AI</span>
+        <span class="btn-text">Generate Storyboard (Step 1→2)</span>
         <span class="btn-arrow">✨</span>
       `;
     }
@@ -3158,19 +3250,19 @@ ${isAutoScenes
     });
   }
 
-  async handleGenerateAdvertisementVideo() {
+  async handleGenerateAdvertisementVideo(fromAutoWorkflow = false) {
     const productName = this.inputAdProductName ? this.inputAdProductName.value.trim() : "";
     const description = this.textareaAdDesc ? this.textareaAdDesc.value.trim() : "";
 
     if (!productName) {
       this.showToast("Please enter the Product / Goods Name! 🏷️", true);
       this.inputAdProductName?.focus();
-      return;
+      return false;
     }
     if (!description) {
       this.showToast("Please enter a short product description or key selling points! 📝", true);
       this.textareaAdDesc?.focus();
-      return;
+      return false;
     }
 
     if (!this.btnGenerateAdVideo) return;
@@ -3268,15 +3360,20 @@ ${isAutoScenes
         ? ` with ${this.adUploadedFiles.length} product photos ready`
         : "";
       this.showToast(`🛍️ Generated Commercial for "${productName}" (${this.currentProject.scenes.length} scenes${photoMsg})! Click '🎬 Render Film' to produce video.`);
+      if (!fromAutoWorkflow && this.autoWorkflowEnabled) {
+        this.runAutoWorkflowFromStep2To4();
+      }
+      return true;
     } catch (e) {
       console.error(e);
       this.showToast(e.message, true);
+      return false;
     } finally {
       clearInterval(timerInterval);
       this.btnGenerateAdVideo.disabled = false;
       this.btnGenerateAdVideo.innerHTML = `
         <span class="btn-glow-layer"></span>
-        <span class="btn-text">Generate Advertisement Video</span>
+        <span class="btn-text">Generate Ad Storyboard</span>
         <span class="btn-arrow">🛍️</span>
       `;
     }
@@ -3292,7 +3389,7 @@ ${isAutoScenes
     await this.handleImportFromText(text, this.btnSubmitImport);
   }
 
-  async handleImportFromText(text, btnEl) {
+  async handleImportFromText(text, btnEl, fromAutoWorkflow = false) {
     if (btnEl) {
       btnEl.disabled = true;
       btnEl.innerHTML = `<span>Loading Scenes...</span> <span>⏳</span>`;
@@ -3333,12 +3430,16 @@ ${isAutoScenes
       this.renderStoryboardView();
       this.switchStage(2);
       this.showToast("AI Storyboard loaded! Review your scenes, then click '🎨 Paint All' to paint. 🎬");
-      if (localStorage.getItem("anistory_autopaint") === "true") {
+      if (!fromAutoWorkflow && this.autoWorkflowEnabled) {
+        this.runAutoWorkflowFromStep2To4();
+      } else if (!fromAutoWorkflow && localStorage.getItem("anistory_autopaint") === "true") {
         this.autoGenerateMissingSceneImages();
       }
+      return true;
     } catch (e) {
       console.error(e);
       this.showToast(e.message, true);
+      return false;
     } finally {
       if (btnEl) {
         btnEl.disabled = false;
@@ -4501,6 +4602,14 @@ ${isAutoScenes
     for (let i = 0; i < scenesToPaint.length; i++) {
       const sceneIdx = scenesToPaint[i];
       if (!this.currentProject || this.currentProject.id !== projectId) break;
+      if (this.autoWorkflowState?.active) {
+        await this.waitIfAutoWorkflowPaused();
+        if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown) break;
+        this.updateAutoWorkflowBanner(
+          2,
+          `Step 2/4: Painting Scene ${i + 1} of ${scenesToPaint.length} on Storyboard with character consistency...`
+        );
+      }
 
       const btn = document.querySelector(`.btn-reroll-img[data-idx="${sceneIdx}"]`);
       const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
@@ -5214,6 +5323,9 @@ ${isAutoScenes
 
         // Update activity log
         this.updateActivityLogs(pct, proj.current_step);
+        if (this.autoWorkflowState?.active) {
+          this.updateAutoWorkflowBanner(3, `Step 3/4: ${proj.current_step || 'Rendering full animated film...'} (${pct}%)`);
+        }
 
         if (proj.status === "completed") {
           clearInterval(this.pollInterval);
@@ -5222,6 +5334,9 @@ ${isAutoScenes
         } else if (proj.status === "error") {
           clearInterval(this.pollInterval);
           this.pollInterval = null;
+          if (this.autoWorkflowState?.active) {
+            this.updateAutoWorkflowBanner(3, `⚠️ Render Error: ${proj.current_step}`, "error");
+          }
           this.showToast("Rendering error occurred: " + proj.current_step, true);
         }
       } catch (e) {
@@ -5361,9 +5476,308 @@ ${isAutoScenes
     }
 
     this.switchStage(4);
+    if (this.autoWorkflowState?.active) {
+      const elapsedSec = Math.max(1, Math.round((Date.now() - (this.autoWorkflowState.startTime || Date.now())) / 1000));
+      const m = Math.floor(elapsedSec / 60);
+      const s = elapsedSec % 60;
+      const durStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
+      this.updateAutoWorkflowBanner(4, `🏆 Step 1 → 4 Complete in ${durStr}! Master MP4 Ready in Cinema Premiere!`, "completed");
+      if (this.autoWorkflowState.timerId) {
+        clearInterval(this.autoWorkflowState.timerId);
+        this.autoWorkflowState.timerId = null;
+      }
+      this.autoWorkflowState.active = false;
+      this.autoWorkflowState.paused = false;
+
+      if (this.cinemaVideoPlayer && this.currentProject?.video_path) {
+        this.cinemaVideoPlayer.play().catch(() => {});
+      }
+      if (this.chkAutoDownloadMp4?.checked && this.currentProject?.id) {
+        setTimeout(() => {
+          const dlLink = document.createElement("a");
+          dlLink.href = `/api/download/${encodeURIComponent(this.currentProject.id)}`;
+          dlLink.download = `${(this.currentProject.title || "Animated_Film").replace(/[^a-zA-Z0-9_-]/g, "_")}.mp4`;
+          document.body.appendChild(dlLink);
+          dlLink.click();
+          document.body.removeChild(dlLink);
+          this.showToast("⬇️ Auto-downloading finished Master MP4!");
+        }, 800);
+      }
+    }
     if (notify) {
       this.showToast("🎉 Your animated movie is ready to watch!");
     }
+  }
+
+  // ============================================================
+  // Step 1 -> 4 Full Automation Workflow Engine (Auto-Pilot)
+  // ============================================================
+  updateAutoWorkflowToggleUI(enabled) {
+    this.autoWorkflowEnabled = Boolean(enabled);
+    if (this.btnToggleAutoWorkflowStage1) {
+      this.btnToggleAutoWorkflowStage1.style.background = enabled ? "rgba(16, 185, 129, 0.2)" : "rgba(148, 163, 184, 0.14)";
+      this.btnToggleAutoWorkflowStage1.style.color = enabled ? "#6ee7b7" : "#94a3b8";
+      this.btnToggleAutoWorkflowStage1.style.borderColor = enabled ? "rgba(16, 185, 129, 0.45)" : "rgba(148, 163, 184, 0.3)";
+    }
+    if (this.iconAutoWorkflowStage1) {
+      this.iconAutoWorkflowStage1.textContent = enabled ? "🤖" : "⏸";
+    }
+    if (this.textAutoWorkflowStage1) {
+      this.textAutoWorkflowStage1.textContent = enabled ? "Auto-Pilot: ON" : "Auto-Pilot: OFF";
+    }
+  }
+
+  startAutoWorkflowTimer() {
+    if (this.autoWorkflowState.timerId) {
+      clearInterval(this.autoWorkflowState.timerId);
+    }
+    this.autoWorkflowState.startTime = Date.now();
+    if (this.textAutoWfTimer) this.textAutoWfTimer.textContent = "⏱️ 0s";
+    this.autoWorkflowState.timerId = setInterval(() => {
+      if (!this.autoWorkflowState.active) {
+        clearInterval(this.autoWorkflowState.timerId);
+        this.autoWorkflowState.timerId = null;
+        return;
+      }
+      const sec = Math.max(0, Math.round((Date.now() - this.autoWorkflowState.startTime) / 1000));
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      if (this.textAutoWfTimer) {
+        this.textAutoWfTimer.textContent = m > 0 ? `⏱️ ${m}m ${s}s` : `⏱️ ${s}s`;
+      }
+    }, 1000);
+  }
+
+  updateAutoWorkflowBanner(step, statusText, stateType = "running") {
+    if (!this.autoWorkflowBanner) return;
+    this.autoWorkflowBanner.style.display = "block";
+    this.autoWorkflowState.step = step;
+
+    if (this.textAutoWfStatus && statusText) {
+      this.textAutoWfStatus.textContent = statusText;
+    }
+
+    if (this.badgeAutoWfState) {
+      if (stateType === "paused") {
+        this.badgeAutoWfState.textContent = "⏸ AUTO-PILOT PAUSED";
+        this.badgeAutoWfState.className = "auto-wf-badge paused";
+      } else if (stateType === "completed") {
+        this.badgeAutoWfState.textContent = "🏆 WORKFLOW COMPLETE";
+        this.badgeAutoWfState.className = "auto-wf-badge completed";
+      } else if (stateType === "error") {
+        this.badgeAutoWfState.textContent = "⚠️ WORKFLOW STOPPED";
+        this.badgeAutoWfState.className = "auto-wf-badge error";
+      } else {
+        this.badgeAutoWfState.textContent = `🤖 AUTO-PILOT (STEP ${step}/4)`;
+        this.badgeAutoWfState.className = "auto-wf-badge running";
+      }
+    }
+
+    if (this.btnAutoWfPauseResume) {
+      this.btnAutoWfPauseResume.style.display = (stateType === "completed" || stateType === "error") ? "none" : "inline-flex";
+      this.btnAutoWfPauseResume.innerHTML = this.autoWorkflowState.paused ? `<span>▶ Resume (→ Step 4)</span>` : `<span>⏸ Pause</span>`;
+    }
+    if (this.btnAutoWfSkipToRender) {
+      this.btnAutoWfSkipToRender.style.display = (step === 2 && stateType !== "completed" && stateType !== "error") ? "inline-flex" : "none";
+    }
+    if (this.btnAutoWfCancel) {
+      this.btnAutoWfCancel.innerHTML = (stateType === "completed" || stateType === "error") ? `<span>✕ Dismiss</span>` : `<span>⏹ Stop</span>`;
+    }
+
+    for (let i = 1; i <= 4; i++) {
+      const stepEl = document.getElementById(`autoWfStep${i}`);
+      const connEl = document.getElementById(`autoWfConn${i - 1}`);
+      if (stepEl) {
+        stepEl.classList.toggle("done", i < step || stateType === "completed");
+        stepEl.classList.toggle("active", i === step && stateType !== "completed");
+      }
+      if (connEl) {
+        connEl.classList.toggle("done", i <= step || stateType === "completed");
+      }
+    }
+  }
+
+  togglePauseAutoWorkflow() {
+    if (!this.autoWorkflowState.active) return;
+    this.autoWorkflowState.paused = !this.autoWorkflowState.paused;
+    if (this.autoWorkflowState.paused) {
+      this.updateAutoWorkflowBanner(
+        this.autoWorkflowState.step || 2,
+        "Paused at Director's Storyboard — Edit scenes, voices, or prompts freely, then click ▶ Resume!",
+        "paused"
+      );
+      this.showToast("⏸ Auto-Pilot paused! Click '▶ Resume (→ Step 4)' in the top bar when ready.");
+    } else {
+      this.updateAutoWorkflowBanner(
+        this.autoWorkflowState.step || 2,
+        `Resuming Step ${this.autoWorkflowState.step || 2}/4 Autonomous Pipeline...`,
+        "running"
+      );
+      this.showToast("▶ Resuming Step 1 → 4 Automation Workflow!");
+    }
+  }
+
+  stopAutoWorkflow(notify = true) {
+    const wasActive = this.autoWorkflowState.active;
+    this.autoWorkflowState.active = false;
+    this.autoWorkflowState.paused = false;
+    this.autoWorkflowState.skipCountdown = false;
+    if (this.autoWorkflowState.timerId) {
+      clearInterval(this.autoWorkflowState.timerId);
+      this.autoWorkflowState.timerId = null;
+    }
+    if (this.autoWorkflowBanner) {
+      this.autoWorkflowBanner.style.display = "none";
+    }
+    if (notify && wasActive) {
+      this.showToast("⏹ Auto-Pilot stopped. You can continue editing or rendering manually.");
+    }
+  }
+
+  async waitIfAutoWorkflowPaused() {
+    while (this.autoWorkflowState.active && this.autoWorkflowState.paused) {
+      await new Promise(r => setTimeout(r, 350));
+    }
+  }
+
+  async runAutoWorkflowStep1To4() {
+    const activeMode = localStorage.getItem("anistory_cfg_creation_mode") || "prompt";
+    if (activeMode === "paste") {
+      const pasted = this.inputDirectPasteText?.value?.trim();
+      if (!pasted) {
+        this.showToast("Please paste your storyboard text in Option B first! 📋", true);
+        this.inputDirectPasteText?.focus();
+        return;
+      }
+    } else if (activeMode === "advertisement") {
+      const pName = this.inputAdProductName?.value?.trim();
+      const pDesc = this.textareaAdDesc?.value?.trim();
+      if (!pName || !pDesc) {
+        this.showToast("Please enter Product Name & Description in Option D first! 🛍️", true);
+        this.inputAdProductName?.focus();
+        return;
+      }
+    } else {
+      const idea = this.inputIdeaPrompt?.value?.trim();
+      if (!idea) {
+        this.showToast("Please enter a story idea or choose a quick spark first! 💡", true);
+        this.inputIdeaPrompt?.focus();
+        return;
+      }
+    }
+
+    this.autoWorkflowState.active = true;
+    this.autoWorkflowState.paused = false;
+    this.autoWorkflowState.skipCountdown = false;
+    this.startAutoWorkflowTimer();
+    this.updateAutoWorkflowBanner(1, "Step 1/4: Generating AI Screenplay, Scene Structure & Character Voice Casting...", "running");
+
+    if (this.btnAutoWorkflowStep1To4) {
+      this.btnAutoWorkflowStep1To4.disabled = true;
+    }
+
+    try {
+      let ok = false;
+      if (activeMode === "paste") {
+        ok = await this.handleImportFromText(this.inputDirectPasteText.value.trim(), this.btnDirectLoadStoryboard, true);
+      } else if (activeMode === "advertisement") {
+        ok = await this.handleGenerateAdvertisementVideo(true);
+      } else {
+        ok = await this.handleGenerateStoryboard(true);
+      }
+
+      if (!ok || !this.currentProject || !this.autoWorkflowState.active) {
+        if (!ok) this.stopAutoWorkflow(false);
+        return;
+      }
+
+      await this.runAutoWorkflowFromStep2To4(true);
+    } finally {
+      if (this.btnAutoWorkflowStep1To4) {
+        this.btnAutoWorkflowStep1To4.disabled = false;
+      }
+    }
+  }
+
+  async runAutoWorkflowFromStep2To4(alreadyStarted = false) {
+    if (!this.currentProject || !this.currentProject.scenes || !this.currentProject.scenes.length) {
+      this.showToast("No active storyboard scenes to automate!", true);
+      return;
+    }
+
+    if (!alreadyStarted) {
+      this.autoWorkflowState.active = true;
+      this.autoWorkflowState.paused = false;
+      this.autoWorkflowState.skipCountdown = false;
+      this.startAutoWorkflowTimer();
+    }
+
+    this.switchStage(2);
+    const totalScenes = this.currentProject.scenes.length;
+    this.updateAutoWorkflowBanner(
+      2,
+      `Step 2/4: Preparing ${totalScenes}-scene Storyboard & Character Voice Casting...`,
+      "running"
+    );
+
+    await this.waitIfAutoWorkflowPaused();
+    if (!this.autoWorkflowState.active) return;
+
+    // Step 2a: Auto-Refine Video Prompts if enabled
+    const doRefine = this.chkAutoRefinePrompts ? this.chkAutoRefinePrompts.checked : true;
+    if (doRefine && !this.autoWorkflowState.skipCountdown) {
+      this.updateAutoWorkflowBanner(2, `Step 2/4: Upgrading ${totalScenes} scenes to director-grade cinematic video prompts...`, "running");
+      try {
+        await this.refineAllVideoPrompts(this.btnRefineAllPrompts);
+      } catch (e) {
+        console.warn("Auto-workflow refine notice:", e);
+      }
+      await this.waitIfAutoWorkflowPaused();
+      if (!this.autoWorkflowState.active) return;
+    }
+
+    // Step 2b: Live Paint scenes 1-by-1 on Stage 2 if enabled
+    const doLivePaint = this.chkAutoPaintStep2 ? this.chkAutoPaintStep2.checked : true;
+    if (doLivePaint && !this.autoWorkflowState.skipCountdown) {
+      const unpaintedCount = (this.currentProject.scenes || []).filter(s => !s.image_path).length;
+      if (unpaintedCount > 0) {
+        this.updateAutoWorkflowBanner(
+          2,
+          `Step 2/4: Painting ${unpaintedCount} scene keyframe(s) live on Storyboard...`,
+          "running"
+        );
+        await this.paintAllSceneImages(false);
+        await this.waitIfAutoWorkflowPaused();
+        if (!this.autoWorkflowState.active) return;
+      }
+    }
+
+    // Step 2c: Optional 5-second Review Window on Stage 2 before triggering Step 3 Render
+    const doReviewPause = this.chkAutoReviewPause ? this.chkAutoReviewPause.checked : true;
+    if (doReviewPause && !this.autoWorkflowState.skipCountdown) {
+      for (let rem = 5; rem >= 1; rem--) {
+        if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown) break;
+        await this.waitIfAutoWorkflowPaused();
+        if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown) break;
+        this.updateAutoWorkflowBanner(
+          2,
+          `Step 2/4 Ready! Advancing to Step 3 (Studio Render) in ${rem}s... (Click ⏸ Pause to edit or ⏭ Render Now)`,
+          "running"
+        );
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    await this.waitIfAutoWorkflowPaused();
+    if (!this.autoWorkflowState.active) return;
+
+    // Step 3: Trigger Full Studio Render
+    this.updateAutoWorkflowBanner(
+      3,
+      "Step 3/4: Studio Render in progress (Multi-Voice audio, burnt-in captions, camera motion & soundtrack)...",
+      "running"
+    );
+    await this.startRenderingProcess();
   }
 
   async loadProject(projectOrId, targetStage = 2) {

@@ -614,14 +614,20 @@ class AnimationPipeline:
 
         # 1. Images (generated one by one with character consistency)
         for idx, scene in enumerate(scenes):
+            existing_rel = scene.get("image_path")
+            existing_full = (PROJECTS_DIR.parent / existing_rel) if existing_rel else None
+            if existing_full and existing_full.exists():
+                continue
+
             img_file = project_dir / f"scene_{idx + 1}.jpg"
             if not img_file.exists():
                 notify(35 + int((idx / total_scenes) * 15), f"Painting scene {idx + 1} of {total_scenes} (preserving character consistency)...")
                 ref_img_path = None
                 for i in range(idx):
-                    candidate = project_dir / f"scene_{i + 1}.jpg"
-                    if candidate.exists():
-                        ref_img_path = str(candidate)
+                    cand_rel = scenes[i].get("image_path")
+                    cand_full = (PROJECTS_DIR.parent / cand_rel) if cand_rel else (project_dir / f"scene_{i + 1}.jpg")
+                    if cand_full and cand_full.exists():
+                        ref_img_path = str(cand_full)
                         break
                 if not ref_img_path:
                     char_portrait = project_dir / "character_ref.jpg"
@@ -722,10 +728,10 @@ class AnimationPipeline:
                             if k.lower() not in ("narrator", "người kể chuyện", "character")
                         ]
                         if not sc_dialogues or (has_generic_char and named_chars):
-                            sc_dialogues = self.script_agent.extract_scene_dialogue_segments(
-                                scene.get("narration", ""),
-                                scene.get("character_consistency", "") or project.get("character_consistency", ""),
-                                known_speakers=named_chars
+                            sc_dialogues = ScriptAgent.extract_scene_dialogue_segments(
+                                narration=scene.get("narration", ""),
+                                characters=named_chars or project.get("characters"),
+                                narrator_name="Narrator"
                             )
                             scene["dialogues"] = sc_dialogues
                     try:

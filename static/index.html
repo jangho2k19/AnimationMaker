@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
-  <link rel="stylesheet" href="/css/style.css?v=10">
+  <link rel="stylesheet" href="/css/style.css?v=11">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -86,6 +86,50 @@
 
     <!-- MAIN VIEW PANELS -->
     <main class="view-stage">
+
+      <!-- GLOBAL AUTO-PILOT WORKFLOW BANNER (STEP 1 -> 4) -->
+      <div id="autoWorkflowBanner" class="auto-workflow-banner glass-panel" style="display: none;">
+        <div class="auto-wf-top">
+          <div class="auto-wf-title-group">
+            <span class="auto-wf-pulse"></span>
+            <span class="auto-wf-badge" id="badgeAutoWfState">🤖 AUTO-PILOT ACTIVE</span>
+            <strong id="textAutoWfStatus" class="auto-wf-status-text">Running Step 1 → 4 Autonomous Pipeline...</strong>
+            <span id="textAutoWfTimer" class="auto-wf-timer">⏱️ 0s</span>
+          </div>
+          <div class="auto-wf-actions">
+            <button id="btnAutoWfPauseResume" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn" title="Pause or resume the Step 1 → 4 automation workflow">
+              <span>⏸ Pause</span>
+            </button>
+            <button id="btnAutoWfSkipToRender" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn" style="display: none;" title="Skip countdown/painting and jump straight to Step 3 Full Film Render">
+              <span>⏭ Render Now (Step 3)</span>
+            </button>
+            <button id="btnAutoWfCancel" type="button" class="glass-btn secondary-btn compact-btn text-danger-btn auto-wf-ctrl-btn" title="Stop Auto-Pilot workflow and stay on current stage">
+              <span>⏹ Stop</span>
+            </button>
+          </div>
+        </div>
+        <div class="auto-wf-steps-track">
+          <div class="auto-wf-step" id="autoWfStep1" data-step="1">
+            <span class="auto-wf-step-num">1</span>
+            <span class="auto-wf-step-name">Concept &amp; Script</span>
+          </div>
+          <div class="auto-wf-connector" id="autoWfConn1"></div>
+          <div class="auto-wf-step" id="autoWfStep2" data-step="2">
+            <span class="auto-wf-step-num">2</span>
+            <span class="auto-wf-step-name">Storyboard &amp; Art</span>
+          </div>
+          <div class="auto-wf-connector" id="autoWfConn2"></div>
+          <div class="auto-wf-step" id="autoWfStep3" data-step="3">
+            <span class="auto-wf-step-num">3</span>
+            <span class="auto-wf-step-name">Studio Render</span>
+          </div>
+          <div class="auto-wf-connector" id="autoWfConn3"></div>
+          <div class="auto-wf-step" id="autoWfStep4" data-step="4">
+            <span class="auto-wf-step-num">4</span>
+            <span class="auto-wf-step-name">Cinema Premiere</span>
+          </div>
+        </div>
+      </div>
 
       <!-- STAGE 1: IDEA & ART STYLE -->
       <section id="stage1Idea" class="stage-panel active">
@@ -356,11 +400,43 @@
                 </div>
               </div>
 
-              <!-- Action Footer (Generate Storyboard CTA) positioned directly in the left column! -->
-              <div class="action-footer compact-action-footer">
+              <!-- Automation Workflow (Step 1 -> 4) Control Card -->
+              <div class="auto-workflow-stage1-card glass-panel">
+                <div class="auto-wf-card-header">
+                  <div class="auto-wf-card-title">
+                    <span>🤖</span>
+                    <strong>Automation Workflow (Step 1 → 4)</strong>
+                    <span class="auto-wf-sub-pill">Concept ➔ Storyboard ➔ Render ➔ Cinema</span>
+                  </div>
+                  <button id="btnToggleAutoWorkflowStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer;" title="When ON, generating a story automatically runs all 4 stages end-to-end into a finished MP4">
+                    <span id="iconAutoWorkflowStage1">🤖</span> <span id="textAutoWorkflowStage1">Auto-Pilot: OFF</span>
+                  </button>
+                </div>
+                <div class="auto-wf-options-row">
+                  <label class="auto-wf-check-label" title="Automatically upgrade all scene video prompts to director-grade cinematic beats in Step 2">
+                    <input type="checkbox" id="chkAutoRefinePrompts" checked>
+                    <span>✨ Auto-Refine Prompts</span>
+                  </label>
+                  <label class="auto-wf-check-label" title="Visually paint each scene 1-by-1 on the Director's Storyboard (Step 2) before starting Step 3 Render">
+                    <input type="checkbox" id="chkAutoPaintStep2" checked>
+                    <span>🎨 Live Paint on Step 2</span>
+                  </label>
+                  <label class="auto-wf-check-label" title="Pause for a 5-second review countdown on Step 2 before advancing to Step 3 Render (you can Pause to edit anytime)">
+                    <input type="checkbox" id="chkAutoReviewPause" checked>
+                    <span>⏱️ 5s Review Window</span>
+                  </label>
+                  <label class="auto-wf-check-label" title="Automatically download the final MP4 master file when Step 4 Cinema Premiere finishes">
+                    <input type="checkbox" id="chkAutoDownloadMp4">
+                    <span>⬇️ Auto-Download MP4</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Action Footer (Generate Storyboard CTA + 1-Click Step 1->4 Auto-Pilot) -->
+              <div class="action-footer compact-action-footer stage1-dual-actions">
                 <button id="btnGenerateStoryboard" class="hero-action-btn studio-generate-btn">
                   <span class="btn-glow-layer"></span>
-                  <span class="btn-text">Generate Storyboard with AI</span>
+                  <span class="btn-text">Generate Storyboard (Step 1→2)</span>
                   <span class="btn-arrow">✨</span>
                 </button>
                 <button id="btnDirectLoadStoryboard" class="hero-action-btn studio-generate-btn" style="display: none;">
@@ -370,8 +446,13 @@
                 </button>
                 <button id="btnGenerateAdVideo" class="hero-action-btn studio-generate-btn" style="display: none;">
                   <span class="btn-glow-layer"></span>
-                  <span class="btn-text">Generate Advertisement Video</span>
+                  <span class="btn-text">Generate Ad Storyboard</span>
                   <span class="btn-arrow">🛍️</span>
+                </button>
+                <button id="btnAutoWorkflowStep1To4" type="button" class="hero-action-btn studio-autopilot-btn" title="1-Click Full Automation: Concept (Step 1) → Storyboard & Paint (Step 2) → Studio Render (Step 3) → Cinema Premiere (Step 4)">
+                  <span class="btn-glow-layer"></span>
+                  <span class="btn-text">🤖 Auto-Produce Full Film (Step 1→4)</span>
+                  <span class="btn-arrow">⚡</span>
                 </button>
               </div>
 
@@ -639,6 +720,9 @@
                 </button>
                 <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn batch-btn" title="Save script and narration edits">
                   <span>💾</span> Save
+                </button>
+                <button id="btnAutoRunStage2To4" type="button" class="glass-btn secondary-btn batch-btn auto-finish-btn" title="Auto-Pilot from Step 2 → Step 4: Auto-refine prompts, paint missing scenes, render full film &amp; open Cinema Premiere">
+                  <span>🤖</span> <span>Auto (2→4)</span>
                 </button>
                 <button id="btnProceedToRender" class="hero-action-btn compact-btn render-film-btn" title="Render Full Animated Film">
                   <span class="btn-text">Render Full Film</span>
