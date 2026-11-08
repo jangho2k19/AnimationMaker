@@ -3437,13 +3437,30 @@ ${isAutoScenes
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
       const projectTitle = this.inputProjectTitle ? this.inputProjectTitle.value.trim() : "";
 
+      // Auto-detect Vietnamese text in idea or title to prevent language mismatch
+      const sampleText = `${projectTitle} ${idea}`;
+      const isVietnameseText = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(sampleText);
+      let effectiveLang = this.selectLanguage ? this.selectLanguage.value : "en";
+      let effectiveVoice = this.selectVoice ? this.selectVoice.value : "en-US-ChristopherNeural";
+
+      if (isVietnameseText) {
+        effectiveLang = "vi";
+        if (this.selectLanguage) this.selectLanguage.value = "vi";
+        if (!effectiveVoice || effectiveVoice.toLowerCase().startsWith("en-")) {
+          effectiveVoice = "vi-VN-HoaiMyNeural-story";
+          if (this.selectVoice) this.selectVoice.value = "vi-VN-HoaiMyNeural-story";
+        }
+      } else if (effectiveLang.startsWith("vi") && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(sampleText)) {
+        // Keep user choice if explicitly set
+      }
+
       // Persist active configuration choices
       localStorage.setItem("anistory_cfg_art_style", this.selectedStyleKey);
-      if (this.selectVoice) localStorage.setItem("anistory_cfg_voice", this.selectVoice.value);
+      if (this.selectVoice) localStorage.setItem("anistory_cfg_voice", effectiveVoice);
       if (this.selectSceneCount) localStorage.setItem("anistory_cfg_scene_count", this.selectSceneCount.value);
       if (this.selectTargetDuration) localStorage.setItem("anistory_cfg_target_duration", this.selectTargetDuration.value);
       if (this.selectAspectRatio) localStorage.setItem("anistory_cfg_aspect_ratio", this.selectAspectRatio.value);
-      if (this.selectLanguage) localStorage.setItem("anistory_cfg_language", this.selectLanguage.value);
+      if (this.selectLanguage) localStorage.setItem("anistory_cfg_language", effectiveLang);
       if (this.selectAudience) localStorage.setItem("anistory_cfg_audience", this.selectAudience.value);
       if (this.selectAiProvider) localStorage.setItem("anistory_cfg_provider", provider);
       if (model) localStorage.setItem("anistory_cfg_model", model);
@@ -3452,12 +3469,12 @@ ${isAutoScenes
         title: projectTitle,
         idea: idea,
         art_style: this.selectedStyleKey,
-        voice: this.selectVoice.value,
+        voice: effectiveVoice,
         num_scenes: numScenes,
         target_duration: targetDuration,
         video_mode: "acting",
         aspect_ratio: aspectRatio,
-        language: this.selectLanguage.value,
+        language: effectiveLang,
         audience: this.selectAudience.value,
         ai_provider: provider,
         ai_model: model,

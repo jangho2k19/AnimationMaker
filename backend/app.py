@@ -505,7 +505,7 @@ async def import_story(req: ImportStoryRequest):
         raise HTTPException(status_code=400, detail="Please paste storyboard content.")
 
     try:
-        story_data = ScriptAgent.parse_imported_storyboard(req.text)
+        story_data = ScriptAgent.parse_imported_storyboard(req.text, allow_narrative_fallback=True)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse storyboard content: {str(e)}")
 

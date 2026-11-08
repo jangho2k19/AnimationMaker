@@ -44,6 +44,26 @@ class ScriptAgent:
             except Exception:
                 pass
 
+    @staticmethod
+    def detect_language(text: str, fallback: str = "en", voice: str = "") -> str:
+        """
+        Automatically detects whether the story/text is Vietnamese ('vi') or English ('en')
+        so that narration, titles, character names, and neural voices are 100% language-consistent.
+        """
+        sample = (text or "").strip()
+        vi_chars = re.findall(
+            r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]',
+            sample,
+            flags=re.IGNORECASE
+        )
+        if len(vi_chars) >= 2:
+            return "vi"
+        if re.search(r'\b(một|những|người|chuyện|truyện|nhưng|không|được|trong|của|anh|ông|bà)\b', sample, re.IGNORECASE):
+            return "vi"
+        if not sample and voice and (voice.startswith("vi-") or voice.startswith("gtts-vi")):
+            return "vi"
+        return "vi" if (fallback or "").lower().startswith("vi") else (fallback or "en")
+
     @classmethod
     def estimate_optimal_scene_count(cls, idea: str, target_duration: int = None) -> int:
         """
@@ -57,16 +77,27 @@ class ScriptAgent:
         if not clean:
             return 4
 
+        # Strip moral/commentary footer before estimating scene count so commentary doesn't inflate scenes
+        clean_story_only = re.sub(
+            r'(?is)\n\s*(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học(?:\s+rút ra)?|Lời bàn)\s*:.*$',
+            '',
+            clean
+        ).strip() or clean
+
         # Check explicit scene headers (e.g. Scene 1, Cảnh 1)
-        scene_headers = re.findall(r'(?:^|\n)\s*(?:Scene|Cảnh|Phân cảnh)\s*\d+', clean, re.IGNORECASE)
+        scene_headers = re.findall(r'(?:^|\n)\s*(?:Scene|Cảnh|Phân cảnh)\s*\d+', clean_story_only, re.IGNORECASE)
         if len(scene_headers) >= 2:
             return max(2, min(24, len(scene_headers)))
 
-        words = clean.split()
+        words = clean_story_only.split()
         word_count = len(words)
-        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', clean) if len(p.strip()) > 10]
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?…])\s+|\n+', clean) if len(s.strip()) > 8]
-        dialogue_turns = re.findall(r'(?:^|\n)\s*[–\-—]\s*[^\n]+|["“][^"”\n]{4,}["”]', clean)
+        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', clean_story_only) if len(p.strip()) > 10]
+        sentences = [
+            s.strip()
+            for s in re.split(r'(?<=[.!?])\s+(?=[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ"“–\-—])|\n+', clean_story_only)
+            if len(s.strip()) > 6
+        ]
+        dialogue_turns = re.findall(r'(?:^|\n)\s*[–\-—]\s*[^\n]+|["“][^"”\n]{4,}["”]', clean_story_only)
 
         if word_count <= 25 and len(dialogue_turns) <= 1:
             return 4
@@ -74,11 +105,13 @@ class ScriptAgent:
             return 5
 
         by_words = int(round(word_count / 20.0))
-        by_sentences = int(round(len(sentences) * 0.75))
+        by_sentences = max(4, len(sentences)) if len(sentences) <= 7 else int(round(len(sentences) * 0.75))
         by_dialogues = len(dialogue_turns) + 2
         by_paragraphs = len(paragraphs) + 1 if len(paragraphs) >= 3 else 4
 
         estimated = max(4, by_words, by_sentences, by_dialogues, by_paragraphs)
+        if len(sentences) >= 4 and word_count > 35:
+            estimated = min(estimated, len(sentences) + 1)
         return max(4, min(16, estimated))
 
     async def generate_storyboard(
@@ -107,12 +140,15 @@ class ScriptAgent:
             art_style = "ghibli"
             camera_on_speaker = True
 
-        # 1. If user supplied an existing multi-scene screenplay/script, parse it directly
+        # Auto-detect story language from idea & title so Vietnamese stories never get English narration/titles
+        language = self.detect_language(f"{title or ''} {idea or ''}", fallback=language)
+
+        # 1. If user supplied an existing multi-scene screenplay/script (JSON or Scene 1 / Cảnh 1), parse it directly
         # so their original story, characters, and scenes are 100% preserved.
-        imported = self.parse_imported_storyboard(idea)
+        imported = self.parse_imported_storyboard(idea, allow_narrative_fallback=False)
         if imported and imported.get("scenes") and len(imported["scenes"]) >= 2:
             print(f"🎬 Detected pre-existing screenplay with {len(imported['scenes'])} scenes in user idea! Importing directly...")
-            if title and (not imported.get("title") or imported.get("title") == "Imported Film"):
+            if title and (not imported.get("title") or imported.get("title") in ("Imported Film", "Imported Story")):
                 imported["title"] = title
             imported["scenes"] = [
                 self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
@@ -165,6 +201,8 @@ class ScriptAgent:
         try:
             story = await self._dispatch_llm_request(prompt)
             if story and isinstance(story, dict) and "scenes" in story and isinstance(story["scenes"], list):
+                if title and title.strip():
+                    story["title"] = title.strip()
                 story["scenes"] = [
                     self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
                     for sc in story["scenes"]
@@ -184,6 +222,28 @@ class ScriptAgent:
         except Exception as e:
             err_msg = str(e)
             print(f"❌ {self.provider.upper()} AI Storyboard Error: {err_msg}")
+            # If user provided a full narrative story (>= 20 words), fall back to Story Architect so batch/film creation succeeds
+            if len((idea or "").split()) >= 20:
+                print("⚠️ Falling back to built-in Narrative Story Architect to preserve user's story...")
+                story = self._generate_with_story_architect(idea, num_scenes, art_style, language, audience, camera_on_speaker=camera_on_speaker)
+                if story and isinstance(story.get("scenes"), list):
+                    if title and title.strip():
+                        story["title"] = title.strip()
+                    story["scenes"] = [
+                        self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
+                        for sc in story["scenes"]
+                        if isinstance(sc, dict)
+                    ]
+                    story["scenes"] = self.sync_story_dialogues_to_scenes(
+                        story["scenes"],
+                        idea=idea,
+                        art_style=art_style,
+                        language=language,
+                        target="all",
+                        characters=story.get("characters"),
+                        camera_on_speaker=camera_on_speaker
+                    )
+                    return story
             # If cookie error, give actionable guidance
             if "cookie" in self.provider or "__Secure-1PSID" in (self.api_key or ""):
                 raise RuntimeError(
@@ -425,7 +485,14 @@ class ScriptAgent:
                 f"- COHESIVE ORIGINAL STORY ARC: Create an emotionally engaging, cause-and-effect story arc rooted in \"{clean_idea_strip}\" with consistent characters across {scene_count_desc}."
             )
 
-        title_clause = f'Film Title: "{title}"' if title else f'Film Title: Catchy, cinematic title in {language}'
+        effective_lang = self.detect_language(f"{title or ''} {idea or ''}", fallback=language)
+        is_vi_lang = effective_lang.startswith("vi")
+        lang_display = (
+            "Tiếng Việt (Vietnamese — MANDATORY: `title`, `logline`, character names in `characters`, every scene's `title`, `narration`, and `dialogues` MUST be written 100% in natural Vietnamese; NEVER write English titles or English narration for a Vietnamese story)"
+            if is_vi_lang
+            else "English (MANDATORY: `title`, `logline`, every scene's `title`, `narration`, and `dialogues` MUST be written 100% in natural English)"
+        )
+        title_clause = f'Film Title: "{title}"' if title else f'Film Title: Catchy, cinematic title in {"Tiếng Việt" if is_vi_lang else "English"}'
 
         dialogue_cinema_directive = ""
         if camera_on_speaker or art_style == "dialogue_cinema":
@@ -448,7 +515,7 @@ Story Input:
 
 Parameters:
 - {title_clause}
-- Target Audience: {audience} | Art Style: {art_style} | Narration Language: {language}
+- Target Audience: {audience} | Art Style: {art_style} | Narration & Script Language: {lang_display}
 {adaptation_mandate}
 
 CINEMATIC DIRECTIVES:
@@ -488,10 +555,10 @@ CINEMATIC DIRECTIVES:
    - `camera_motion`: Choose kinetic, purposeful movement: "speaker_focus" (when a character is speaking), "zoom_in", "zoom_out", "pan_left", "pan_right", or "subtle_drift".
 
 5. VOICEOVER NARRATION — MUST TIE DIRECTLY TO THE STORY (CRITICAL MANDATE):
-   - `narration`: Engaging, story-driven voiceover narration in {language} that serves as the primary storytelling audio and subtitle track of the film.
+   - `narration`: Engaging, story-driven voiceover narration in {"Tiếng Việt (Vietnamese)" if is_vi_lang else "English"} that serves as the primary storytelling audio and subtitle track of the film.
    - DIRECT STORY TIE-IN: Every scene's `narration` MUST directly narrate the specific plot event, character action, cause-and-effect progression, and emotional beat happening in that scene.
    - SEQUENTIAL STORY CONTINUITY: When read {seq_continuity_desc}, the `narration` lines MUST form a complete, cohesive, self-contained story that faithfully tells the user's premise from beginning to end.
-   - PRESERVE KEY DIALOGUE & PUNCHLINES: When a scene involves a pivotal question, answer, revelation, or comedic/dramatic punchline from the story, `narration` MUST explicitly include or quote that key spoken line in {language} (e.g., 'Chàng trai kinh hãi lắp bắp hỏi: "Quan cũng có mặt ở đó sao? Chẳng lẽ..."'), NEVER replace key story dialogue or punchlines with vague, detached third-person meta-summaries (such as "Anh lắp bắp hỏi lại trong sợ hãi và nghi ngờ").
+   - PRESERVE KEY DIALOGUE & PUNCHLINES: When a scene involves a pivotal question, answer, revelation, or comedic/dramatic punchline from the story, `narration` MUST explicitly include or quote that key spoken line in {"Tiếng Việt" if is_vi_lang else "English"} (e.g., 'Chàng trai kinh hãi lắp bắp hỏi: "Quan cũng có mặt ở đó sao? Chẳng lẽ..."'), NEVER replace key story dialogue or punchlines with vague, detached third-person meta-summaries (such as "Anh lắp bắp hỏi lại trong sợ hãi và nghi ngờ").
    - NO GENERIC FILLER OR SCENERY STUBS: Never write disconnected 3-5 word weather/scenery fragments or generic atmospheric platitudes that do not advance the story.
    - PACING RULE: Aim for 14 to {max_words} words per scene so the narration tells the story clearly while fitting comfortably within an 8-second scene clip.
 
@@ -710,6 +777,16 @@ Return ONLY raw JSON matching this structure:
             cleaned_body = re.sub(r'\(\s*\)', '', cleaned_body)
 
             # Strip existing camera prose sentences to ensure idempotency when re-refined
+            cleaned_body = re.sub(
+                r'(?i)The camera focuses directly on [^.]*?\s+at eye level as they speak\.?\s*',
+                '',
+                cleaned_body
+            )
+            cleaned_body = re.sub(
+                r'(?i)The camera performs a smooth, high-precision motorized slider push-in toward the hero subject\.?\s*',
+                '',
+                cleaned_body
+            )
             for c_val in [
                 "The camera executes a smooth, slow cinematic dolly push-in toward the subject at eye level with fluid stabilization.",
                 "The camera smoothly dollies out with a steady pedestal pull-back, gradually revealing the expansive atmospheric environment.",
@@ -738,6 +815,8 @@ Return ONLY raw JSON matching this structure:
                 "Volumetric cinematic rim lighting, shot on 35mm anamorphic lens with shallow depth of field and creamy background falloff.",
                 "Painted volumetric sunlight filtering through the atmosphere, soft rim highlights, beautiful anime depth of field.",
                 "Soft studio-grade three-point lighting with gentle specular highlights, rich cinematic 3D depth of field.",
+                "Clean high-contrast vector lighting, sharp silhouette outlines, Alan Becker stick figure animation aesthetics.",
+                "Warm cinematic key light focused on the speaking character's face with soft 50mm f/1.8 shallow depth of field and creamy background bokeh.",
                 "Atmospheric volumetric lighting with rich highlights and gentle shadow roll-off, shallow depth of field."
             ]:
                 cleaned_body = cleaned_body.replace(l_prose, "")
@@ -943,6 +1022,120 @@ Return ONLY raw JSON matching this structure:
         return narr
 
     @staticmethod
+    def infer_speaker_from_context(prefix_ctx: str, chars: List[str] = None) -> str:
+        """
+        Resolves a clean, canonical character speaker name from narrative context preceding a quote.
+        Prevents narrative clauses ('Người thứ hai đi qua nói'), pronouns ('Anh', 'Đúng'),
+        or commentary headers ('Ý nghĩa trào phúng') from being misidentified as character names.
+        """
+        raw_ctx = (prefix_ctx or "").strip()
+        if not raw_ctx:
+            return ""
+
+        clean_chars = [
+            str(c).strip() for c in (chars or [])
+            if c and str(c).strip() and str(c).strip().lower() not in (
+                "narrator", "người kể chuyện", "character", "none",
+                "ý nghĩa trào phúng", "ý nghĩa", "bài học", "đúng", "anh", "anh ta"
+            )
+        ]
+
+        # Focus on the last sentence/clause immediately preceding the quote
+        clauses = [s.strip() for s in re.split(r'[.!?]\s+|\n+', raw_ctx) if s.strip()]
+        last_clause = clauses[-1] if clauses else raw_ctx
+        low_clause = last_clause.lower()
+        low_full = raw_ctx.lower()
+
+        # 1. Explicit numbered/archetypal passersby or folk characters in the immediate clause
+        if "người thứ hai" in low_clause:
+            for c in clean_chars:
+                if "thứ hai" in c.lower():
+                    return c
+            return "Người Thứ Hai"
+        if "người thứ ba" in low_clause:
+            for c in clean_chars:
+                if "thứ ba" in c.lower():
+                    return c
+            return "Người Thứ Ba"
+        if any(k in low_clause for k in ["người đi qua", "người qua đường", "khách qua đường", "người thứ nhất"]):
+            for c in clean_chars:
+                if any(k in c.lower() for k in ["qua đường", "đi qua", "thứ nhất", "bộ hành"]):
+                    return c
+            return "Người Qua Đường"
+        if "hàng xóm" in low_clause:
+            for c in clean_chars:
+                if "hàng xóm" in c.lower():
+                    return c
+            return "Người Hàng Xóm"
+        if "thần tài" in low_clause:
+            for c in clean_chars:
+                if "thần tài" in c.lower():
+                    return c
+            return "Thần Tài"
+
+        # 2. Match against known character roster (preferring the character mentioned closest to the quote)
+        if clean_chars:
+            matched_chars = []
+            for c in clean_chars:
+                pos = low_clause.rfind(c.lower())
+                if pos != -1:
+                    matched_chars.append((pos + 1000, c))
+                else:
+                    pos_full = low_full.rfind(c.lower())
+                    if pos_full != -1:
+                        matched_chars.append((pos_full, c))
+            if matched_chars:
+                matched_chars.sort(key=lambda x: x[0], reverse=True)
+                return matched_chars[0][1]
+
+            # 3. Resolve third-person pronouns ("anh ta", "chàng", "ông ta", "cô ấy") to the protagonist in chars
+            if re.search(r'\b(?:anh ta|anh ấy|chàng|hắn|ông ta|ông ấy)\b', low_clause):
+                for c in clean_chars:
+                    c_low = c.lower()
+                    if any(k in c_low for k in ["anh", "chàng", "nông dân", "lười", "trai", "ông", "chủ"]):
+                        return c
+                return clean_chars[0]
+            if re.search(r'\b(?:cô ta|cô ấy|nàng|bà ta|bà ấy)\b', low_clause):
+                for c in clean_chars:
+                    c_low = c.lower()
+                    if any(k in c_low for k in ["cô", "nàng", "bà", "gái", "vợ", "mẹ"]):
+                        return c
+
+        # 4. Heuristic extraction of subject before speech verb
+        invalid_speakers = {
+            "buổi", "sau", "khi", "trong", "tại", "một", "hai", "ba", "bỗng", "lúc",
+            "người", "nhưng", "rồi", "vừa", "đoạn", "hồi", "thế", "thế là", "còn", "thì",
+            "đúng", "hôm", "hôm sau", "tối", "tối đến", "sáng", "trưa", "đêm", "một đêm",
+            "anh", "anh ta", "anh ấy", "ông", "ông ta", "bà", "cô", "nó", "hắn", "ta", "tôi", "họ",
+            "ý nghĩa", "ý nghĩa trào phúng", "bài học", "thông điệp", "kết cục", "câu chuyện",
+            "the", "after", "when", "in", "at", "one", "suddenly", "then", "while", "he", "she", "they"
+        }
+
+        # Strip leading time/transition phrases
+        stripped = re.sub(
+            r'^(?:một đêm|hôm sau|sáng hôm sau|tối đến|đúng giữa trưa|đúng vào thời điểm[^,]*|giữa trưa|lúc đó|khi ấy|bỗng nhiên|bỗng|nhưng|thế là|rồi|cứ thế)\s*[,:\-]?\s*',
+            '',
+            last_clause.rstrip(' :,-'),
+            flags=re.IGNORECASE
+        ).strip()
+
+        m_spk = re.search(
+            r'^([A-Za-zÀ-ỹ0-9\s]{2,28}?)\s+(?:hiện lên\s+|sang chơi\s+|đi qua\s+|bước đến\s+|vui mừng[^,]*,\s*|ngồi im[^,]*,\s*)?(?:báo mộng|nghĩ thầm|thầm nghĩ|thưa|nói|hỏi|đáp|kêu|bảo|chê|quát|la|cười|mắng|than|nghĩ|lắp bắp|thốt|gặng hỏi|said|asked|replied|shouted|exclaimed|whispered|thought)\b',
+            stripped,
+            re.IGNORECASE
+        )
+        if m_spk:
+            cand = m_spk.group(1).strip(' ,:-')
+            cand = re.sub(r'^(?:một|các|những)\s+', '', cand, flags=re.IGNORECASE).strip()
+            cand = re.sub(r'\b(?:liền|bèn|vội|hớt hải|ngơ ngác|sợ hãi|tức giận|đi qua|sang chơi|hiện lên)\b.*$', '', cand, flags=re.IGNORECASE).strip()
+            if cand and cand.lower() not in invalid_speakers and len(cand.split()) <= 4:
+                return cand.title()
+
+        if len(clean_chars) == 1:
+            return clean_chars[0]
+        return ""
+
+    @staticmethod
     def extract_story_dialogues(idea_text: str) -> List[Dict[str, Any]]:
         """
         Extracts character dialogues from raw story prose or screenplay text.
@@ -955,7 +1148,16 @@ Return ONLY raw JSON matching this structure:
         if not idea_text or not str(idea_text).strip():
             return []
 
-        raw_lines = [ln.strip() for ln in str(idea_text).splitlines()]
+        # Strip trailing moral / satirical commentary block ("Ý nghĩa trào phúng: ...", "Bài học: ...")
+        # so essay commentary is never extracted as character dialogue
+        story_only_text = re.sub(
+            r'(?:^|\n)\s*(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học(?:\s+rút ra)?|Lời bàn)\s*:[\s\S]*$',
+            '',
+            str(idea_text),
+            flags=re.IGNORECASE
+        ).strip() or str(idea_text).strip()
+
+        raw_lines = [ln.strip() for ln in story_only_text.splitlines()]
         extracted: List[Dict[str, Any]] = []
         current_scene_num = None
         last_narrative = ""
@@ -969,7 +1171,8 @@ Return ONLY raw JSON matching this structure:
         )
         meta_prefixes = (
             "thể loại:", "thời lượng:", "bối cảnh:", "thông điệp:", "nhân vật",
-            "hình ảnh:", "âm thanh:", "âm nhạc:", "góc máy:", "ánh sáng:", "chữ trên màn hình"
+            "hình ảnh:", "âm thanh:", "âm nhạc:", "góc máy:", "ánh sáng:", "chữ trên màn hình",
+            "ý nghĩa trào phúng", "ý nghĩa:", "bài học:", "lời bàn:", "kết luận:", "top truyện"
         )
         section_headers = {
             "mở đầu", "phát triển", "cao trào", "kết", "kết thúc", "hết", "hết.",
@@ -1000,7 +1203,7 @@ Return ONLY raw JSON matching this structure:
             m_spk = speaker_re.match(ln)
             if m_spk and idx + 1 < len(raw_lines) and raw_lines[idx + 1]:
                 spk_cand = m_spk.group(1).strip()
-                if spk_cand.upper() not in ("CHỮ TRÊN MÀN HÌNH", "TEXT ON SCREEN", "SUPER", "TITLE", "NHÂN VẬT", "MỞ ĐẦU", "CAO TRÀO", "KẾT"):
+                if spk_cand.upper() not in ("CHỮ TRÊN MÀN HÌNH", "TEXT ON SCREEN", "SUPER", "TITLE", "NHÂN VẬT", "MỞ ĐẦU", "CAO TRÀO", "KẾT", "Ý NGHĨA TRÀO PHÚNG"):
                     spk_name = spk_cand.title()
                     spk_tone = (m_spk.group(2) or "").strip()
                     dial_line = raw_lines[idx + 1].strip(' "“”')
@@ -1016,14 +1219,21 @@ Return ONLY raw JSON matching this structure:
                     idx += 2
                     continue
 
-            # 1b. Screenplay or prose inline "Speaker: Dialogue line" (e.g. "Bà Tư: Tư ơi, tin gì..." or "Ông Tư: Tin Mỹ đó bà...")
-            m_spk_inline = re.match(r'^([A-ZÀ-ỹa-zà-ỹ0-9_\s]{2,28})\s*:\s*(.+)$', ln)
+            # 1b. Screenplay inline "Speaker: Unquoted dialogue line" (e.g. "Bà Tư: Tư ơi, tin gì..." or "Ông Tư: Tin Mỹ đó bà...")
+            # Do NOT match narrative sentences containing quotes ("...") or speech verbs in the prefix (those are handled by Step 3)
+            m_spk_inline = re.match(r'^([A-ZÀ-ỹ][A-Za-zÀ-ỹ0-9_\s]{1,22})\s*:\s*([^"“”]+)$', ln)
             if m_spk_inline:
                 spk_cand = m_spk_inline.group(1).strip()
                 dial_cand = m_spk_inline.group(2).strip(' "“”')
+                spk_low = spk_cand.lower()
+                has_verb_or_meta = bool(
+                    re.search(r'\b(?:nói|hỏi|bảo|chê|đáp|thưa|kêu|than|nghĩ|mộng|thầm|mắng|cười|đi qua|sang chơi|hiện lên|rằng|là)\b', spk_low)
+                    or spk_low in ("tiêu đề", "title", "bối cảnh", "setting", "thời lượng", "duration", "thể loại", "genre", "nhân vật", "characters", "hình ảnh", "âm thanh", "ý nghĩa", "ý nghĩa trào phúng", "bài học", "thông điệp", "kết cục")
+                    or len(spk_cand.split()) > 4
+                )
                 if (
                     dial_cand
-                    and spk_cand.lower() not in ("tiêu đề", "title", "bối cảnh", "setting", "thời lượng", "duration", "thể loại", "genre", "nhân vật", "characters", "hình ảnh", "âm thanh")
+                    and not has_verb_or_meta
                     and not any(dial_cand.lower().startswith(p) for p in meta_prefixes)
                 ):
                     extracted.append({
@@ -1048,7 +1258,7 @@ Return ONLY raw JSON matching this structure:
                 )
                 if d_text and not is_narrator_bullet and not any(d_text.lower().startswith(p) for p in meta_prefixes):
                     extracted.append({
-                        "speaker": "",
+                        "speaker": ScriptAgent.infer_speaker_from_context(last_narrative),
                         "tone": "",
                         "intro": last_narrative,
                         "line": d_text,
@@ -1058,21 +1268,28 @@ Return ONLY raw JSON matching this structure:
                 idx += 1
                 continue
 
-            # 3. Inline quoted dialogue in prose (preceded by speech context or >= 4 words)
-            inline_quotes = re.findall(r'([^"“”\n]{0,60})["“]([^"”]{3,})["”]', ln)
+            # 3. Inline quoted dialogue in prose (preceded by speech/thought context or ending with ?/!)
+            inline_quotes = re.findall(r'([^"“”\n]{0,90})["“]([^"”]{3,})["”]', ln)
             added_inline = False
             for prefix_ctx, q_str in inline_quotes:
                 q_clean = q_str.strip()
+                combined_ctx = f"{last_narrative} {prefix_ctx}".strip()
                 has_speech_verb = bool(re.search(
-                    r'\b(?:nói|hỏi|đáp|thưa|kêu|thì thầm|thốt|bẩm|gọi|bảo|mớ|said|asked|replied|whispered|shouted|exclaimed|cried|says|asks)\b',
-                    prefix_ctx or last_narrative,
+                    r'\b(?:nói|hỏi|đáp|thưa|kêu|thì thầm|thốt|bẩm|gọi|bảo|mớ|chê|mắng|nghĩ|thầm|báo mộng|mộng|than|quát|said|asked|replied|whispered|shouted|exclaimed|cried|says|asks|thought)\b',
+                    combined_ctx,
                     re.IGNORECASE
                 ))
-                if has_speech_verb or len(q_clean.split()) >= 5 or q_clean.endswith(('?', '!')):
+                ends_with_colon = prefix_ctx.strip().endswith(':')
+                # Only treat as spoken/thought dialogue if introduced by a speech/thought verb, colon, or exclamation/question
+                if has_speech_verb or ends_with_colon or q_clean.endswith(('?', '!')):
+                    inferred_spk = ScriptAgent.infer_speaker_from_context(combined_ctx)
+                    clean_intro = prefix_ctx.strip(' :,-')
+                    if '.' in clean_intro:
+                        clean_intro = clean_intro.split('.')[-1].strip(' :,-')
                     extracted.append({
-                        "speaker": "",
+                        "speaker": inferred_spk,
                         "tone": "",
-                        "intro": (prefix_ctx.strip(' :,-') or last_narrative),
+                        "intro": (clean_intro or last_narrative),
                         "line": q_clean,
                         "scene_num": current_scene_num
                     })
@@ -1081,9 +1298,9 @@ Return ONLY raw JSON matching this structure:
             if not added_inline:
                 # Only keep narrative intro lines that introduce speech (not stray web questions or headers)
                 if (
-                    not re.match(r'^(?:truyện cười|tiêu đề|nguồn)\s*:', ln, re.IGNORECASE)
+                    not re.match(r'^(?:truyện cười|tiêu đề|nguồn|ý nghĩa)\s*:', ln, re.IGNORECASE)
                     and not ln.endswith('?')
-                    and (ln.endswith(':') or re.search(r'\b(?:trình|hỏi|thưa|nói|đáp|kêu|bẩm|lắp bắp|giải thích)\b', ln, re.IGNORECASE))
+                    and (ln.endswith(':') or re.search(r'\b(?:trình|hỏi|thưa|nói|đáp|kêu|bẩm|lắp bắp|giải thích|bảo|chê|nghĩ|báo mộng)\b', ln, re.IGNORECASE))
                 ):
                     last_narrative = ln.rstrip(' :').split('.')[-1].strip()
                 else:
@@ -1109,14 +1326,23 @@ Return ONLY raw JSON matching this structure:
         clean_narr = narration.strip()
         chars = []
         if isinstance(characters, list):
-            chars = [str(c).strip() for c in characters if c and str(c).strip() and str(c).lower() not in ("narrator", "người kể chuyện", "character")]
+            chars = [
+                str(c).strip() for c in characters
+                if c and str(c).strip() and str(c).strip().lower() not in (
+                    "narrator", "người kể chuyện", "character", "ý nghĩa trào phúng", "ý nghĩa", "bài học"
+                )
+            ]
         elif isinstance(characters, str) and characters.strip():
             for p in re.split(r'[|\n]+', characters):
                 m_c = re.match(r'^(?:[A-Za-z0-9_\s]+:)?\s*([^,:\(\)]+)', p.strip())
                 if m_c:
                     c_n = m_c.group(1).strip()
-                    if c_n and c_n.lower() not in ("narrator", "người kể chuyện", "character"):
+                    if c_n and c_n.lower() not in ("narrator", "người kể chuyện", "character", "ý nghĩa trào phúng", "ý nghĩa", "bài học"):
                         chars.append(c_n)
+
+        # If this scene is pure moral/satirical commentary ("Ý nghĩa trào phúng: ..."), keep it 100% as Narrator
+        if re.match(r'^(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học(?:\s+rút ra)?)\s*:', clean_narr, re.IGNORECASE):
+            return [{"speaker": narrator_name, "text": clean_narr}]
 
         # 1. If explicit matched dialogues exist from story analysis, segment based on them
         if matched_dialogues:
@@ -1130,19 +1356,15 @@ Return ONLY raw JSON matching this structure:
                 pos = curr_text.find(d_line)
                 prefix_candidate = curr_text[:pos].rstrip(' "“”:\t\n') if pos != -1 else curr_text
 
-                # If speaker is missing or generic "Character", resolve using known character roster & prefix
-                if not spk or spk.lower() == "character":
-                    found_spk = None
-                    if chars:
-                        matched_chars = []
-                        for c in chars:
-                            p_idx = prefix_candidate.lower().find(c.lower())
-                            if p_idx != -1:
-                                matched_chars.append((p_idx, c))
-                        if matched_chars:
-                            matched_chars.sort(key=lambda x: x[0])
-                            found_spk = matched_chars[0][1]
-                    spk = found_spk or (chars[0] if len(chars) == 1 else "Character")
+                # Resolve speaker if missing, generic, or a clause
+                if (
+                    not spk
+                    or spk.lower() in ("character", "ý nghĩa trào phúng", "ý nghĩa", "đúng", "anh", "anh ta")
+                    or len(spk.split()) > 4
+                    or re.search(r'\b(?:nói|bảo|hỏi|chê|đáp|đi qua)\b', spk.lower())
+                ):
+                    inferred = ScriptAgent.infer_speaker_from_context(prefix_candidate or md.get("intro", ""), chars)
+                    spk = inferred or (chars[0] if len(chars) == 1 else "Character")
 
                 if pos != -1:
                     prefix = curr_text[:pos].rstrip(' "“”:\t\n')
@@ -1161,74 +1383,64 @@ Return ONLY raw JSON matching this structure:
         quote_pattern = re.compile(r'([^"“”\n]*?)["“]([^"”]+)["”]')
         segments = []
         last_end = 0
+        pending_narrator_prefix = ""
 
         for match in quote_pattern.finditer(clean_narr):
-            prefix = match.group(1).strip()
+            prefix = (pending_narrator_prefix + " " + match.group(1)).strip() if pending_narrator_prefix else match.group(1).strip()
             quote = match.group(2).strip()
+            after_quote = clean_narr[match.end():].lstrip()
 
-            speaker = "Character"
-            found_char = None
-            if chars:
-                matched_chars = []
-                for c in chars:
-                    p_pos = prefix.lower().find(c.lower())
-                    if p_pos != -1:
-                        matched_chars.append((p_pos, c))
-                if matched_chars:
-                    matched_chars.sort(key=lambda x: x[0])
-                    found_char = matched_chars[0][1]
+            # Check whether this quote is actual character speech/thought vs an inline quoted idiom/title
+            # (e.g. '"Đẽo cày giữa đường" đã trở thành thành ngữ...' or 'dễ bị dao động, "gió chiều nào che chiều ấy", không có lập trường')
+            has_speech_intro = bool(
+                prefix.endswith(':')
+                or re.search(
+                    r'\b(?:thưa|nói|hỏi|đáp|kêu|bảo|chê|quát|la|cười|mắng|than|nghĩ|thầm|báo mộng|lắp bắp|thốt|gọi|said|asked|replied|shouted|exclaimed|whispered|thought)\b',
+                    prefix,
+                    re.IGNORECASE
+                )
+            )
+            followed_by_lowercase_continuation = bool(after_quote and re.match(r'^[,;]?[ \t]*[a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]', after_quote))
+            if not has_speech_intro and followed_by_lowercase_continuation and not quote.endswith(('?', '!')):
+                # Keep inline idiom/title inside the narrator's text
+                pending_narrator_prefix = f'{prefix} "{quote}"'.strip()
+                last_end = match.end()
+                continue
 
-            if found_char:
-                speaker = found_char
-            else:
-                # 1. Check capitalized subject at beginning of prefix (e.g. "Bà Tư bước đến gần...", "Ông Tư ngước lên...")
-                m_lead = re.match(r'^([A-ZÀ-ỹ][a-zà-ỹ]+(?:\s+[A-ZÀ-ỹ][a-zà-ỹ]+){0,3})\b', prefix.strip())
-                if m_lead and m_lead.group(1).lower() not in (
-                    "buổi", "sau", "khi", "trong", "tại", "một", "hai", "bỗng", "lúc",
-                    "người", "nhưng", "rồi", "vừa", "đoạn", "hồi", "thế", "còn", "thì",
-                    "the", "after", "when", "in", "at", "one", "suddenly", "then", "while"
-                ):
-                    speaker = m_lead.group(1).strip()
-                else:
-                    m_spk = re.search(
-                        r'([A-Za-zÀ-ỹ\s]{2,25})\s*(?:thưa|nói|hỏi|đáp|kêu|bảo|quát|la|cười|mắng|than|nghĩ|lắp bắp|chữa cháy|thốt|chia sẻ|phân tích|tuyên bố|gặng hỏi|said|asked|replied|shouted|exclaimed|gasped|yelled)',
-                        prefix,
-                        re.IGNORECASE
-                    )
-                    if m_spk:
-                        cand = m_spk.group(1).strip()
-                        cand = re.sub(r'\b(?:liền|bèn|vội|hớt hải|ngơ ngác|sợ hãi|tức giận)\b', '', cand, flags=re.IGNORECASE).strip()
-                        if cand:
-                            speaker = cand.title()
-                    elif ':' in prefix:
-                        cand = prefix.split(':')[-1].strip()
-                        if 2 <= len(cand) <= 25:
-                            speaker = cand.title()
-                    elif len(chars) == 1:
-                        speaker = chars[0]
+            pending_narrator_prefix = ""
+            speaker = ScriptAgent.infer_speaker_from_context(prefix, chars) or (chars[0] if len(chars) == 1 else "Character")
 
-            if prefix:
-                segments.append({"speaker": narrator_name, "text": prefix})
+            clean_prefix = prefix.rstrip(' :\t')
+            if clean_prefix:
+                segments.append({"speaker": narrator_name, "text": clean_prefix})
             if quote:
                 segments.append({"speaker": speaker, "text": quote})
             last_end = match.end()
 
         remainder = clean_narr[last_end:].strip(' \t\n')
-        if remainder:
-            segments.append({"speaker": narrator_name, "text": remainder})
+        if pending_narrator_prefix or remainder:
+            combined_rem = f"{pending_narrator_prefix} {remainder}".strip()
+            if combined_rem:
+                segments.append({"speaker": narrator_name, "text": combined_rem})
 
         if not segments:
             # Check for unquoted Speaker: Dialogue lines (e.g. "Ông Tư: Bà nó ơi!" or "[Bà Tư]: Đây nè ông!")
             colon_lines = [ln.strip() for ln in clean_narr.splitlines() if ln.strip()]
             parsed_colon_segs = []
             for ln in colon_lines:
-                m_col = re.match(r'^\[?([A-ZÀ-ỹ][A-Za-zÀ-ỹ0-9\s]{0,24}?)\]?\s*:\s*(.+)$', ln)
+                m_col = re.match(r'^\[?([A-ZÀ-ỹ][A-Za-zÀ-ỹ0-9\s]{0,22}?)\]?\s*:\s*(.+)$', ln)
                 if m_col:
                     cand_spk = m_col.group(1).strip()
                     cand_txt = m_col.group(2).strip(' "“”')
-                    if cand_spk.lower() not in ("scene", "cảnh", "visual", "image", "video", "camera", "audio", "sfx", "title"):
+                    cand_low = cand_spk.lower()
+                    is_meta_or_clause = (
+                        cand_low in ("scene", "cảnh", "visual", "image", "video", "camera", "audio", "sfx", "title", "ý nghĩa", "ý nghĩa trào phúng", "bài học", "thông điệp", "kết cục")
+                        or len(cand_spk.split()) > 4
+                        or bool(re.search(r'\b(?:nói|bảo|hỏi|chê|đáp|đi qua)\b', cand_low))
+                    )
+                    if not is_meta_or_clause:
                         for c in chars:
-                            if c.lower() == cand_spk.lower() or c.lower() in cand_spk.lower():
+                            if c.lower() == cand_low or c.lower() in cand_low:
                                 cand_spk = c
                                 break
                         parsed_colon_segs.append({"speaker": cand_spk, "text": cand_txt})
@@ -1255,16 +1467,42 @@ Return ONLY raw JSON matching this structure:
         detecting gender, age (child, adult, elder), and personality archetype,
         then casts distinct, highly expressive voices from the voice catalog.
         """
-        character_voices = dict(existing_voices or {})
+        scenes_sample = " ".join(
+            f"{sc.get('title', '')} {sc.get('narration', '')}"
+            for sc in (scenes or [])
+            if isinstance(sc, dict)
+        )
+        effective_lang = ScriptAgent.detect_language(
+            f"{characters_str or ''} {scenes_sample}",
+            fallback=language or "en",
+            voice=narrator_voice or ""
+        )
+        is_vi = effective_lang.startswith("vi")
 
-        # Default narrator voice
-        if "Narrator" not in character_voices or not character_voices["Narrator"]:
-            if narrator_voice:
-                character_voices["Narrator"] = narrator_voice
-            elif (language or "").startswith("vi"):
-                character_voices["Narrator"] = "vi-VN-HoaiMyNeural-story"
-            else:
-                character_voices["Narrator"] = "en-US-ChristopherNeural"
+        invalid_speaker_keys = {
+            "ý nghĩa trào phúng", "ý nghĩa", "bài học", "thông điệp", "kết cục",
+            "người thứ hai đi qua nói", "người thứ ba chê", "một người đi qua bảo",
+            "đúng", "anh", "anh ta", "ông", "bà", "nhưng", "thế là"
+        }
+
+        character_voices: Dict[str, str] = {}
+        for k, v in (existing_voices or {}).items():
+            k_clean = (k or "").strip()
+            if not k_clean or k_clean.lower() in invalid_speaker_keys:
+                continue
+            # Filter out any speaker key that matches a narrative verb clause
+            if len(k_clean.split()) > 4 or re.search(r'\b(?:đi qua nói|ba chê|báo mộng|sang chơi hỏi)\b', k_clean.lower()):
+                continue
+            character_voices[k_clean] = v
+
+        # Default narrator voice (ensure language consistency: never use an en-* voice for a Vietnamese project)
+        curr_narr_v = character_voices.get("Narrator") or narrator_voice or ""
+        if is_vi and (not curr_narr_v or curr_narr_v.lower().startswith("en-")):
+            character_voices["Narrator"] = "vi-VN-HoaiMyNeural-story"
+        elif not is_vi and (not curr_narr_v or curr_narr_v.lower().startswith("vi-")):
+            character_voices["Narrator"] = "en-US-ChristopherNeural"
+        else:
+            character_voices["Narrator"] = curr_narr_v
 
         char_names = []
         if characters_str:
@@ -1276,7 +1514,11 @@ Return ONLY raw JSON matching this structure:
                 m = re.match(r'^(?:[A-Za-z0-9_\s]+:)?\s*([^,:\(\)]+)', p_strip)
                 if m:
                     c_name = m.group(1).strip()
-                    if c_name and c_name.lower() not in ("narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character"):
+                    if (
+                        c_name
+                        and c_name.lower() not in ("narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character")
+                        and c_name.lower() not in invalid_speaker_keys
+                    ):
                         if c_name not in char_names:
                             char_names.append(c_name)
 
@@ -1285,8 +1527,24 @@ Return ONLY raw JSON matching this structure:
                 d_list = sc.get("dialogues") or []
                 for d in d_list:
                     spk = (d.get("speaker") or "").strip()
-                    if spk and spk.lower() not in ("narrator", "người kể chuyện", "none", "", "character") and spk not in char_names:
+                    if (
+                        spk
+                        and spk.lower() not in ("narrator", "người kể chuyện", "none", "", "character")
+                        and spk.lower() not in invalid_speaker_keys
+                        and len(spk.split()) <= 4
+                        and spk not in char_names
+                    ):
                         char_names.append(spk)
+
+        # Remove stale voices of wrong language from character_voices before casting
+        for k in list(character_voices.keys()):
+            if k == "Narrator":
+                continue
+            v_id = (character_voices.get(k) or "").lower()
+            if is_vi and v_id.startswith("en-"):
+                del character_voices[k]
+            elif not is_vi and v_id.startswith("vi-"):
+                del character_voices[k]
 
         assigned_voices = set(character_voices.values())
 
@@ -1313,8 +1571,6 @@ Return ONLY raw JSON matching this structure:
                     return vid
             return pool[0]
 
-        is_vi = (language or "").startswith("vi")
-
         for name in char_names:
             if name in character_voices and character_voices[name]:
                 continue
@@ -1326,8 +1582,8 @@ Return ONLY raw JSON matching this structure:
                     break
             low_name = f"{name} {context}".lower()
 
-            is_elder = any(w in low_name for w in ["ông", "cụ", "bà lão", "già", "bụt", "tiên", "old", "elder", "grandfather", "grandmother"])
-            is_child_energetic = any(w in low_name for w in ["bé", "nhỏ", "tí", "khôi", "con", "child", "young boy", "kid", "boy", "lively", "energetic"])
+            is_elder = any(w in low_name for w in ["ông", "cụ", "bà lão", "già", "bụt", "tiên", "thần tài", "thần", "old", "elder", "grandfather", "grandmother"])
+            is_child_energetic = any(w in low_name for w in ["bé", "nhỏ", "tí", "khôi", "con", "lười", "child", "young boy", "kid", "boy", "lively", "energetic"])
             is_female = any(w in low_name for w in ["cô", "bé gái", "nữ", "mẹ", "bà", "nàng", "chị", "em gái", "lan", "phương", "mai", "hoa", "girl", "woman", "mother", "female", "princess", "queen", "daughter", "lady"])
             is_heroic_official = any(w in low_name for w in ["quan", "huyện", "đại nhân", "tướng", "vua", "hoàng đế", "phán quan", "thẩm phán", "heroic", "magistrate", "judge", "king", "general", "warrior"])
 
@@ -1357,6 +1613,9 @@ Return ONLY raw JSON matching this structure:
                     voice = pick_from_pool(en_male_pool)
 
             character_voices[name] = voice
+
+        if char_names and "Character" in character_voices:
+            del character_voices["Character"]
 
         return character_voices
 
@@ -1441,7 +1700,10 @@ Return ONLY raw JSON matching this structure:
                             candidate_scene_indices.append(sc_idx)
 
                 if not candidate_scene_indices:
-                    candidate_scene_indices = list(range(len(scenes)))
+                    candidate_scene_indices = [
+                        sc_i for sc_i, sc_obj in enumerate(scenes)
+                        if not re.match(r'^(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học(?:\s+rút ra)?)\s*:', str(sc_obj.get("narration") or "").strip(), re.IGNORECASE)
+                    ] or list(range(len(scenes)))
 
                 min_allowed_sc_idx = candidate_scene_indices[0]
                 num_d = len(story_dialogues)
@@ -1559,11 +1821,15 @@ Return ONLY raw JSON matching this structure:
                     if update_narration:
                         d_toks = get_tokens(d_line)
                         n_toks = get_tokens(narr)
+                        clean_d_sub = d_line.lower().strip(' "“”.!?…')
                         already_in_narr = (
-                            d_line.lower().rstrip('.!?…') in narr.lower()
+                            bool(clean_d_sub and clean_d_sub in narr.lower())
                             or (d_toks and len(d_toks & n_toks) >= max(2, int(len(d_toks) * 0.75)))
                         )
-                        if not already_in_narr:
+                        narr_is_vi = any(ord(c) > 127 for c in narr) if narr else is_vi
+                        d_is_vi = any(ord(c) > 127 for c in d_line)
+                        # Only append quote to narration if not already present AND language matches
+                        if not already_in_narr and (narr_is_vi == d_is_vi):
                             # Strip any abbreviated/synthetic trailing quote in narration (e.g. : "Bẩm quan con mất bò.")
                             base_narr = re.split(r'\s*:\s*["“]', narr)[0].strip(' .!?')
                             if not base_narr:
@@ -1654,7 +1920,17 @@ Return ONLY raw JSON matching this structure:
 
             # Update Image Prompt (`visual_prompt`) with expressive dialogue visual cues if scene has dialogue
             if update_image and primary_clip_quote and vis:
-                vis_is_vi = any(ord(c) > 127 for c in vis)
+                # Determine whether `vis` is written in English prose (even if it mentions a Vietnamese character name)
+                vis_is_english = bool(re.search(
+                    r'\b(style|shot|cinematic|composition|lighting|camera|background|detailed|illustration|anime|ghibli|pixar|watercolor|photorealistic|wearing|standing|sitting|medium|wide|close-up|textures)\b',
+                    vis,
+                    re.IGNORECASE
+                ))
+                vis_is_vi = (not vis_is_english) and any(ord(c) > 127 for c in vis)
+                if vis_is_english:
+                    # Clean up any previously mixed Vietnamese camera/expression suffixes on an English visual_prompt
+                    vis = re.sub(r'(?i)^Góc máy cận cảnh tập trung trực tiếp vào [^,]+ đang nói chuyện,\s*', '', vis)
+                    vis = re.sub(r'(?i),?\s*biểu cảm gương mặt và khẩu hình đối thoại sinh động,\s*ánh mắt giao tiếp tự nhiên,\s*không bong bóng thoại,\s*không chữ\.?', '', vis).strip()
                 if is_speaker_focus and active_speaker:
                     if vis_is_vi:
                         spk_prefix = f"Góc máy cận cảnh tập trung trực tiếp vào {active_speaker} đang nói chuyện, "
@@ -1803,7 +2079,7 @@ Return ONLY raw JSON matching this structure:
         return scene
 
     @staticmethod
-    def parse_imported_storyboard(text: str) -> Dict[str, Any]:
+    def parse_imported_storyboard(text: str, allow_narrative_fallback: bool = False) -> Dict[str, Any]:
         """
         Robustly parses imported storyboard content in JSON or formatted text from Gemini Pro / ChatGPT / Claude.
         Supports:
@@ -1811,6 +2087,7 @@ Return ONLY raw JSON matching this structure:
         - Markdown fenced JSON: ```json ... ```
         - Text with embedded JSON anywhere inside
         - Formatted text screenplay (Title: ..., Scene 1 / Cảnh 1 / Cảnh cuối: Visual: ..., Dialogues, Narration: ...)
+        - When allow_narrative_fallback=True (e.g. from /api/import-story), can adapt plain narrative prose into scenes.
         """
         cleaned_text = text.strip()
         # Normalize HTML entities & markdown line-continuation escapes commonly produced when copying from ChatGPT/Gemini web UI
@@ -2219,41 +2496,42 @@ Return ONLY raw JSON matching this structure:
                     "scenes": scenes
                 }
 
-        # 3. Narrative Story / Multi-Story Fallback (when user pastes plain narrative stories without Scene 1 headers)
-        stories = ScriptAgent.split_multi_story_text(cleaned_text)
-        if stories:
-            first_story = stories[0]
-            st_title = first_story.get("title") or "Imported Story"
-            st_body = first_story.get("idea") or cleaned_text
-            if len(st_body.split()) >= 10:
-                is_vi = any(ord(c) > 127 for c in st_body)
-                lang_code = "vi" if is_vi else "en"
-                helper_agent = ScriptAgent()
-                num_sc = helper_agent.estimate_optimal_scene_count(st_body)
-                sents = [
-                    s.strip()
-                    for s in re.split(r'(?<=[.!?…])\s+|\n+', st_body)
-                    if len(s.strip()) > 10
-                ]
-                adapted = helper_agent._adapt_narrative_to_storyboard(
-                    raw_text=st_body,
-                    sentences=sents,
-                    num_scenes=num_sc,
-                    art_style="ghibli",
-                    language=lang_code,
-                    audience="General",
-                    title=st_title,
-                    camera_on_speaker=False
-                )
-                if adapted and adapted.get("scenes"):
-                    adapted["scenes"] = ScriptAgent.sync_story_dialogues_to_scenes(
-                        scenes=adapted["scenes"],
-                        idea=st_body,
-                        characters=adapted.get("characters", ""),
+        # 3. Narrative Story / Multi-Story Fallback (ONLY when explicit fallback is allowed, e.g. import button)
+        if allow_narrative_fallback:
+            stories = ScriptAgent.split_multi_story_text(cleaned_text)
+            if stories:
+                first_story = stories[0]
+                st_title = first_story.get("title") or "Imported Story"
+                st_body = first_story.get("idea") or cleaned_text
+                if len(st_body.split()) >= 10:
+                    is_vi = any(ord(c) > 127 for c in st_body)
+                    lang_code = "vi" if is_vi else "en"
+                    helper_agent = ScriptAgent()
+                    num_sc = helper_agent.estimate_optimal_scene_count(st_body)
+                    sents = [
+                        s.strip()
+                        for s in re.split(r'(?<=[.!?…])\s+|\n+', st_body)
+                        if len(s.strip()) > 10
+                    ]
+                    adapted = helper_agent._adapt_narrative_to_storyboard(
+                        raw_text=st_body,
+                        sentences=sents,
+                        num_scenes=num_sc,
+                        art_style="ghibli",
                         language=lang_code,
-                        art_style="ghibli"
+                        audience="General",
+                        title=st_title,
+                        camera_on_speaker=False
                     )
-                    return adapted
+                    if adapted and adapted.get("scenes"):
+                        adapted["scenes"] = ScriptAgent.sync_story_dialogues_to_scenes(
+                            scenes=adapted["scenes"],
+                            idea=st_body,
+                            characters=adapted.get("characters", ""),
+                            language=lang_code,
+                            art_style="ghibli"
+                        )
+                        return adapted
 
         return {"title": "Imported Story", "logline": "", "scenes": []}
 
@@ -2601,6 +2879,8 @@ Return ONLY raw JSON matching this structure:
 
         if not num_scenes or num_scenes <= 0:
             num_scenes = self.estimate_optimal_scene_count(" ".join(sentences) or raw_text)
+        # Avoid duplicating scenes if story has fewer sentences than requested scene count
+        num_scenes = max(1, min(num_scenes, len(sentences)))
         total_s = len(sentences)
         chunk_size = max(1, total_s / float(num_scenes))
 
@@ -2683,13 +2963,19 @@ Return ONLY raw JSON matching this structure:
                     sc_title = "The Turn of Fortune"
 
             vis_snippet = re.sub(r'["“][^"”]*["”]', '', chunk_text)[:200].strip() or chunk_text[:200].replace('"', '')
+            # Clean dangling colons or speech tags if dialogue quote was stripped
+            vis_snippet = re.sub(r'[,:\-–—\s]+$', '', vis_snippet).strip()
             if art_style == "realistic":
                 style_tag = "Photorealistic cinematic live-action"
             elif art_style == "stick_figure":
                 style_tag = "Minimalist Stick Figure Animation"
             else:
                 style_tag = f"{art_style.capitalize()} art"
-            vis_prompt = f"{style_tag} style. {vis_snippet}. Cinematic composition, warm atmospheric lighting, high fidelity details."
+
+            if is_vi:
+                vis_prompt = f"Phân cảnh hoạt hình {style_tag}. {vis_snippet}. Bố cục điện ảnh, ánh sáng ấm áp, chi tiết phong phú, không chữ."
+            else:
+                vis_prompt = f"{style_tag} style. {vis_snippet}. Cinematic composition, warm atmospheric lighting, high fidelity details."
 
             acting_prompt = (
                 f"0-3s: Character moves with focused intention into the scene. "
@@ -2747,7 +3033,11 @@ Return ONLY raw JSON matching this structure:
         extracted_title = extracted_heading_title or (quote_title.group(1).strip() if quote_title else None)
 
         # Check if user provided a rich story or multi-sentence narrative
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?…])\s+|\n+', clean_idea_raw) if len(s.strip()) > 12]
+        sentences = [
+            s.strip()
+            for s in re.split(r'(?<=[.!?…])\s+|\n+', clean_idea_raw)
+            if len(s.strip()) > 8 and not re.match(r'^(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học|Top truyện)', s.strip(), re.IGNORECASE)
+        ]
         if len(sentences) >= 3 or len(clean_idea_raw.split()) > 45:
             first_sentence = re.split(r'[.!?\n]', clean_idea_raw)[0].strip()
             w_words = [w for w in first_sentence.split() if w]

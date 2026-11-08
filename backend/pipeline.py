@@ -76,6 +76,16 @@ class AnimationPipeline:
             art_style = "ghibli"
             camera_on_speaker = True
         chosen_title = (title or "").strip()
+        effective_lang = ScriptAgent.detect_language(f"{chosen_title} {idea or ''}", fallback="en", voice=voice or "")
+        is_vi_proj = effective_lang.startswith("vi")
+
+        # Auto-align voice with detected language if an English voice was passed for a Vietnamese project
+        chosen_voice = voice
+        if is_vi_proj and (not chosen_voice or chosen_voice.lower().startswith("en-")):
+            chosen_voice = "vi-VN-HoaiMyNeural-story"
+        elif (not is_vi_proj) and (chosen_voice and chosen_voice.lower().startswith("vi-")):
+            chosen_voice = "en-US-ChristopherNeural"
+
         base_name = self.sanitize_title_for_folder(chosen_title, fallback=idea)
         project_id = self.get_unique_project_id(base_name)
         project_dir = PROJECTS_DIR / project_id
@@ -93,9 +103,10 @@ class AnimationPipeline:
             "idea": idea,
             "art_style": art_style,
             "camera_on_speaker": bool(camera_on_speaker),
-            "voice": voice,
+            "language": "vi" if is_vi_proj else "en",
+            "voice": chosen_voice,
             "enable_multivoice": enable_multivoice,
-            "character_voices": {"Narrator": voice},
+            "character_voices": {"Narrator": chosen_voice},
             "ai_provider": self.ai_provider,
             "ai_model": self.ai_model or "",
             "api_key": self.api_key or "",
@@ -249,6 +260,19 @@ class AnimationPipeline:
         project_title = (title or project.get("title") or "").strip()
         calc_duration = target_duration or project.get("target_duration") or (num_scenes * 8)
 
+        # Detect effective language from project content and align with voice
+        effective_lang = ScriptAgent.detect_language(
+            f"{project_title} {project.get('idea', '')}",
+            fallback=language or project.get("language") or "en",
+            voice=project.get("voice") or ""
+        )
+        is_vi = effective_lang.startswith("vi")
+        if is_vi and (not project.get("voice") or project.get("voice", "").lower().startswith("en-")):
+            project["voice"] = "vi-VN-HoaiMyNeural-story"
+            if "character_voices" in project and "Narrator" in project["character_voices"]:
+                project["character_voices"]["Narrator"] = "vi-VN-HoaiMyNeural-story"
+        project["language"] = "vi" if is_vi else "en"
+
         project["status"] = "brainstorming"
         project["current_step"] = "Brainstorming storyboard and scenes..."
         project["progress"] = 15
@@ -263,7 +287,7 @@ class AnimationPipeline:
             num_scenes=num_scenes,
             target_duration=calc_duration,
             art_style=project["art_style"],
-            language=language,
+            language=effective_lang,
             audience=audience,
             title=project_title,
             camera_on_speaker=bool(project.get("camera_on_speaker", False))
