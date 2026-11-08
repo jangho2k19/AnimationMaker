@@ -65,13 +65,15 @@ class ScriptAgent:
         return "vi" if (fallback or "").lower().startswith("vi") else (fallback or "en")
 
     @classmethod
-    def estimate_optimal_scene_count(cls, idea: str, target_duration: int = None) -> int:
+    def estimate_optimal_scene_count(cls, idea: str, target_duration: Any = None) -> int:
         """
         Analyzes the input story's length, paragraph structure, dialogue turns, and narrative beats
         to automatically determine the optimal number of 8-second scenes.
         """
-        if target_duration and target_duration > 0:
+        if target_duration and isinstance(target_duration, (int, float)) and target_duration > 0:
             return max(3, min(16, int(round(target_duration / 8.0))))
+        if target_duration and str(target_duration).isdigit() and int(target_duration) > 0:
+            return max(3, min(16, int(round(int(target_duration) / 8.0))))
 
         clean = (idea or "").strip()
         if not clean:
@@ -203,6 +205,24 @@ class ScriptAgent:
             if story and isinstance(story, dict) and "scenes" in story and isinstance(story["scenes"], list):
                 if title and title.strip():
                     story["title"] = title.strip()
+                is_auto_pacing = target_duration in ("auto", "dynamic", "agent", None) or (isinstance(target_duration, (int, float)) and target_duration <= 0)
+                for sc in story["scenes"]:
+                    if isinstance(sc, dict):
+                        raw_dur = sc.get("duration") or sc.get("target_duration")
+                        if raw_dur is not None:
+                            try:
+                                sc["duration"] = max(4.0, min(15.0, round(float(raw_dur), 1)))
+                            except (ValueError, TypeError):
+                                sc["duration"] = 8.0
+                        elif is_auto_pacing:
+                            w_cnt = len((sc.get("narration") or "").split())
+                            sc["duration"] = max(5.0, min(12.0, round(w_cnt / 2.3 + 2.0, 1)))
+                        else:
+                            try:
+                                sc["duration"] = round(float(target_duration) / max(1, len(story["scenes"])), 1)
+                            except Exception:
+                                sc["duration"] = 8.0
+
                 story["scenes"] = [
                     self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
                     for sc in story["scenes"]
@@ -342,7 +362,7 @@ class ScriptAgent:
         call_to_action: str = "Order now!",
         pricing_offer: str = "",
         num_scenes: int = 4,
-        target_duration: int = None,
+        target_duration: Any = None,
         art_style: str = "realistic",
         language: str = "en"
     ) -> Dict[str, Any]:
@@ -426,7 +446,7 @@ class ScriptAgent:
         self,
         idea: str,
         num_scenes: int,
-        target_duration: int = None,
+        target_duration: Any = None,
         art_style: str = "ghibli",
         language: str = "en",
         audience: str = "general",
@@ -438,10 +458,19 @@ class ScriptAgent:
         min_auto_scenes = max(3, est_scenes - 1)
         max_auto_scenes = min(20, est_scenes + 2)
 
-        calc_duration = target_duration if (target_duration and target_duration > 0) else (est_scenes * 8)
-        target_scene_sec = max(5, int(calc_duration / max(1, est_scenes)))
-        target_scene_sec = min(target_scene_sec, 8)
-        max_words = min(24, max(15, int((target_scene_sec - 0.5) * 2.8)))
+        is_auto_pacing = target_duration in ("auto", "dynamic", "agent", None) or (isinstance(target_duration, (int, float)) and target_duration <= 0)
+        if is_auto_pacing:
+            calc_duration = est_scenes * 8
+            target_scene_sec = 8
+            max_words = 20
+        else:
+            try:
+                calc_duration = int(target_duration)
+            except Exception:
+                calc_duration = est_scenes * 8
+            target_scene_sec = max(5, int(calc_duration / max(1, est_scenes)))
+            target_scene_sec = min(target_scene_sec, 8)
+            max_words = min(24, max(15, int((target_scene_sec - 0.5) * 2.8)))
 
         clean_idea_strip = idea.strip()
         word_count = len(clean_idea_strip.split())
@@ -494,6 +523,17 @@ class ScriptAgent:
         )
         title_clause = f'Film Title: "{title}"' if title else f'Film Title: Catchy, cinematic title in {"Tiếng Việt" if is_vi_lang else "English"}'
 
+        pacing_param = (
+            "- Scene Pacing & Duration: AUTO (Agent decides duration of each scene, 5s to 12s)"
+            if is_auto_pacing
+            else f"- Target Video Duration: ~{calc_duration}s total (~{target_scene_sec}s per scene)"
+        )
+        pacing_rule = (
+            "   - SCENE PACING & DURATION (AUTO — AGENT DECIDES): You decide the duration of each individual scene based on narrative weight, dramatic pauses, and dialogue length (typically 5 to 12 seconds, default 8). Include a \"duration\" number field (in seconds) in each scene JSON object. Narration pacing should comfortably fit within the decided duration (~2.2 words per second)."
+            if is_auto_pacing
+            else f"   - PACING RULE: Aim for 14 to {max_words} words per scene so the narration tells the story clearly while fitting comfortably within an 8-second scene clip."
+        )
+
         dialogue_cinema_directive = ""
         if camera_on_speaker or art_style == "dialogue_cinema":
             dialogue_cinema_directive = f"""
@@ -516,6 +556,7 @@ Story Input:
 Parameters:
 - {title_clause}
 - Target Audience: {audience} | Art Style: {art_style} | Narration & Script Language: {lang_display}
+- {pacing_param}
 {adaptation_mandate}
 
 CINEMATIC DIRECTIVES:
@@ -560,7 +601,7 @@ CINEMATIC DIRECTIVES:
    - SEQUENTIAL STORY CONTINUITY: When read {seq_continuity_desc}, the `narration` lines MUST form a complete, cohesive, self-contained story that faithfully tells the user's premise from beginning to end.
    - PRESERVE KEY DIALOGUE & PUNCHLINES: When a scene involves a pivotal question, answer, revelation, or comedic/dramatic punchline from the story, `narration` MUST explicitly include or quote that key spoken line in {"Tiếng Việt" if is_vi_lang else "English"} (e.g., 'Chàng trai kinh hãi lắp bắp hỏi: "Quan cũng có mặt ở đó sao? Chẳng lẽ..."'), NEVER replace key story dialogue or punchlines with vague, detached third-person meta-summaries (such as "Anh lắp bắp hỏi lại trong sợ hãi và nghi ngờ").
    - NO GENERIC FILLER OR SCENERY STUBS: Never write disconnected 3-5 word weather/scenery fragments or generic atmospheric platitudes that do not advance the story.
-   - PACING RULE: Aim for 14 to {max_words} words per scene so the narration tells the story clearly while fitting comfortably within an 8-second scene clip.
+{pacing_rule}
 
 6. MULTI-VOICE CHARACTER DIALOGUES (STUDIO PRODUCTION QUALITY):
    - In scenes where characters speak or converse, output a `dialogues` array segmenting the scene speech: `[{{"speaker": "Narrator", "text": "Intro..."}}, {{"speaker": "Character Name", "text": "Spoken line..."}}]`.
@@ -575,6 +616,7 @@ Return ONLY raw JSON matching this structure:
     {{
       "scene_number": 1,
       "title": "Scene 1 Title",
+      "duration": 8,
       "archetype": "Establishing Shot",
       "visual_prompt": "Detailed static illustration description: frozen composition, character visual details and outfit, environment, color palette, lighting in {art_style} art style. (NO timing, NO camera moves, NO dialogue quotes)",
       "acting_prompt": "Medium wide shot of [Character] in [Setting]. The camera executes a smooth slow dolly push-in at eye level with fluid stabilization. 0-3s: [Character] steps forward naturally as ambient wind stirs clothing and hair. 3-6s: [Character] pauses to inspect [prop/surroundings], eyes filled with quiet resolve. Character says in a calm voice: \\\"We are close.\\\" (no subtitles). 6-8s: [Character] takes a steady breath as the scene holds composition. Volumetric atmospheric rim lighting with soft 35mm depth of field.\\n\\nAudio: gentle mountain breeze, distant bird calls, no background music.\\nSFX: soft footsteps on stone, cloth rustle.\\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.",
@@ -2176,6 +2218,12 @@ Return ONLY raw JSON matching this structure:
                         "narration": sc.get("narration") or sc.get("voiceover") or sc.get("script") or sc.get("text", ""),
                         "camera_motion": sc.get("camera_motion", "zoom_in")
                     }
+                    dur_val = sc.get("duration") or sc.get("target_duration") or sc.get("scene_duration")
+                    if dur_val is not None:
+                        try:
+                            normalized_sc["duration"] = round(float(dur_val), 1)
+                        except (ValueError, TypeError):
+                            pass
                     normalized_sc = ScriptAgent.ensure_separate_prompts(normalized_sc)
                     normalized_scenes.append(normalized_sc)
                 if normalized_scenes:
@@ -2268,6 +2316,7 @@ Return ONLY raw JSON matching this structure:
                 dialogues = []
                 explicit_narration = ""
                 explicit_acting = ""
+                explicit_duration = 0.0
                 screen_message = ""
                 archetype_override = ""
 
@@ -2275,6 +2324,16 @@ Return ONLY raw JSON matching this structure:
                 while idx_line < len(content_lines):
                     line = content_lines[idx_line]
                     low_line = line.lower().strip(' .:')
+
+                    # Check for explicit duration
+                    m_dur = re.match(r'^(?:Duration|Thời lượng|Length)[:\s]+(\d+(?:\.\d+)?)\s*(?:s|sec|seconds|giây)?', line, re.IGNORECASE)
+                    if m_dur:
+                        try:
+                            explicit_duration = float(m_dur.group(1))
+                        except Exception:
+                            pass
+                        idx_line += 1
+                        continue
 
                     # Skip structural section dividers like "Phát triển", "Cao trào", "Kết", "Hết."
                     if low_line in section_headers:
@@ -2476,9 +2535,12 @@ Return ONLY raw JSON matching this structure:
                     if narration and not narration.endswith(('.', '!', '?', '"', '”', '…')):
                         narration += "."
 
+                w_count = len(narration.split())
+                sc_dur = explicit_duration if explicit_duration > 0 else (min(12.0, max(6.0, round(w_count / 2.2, 1))) if w_count > 0 else 8.0)
                 sc_dict = {
                     "scene_number": len(scenes) + 1,
                     "title": sc_title,
+                    "duration": sc_dur,
                     "archetype": archetype,
                     "visual_prompt": visual,
                     "acting_prompt": acting,
@@ -2985,9 +3047,19 @@ Return ONLY raw JSON matching this structure:
             )
 
             motions = ["zoom_in", "pan_right", "subtle_drift", "zoom_out", "pan_left"]
+            w_cnt = len(narr_raw.split())
+            has_dial = bool(re.search(r'["“][^"”]+["”]|[-–—]\s*\w+', narr_raw))
+            if has_dial or w_cnt >= 16:
+                sc_dur = min(12.0, max(8.0, round(w_cnt / 2.2, 1)))
+            elif w_cnt < 8:
+                sc_dur = 6.0
+            else:
+                sc_dur = 8.0
+
             scenes.append({
                 "scene_number": idx + 1,
                 "title": sc_title,
+                "duration": sc_dur,
                 "archetype": arch,
                 "visual_prompt": vis_prompt,
                 "acting_prompt": acting_prompt,
@@ -3385,9 +3457,12 @@ Return ONLY raw JSON matching this structure:
                 f"Camera: {beat.get('motion', 'zoom_in')}. Lighting: cinematic volumetric. Negative: subtitles, watermark, text overlay."
             )
 
+            w_count = len((narration or "").split())
+            sc_dur = min(12.0, max(6.0, round(w_count / 2.2, 1))) if w_count > 0 else 8.0
             scenes.append({
                 "scene_number": i + 1,
                 "title": scene_title,
+                "duration": sc_dur,
                 "archetype": archetype,
                 "visual_prompt": f"{beat['prompt']}, character consistency: {chosen_char}",
                 "acting_prompt": acting_prompt,
@@ -3413,11 +3488,11 @@ Return ONLY raw JSON matching this structure:
         call_to_action: str = "Order now!",
         pricing_offer: str = "",
         num_scenes: int = 4,
-        target_duration: int = None,
+        target_duration: Any = None,
         art_style: str = "realistic",
         language: str = "en"
     ) -> str:
-        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 8)
+        calc_duration = target_duration if (target_duration and isinstance(target_duration, (int, float)) and target_duration > 0) else (num_scenes * 8)
         target_scene_sec = max(5, int(calc_duration / max(1, num_scenes)))
         target_scene_sec = min(target_scene_sec, 8)
         max_words = min(18, max(12, int((target_scene_sec - 1.0) * 2.4)))

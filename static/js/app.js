@@ -2667,18 +2667,20 @@ class AniStoryApp {
   buildGeminiPrompt() {
     const idea = this.inputIdeaPrompt?.value?.trim() || "A humble, gentle youth protected by a magical golden carp";
     const isAutoScenes = this.isAutoSceneCount();
+    const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto";
+    const isAutoPacing = durVal === "auto";
     const numScenes = isAutoScenes
       ? this.estimateAutoSceneCount(idea)
       : (parseInt(this.selectSceneCount.value, 10) || 4);
     const minAuto = Math.max(3, numScenes - 1);
     const maxAuto = Math.min(20, numScenes + 2);
-    const targetSceneSec = 15;
-    const targetDuration = targetSceneSec * numScenes;
+    const targetSceneSec = isAutoPacing ? 8 : (durVal === "auto_acting" ? 8 : Math.max(5, Math.round(parseInt(durVal, 10) / numScenes || 8)));
+    const targetDuration = isAutoPacing ? "Dynamic (Agent decides per scene)" : `${targetSceneSec * numScenes} seconds (~${targetSceneSec} seconds per scene)`;
     const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
     const audience = this.selectAudience ? this.selectAudience.value : "General";
     const isVi = this.selectLanguage?.value?.startsWith("vi");
     const langStr = isVi ? "Tiếng Việt" : "English";
-    const targetWords = Math.floor(targetSceneSec * 2.5);
+    const targetWords = Math.floor(targetSceneSec * 2.4);
 
     const styleInfo = this.config?.art_styles?.[this.selectedStyleKey];
     const styleName = styleInfo ? styleInfo.name : "Studio Ghibli 2D";
@@ -2705,6 +2707,7 @@ class AniStoryApp {
       scenesSkeleton.push(`    {
       "scene_number": ${i},
       "title": "Scene ${i} Title in ${langStr}",
+      "duration": ${targetSceneSec},
       "archetype": "Establishing Shot / Action Beat / Climax",
       "visual_prompt": "Ultra-detailed static visual image description for an AI artist in ${styleName}: frozen frame composition, character visual anchors (hair, outfit, features), environment, color palette, lighting, ${aspectRatio} cinematic framing. (NO timing, NO camera moves, NO speech bubbles)",
       "acting_prompt": "Medium wide shot of character in setting. ${camSentence} 0-3s: Initial measured movement starting from keyframe pose as ambient wind stirs clothing. 3-6s: Core emotional performance beat / ${dialSample}. 6-8s: The character takes a steady breath as the scene holds composition. Atmospheric volumetric lighting, 35mm depth of field.\\n\\nAudio: natural atmospheric ambient soundscape, gentle ambient breeze, no background music.\\nSFX: subtle realistic footsteps, cloth movement.\\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.",
@@ -2713,20 +2716,23 @@ class AniStoryApp {
     }`);
     }
 
+    const pacingDirective = isAutoPacing
+      ? `- Scene Pacing & Duration: AUTO (Agent decides) — For each scene, dynamically choose the optimal duration in seconds (between 5s and 12s) based on dramatic weight, action complexity, and dialogue length. Include a "duration" number field (in seconds) for each scene.\n- Narration Pacing: Approximately ${targetWords} words per scene in ${langStr} (calibrated to fit each scene's duration).`
+      : `- Target Total Duration: ${targetDuration}.\n- Narration Pacing: Approximately ${targetWords} words per scene in ${langStr}.`;
+
     return `Please act as an award-winning animation director at Pixar and Studio Ghibli.
 Create a rich, emotionally captivating animated short film screenplay based on this premise:
 Idea: "${idea}"
 
 Film Specifications:
 ${isAutoScenes
-  ? `- Number of Scenes: AUTO — YOU decide the optimal number of scenes (recommended ${minAuto} to ${maxAuto}) based on the story's natural plot beats, setting changes, dialogue exchanges, and final twist/punchline. Give each distinct beat its own 8-second scene; never cram multiple beats into one scene. (The skeleton below shows ${numScenes} scenes as an example — add or remove scenes as the story requires.)`
+  ? `- Number of Scenes: AUTO — YOU decide the optimal number of scenes (recommended ${minAuto} to ${maxAuto}) based on the story's natural plot beats, setting changes, dialogue exchanges, and final twist/punchline. Give each distinct beat its own scene; never cram multiple beats into one scene. (The skeleton below shows ${numScenes} scenes as an example — add or remove scenes as the story requires.)`
   : `- Number of Scenes: EXACTLY ${numScenes} SCENES (Must have all scenes 1 through ${numScenes}).`}
-- Target Total Duration: ${targetDuration} seconds (~${targetSceneSec} seconds per scene).
+${pacingDirective}
 - Language: Titles and Narration MUST be written in ${langStr}.
 - Visual Art Style: ${styleName}.
 - Framing: ${aspectRatio} cinematic aspect ratio for all visual prompts.
 - Target Audience: ${audience}.
-- Narration Pacing: Approximately ${targetWords} words per scene in ${langStr}.
 
 CRITICAL INSTRUCTION 1 - VOICEOVER NARRATION MUST TIE DIRECTLY TO THE STORY:
 - "narration" is the primary storytelling audio and subtitle track of the film.
@@ -3429,11 +3435,13 @@ ${isAutoScenes
         return;
       }
       const isAutoScenes = this.isAutoSceneCount();
-      const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto_acting";
-      const fixedDuration = (durVal === "auto_acting" || !durVal) ? null : parseInt(durVal, 10);
+      const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto";
+      const isAutoDuration = durVal === "auto";
+      const isAutoActing = durVal === "auto_acting";
+      const fixedDuration = (!isAutoDuration && !isAutoActing && durVal) ? parseInt(durVal, 10) : null;
       // num_scenes = 0 tells the backend agent to determine the optimal scene count
       const numScenes = isAutoScenes ? 0 : (parseInt(this.selectSceneCount.value, 10) || 4);
-      const targetDuration = fixedDuration || (isAutoScenes ? null : numScenes * 8);
+      const targetDuration = isAutoDuration ? "auto" : (fixedDuration || (isAutoScenes ? null : numScenes * 8));
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
       const projectTitle = this.inputProjectTitle ? this.inputProjectTitle.value.trim() : "";
 
@@ -3652,10 +3660,12 @@ ${isAutoScenes
       const apiKey = this.getEffectiveApiKey(provider);
 
       const isAutoScenes = this.isAutoSceneCount();
-      const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto_acting";
-      const fixedDuration = (durVal === "auto_acting" || !durVal) ? null : parseInt(durVal, 10);
+      const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto";
+      const isAutoDuration = durVal === "auto";
+      const isAutoActing = durVal === "auto_acting";
+      const fixedDuration = (!isAutoDuration && !isAutoActing && durVal) ? parseInt(durVal, 10) : null;
       const numScenes = isAutoScenes ? 0 : (parseInt(this.selectSceneCount.value, 10) || 4);
-      const targetDuration = fixedDuration || (isAutoScenes ? 0 : numScenes * 8);
+      const targetDuration = isAutoDuration ? "auto" : (fixedDuration || (isAutoScenes ? 0 : numScenes * 8));
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
       const voice = this.selectVoice ? this.selectVoice.value : "en-US-ChristopherNeural";
       const language = this.selectLanguage ? this.selectLanguage.value : "en";
@@ -4006,6 +4016,7 @@ ${isAutoScenes
         <div class="scene-card-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="scene-badge">Scene ${scene.scene_number || idx + 1}</span>
+            <span class="scene-badge" style="background:rgba(59,130,246,0.18); color:#93c5fd; border:1px solid rgba(59,130,246,0.35); font-weight:600;" title="Scene duration (Agent-decided pacing)">⏱️ ${scene.duration ? (Number(scene.duration).toFixed(1) + 's') : '8.0s'}</span>
             ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.25); color:#c4b5fd; font-weight:600; border:1px solid rgba(139,92,246,0.4);">🎭 ${scene.archetype}</span>` : ''}
             ${camMotion === 'speaker_focus' ? `<span class="scene-badge scene-speakercam-badge" id="sceneSpeakerCamBadge_${idx}" title="Camera focuses on speaking character (Medium Close-Up)">🗣️ Speaker Cam</span>` : `<span class="scene-badge scene-speakercam-badge" id="sceneSpeakerCamBadge_${idx}" style="display:none;" title="Camera focuses on speaking character (Medium Close-Up)">🗣️ Speaker Cam</span>`}
             ${isMultiVoiceScene ? `<span class="scene-badge scene-multivoice-badge" title="Multi-Voice Scene: ${scene.dialogues.length} character dialogue segments">🎭 Multi-Voice (${scene.dialogues.length})</span>` : ''}
@@ -4152,9 +4163,11 @@ ${isAutoScenes
         delBtn.addEventListener("click", () => this.deleteScene(idx));
       }
 
-      // Real-time voiceover duration calculator for 8s acting video fit
+      // Real-time voiceover duration calculator matching scene duration
       const narrTextarea = card.querySelector(`#narration_${idx}`);
       const narrBadge = card.querySelector(`#badgeNarr_${idx}`);
+      const scDuration = parseFloat(scene.duration) || 8.0;
+      const maxRecommendedWords = Math.round((scDuration - 0.5) * 2.2);
       const updateNarrBadge = (text) => {
         if (!narrBadge) return;
         const words = (text || "").trim().split(/\s+/).filter(Boolean).length;
@@ -4164,18 +4177,18 @@ ${isAutoScenes
           narrBadge.style.background = "rgba(255,255,255,0.05)";
           narrBadge.style.color = "var(--text-muted)";
           narrBadge.style.border = "none";
-        } else if (words <= 16) {
-          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ✅ fits 8s video`;
+        } else if (words <= maxRecommendedWords) {
+          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ✅ fits ${scDuration.toFixed(1)}s video`;
           narrBadge.style.background = "rgba(16,185,129,0.15)";
           narrBadge.style.color = "#34d399";
           narrBadge.style.border = "1px solid rgba(16,185,129,0.3)";
-        } else if (words <= 18) {
-          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ⚠️ near 8s limit`;
+        } else if (words <= maxRecommendedWords + 3) {
+          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ⚠️ near ${scDuration.toFixed(1)}s limit`;
           narrBadge.style.background = "rgba(245,158,11,0.15)";
           narrBadge.style.color = "#fbbf24";
           narrBadge.style.border = "1px solid rgba(245,158,11,0.3)";
         } else {
-          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ⚠️ >8s may repeat`;
+          narrBadge.textContent = `⏱️ ~${estSec}s (${words}w) ⚠️ >${scDuration.toFixed(1)}s may repeat`;
           narrBadge.style.background = "rgba(239,68,68,0.15)";
           narrBadge.style.color = "#f87171";
           narrBadge.style.border = "1px solid rgba(239,68,68,0.3)";
@@ -4467,6 +4480,7 @@ ${isAutoScenes
           <div class="script-scene-heading">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <span class="scene-badge">SCENE ${scene.scene_number || idx + 1}</span>
+              <span class="scene-badge" style="background:rgba(59,130,246,0.18); color:#93c5fd; border:1px solid rgba(59,130,246,0.35); font-size:10.5px; font-weight:600;">⏱️ ${(parseFloat(scene.duration) || 8.0).toFixed(1)}s</span>
               <span>${scene.title || "Scene " + (idx + 1)}</span>
               ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.2); color:#c4b5fd; font-size:10.5px;">🎭 ${scene.archetype}</span>` : ''}
             </div>
@@ -4536,8 +4550,9 @@ ${isAutoScenes
       this.storyboardScriptScenesList.appendChild(scriptCard);
     });
 
+    const totalDurationSec = scenes.reduce((sum, s) => sum + (parseFloat(s.duration) || 8.0), 0);
     if (this.scriptStatsTotalWords) this.scriptStatsTotalWords.textContent = `💬 ${totalWords} words total`;
-    if (this.scriptStatsEstDuration) this.scriptStatsEstDuration.textContent = `⏱️ ~${(totalWords / 2.2).toFixed(0)}s narration (${scenes.length * 8}s video)`;
+    if (this.scriptStatsEstDuration) this.scriptStatsEstDuration.textContent = `⏱️ ~${(totalWords / 2.2).toFixed(0)}s narration (${totalDurationSec.toFixed(0)}s video)`;
     if (this.scriptStatsDialogueCount) this.scriptStatsDialogueCount.textContent = `🎭 ${totalDialogues} dialogue segments`;
   }
 
@@ -4560,7 +4575,7 @@ ${isAutoScenes
 
       card.innerHTML = `
         <div class="filmstrip-media-wrap">
-          <span class="filmstrip-scene-num-badge">Sc ${scene.scene_number || idx + 1}</span>
+          <span class="filmstrip-scene-num-badge">Sc ${scene.scene_number || idx + 1} • ${(parseFloat(scene.duration) || 8.0).toFixed(0)}s</span>
           ${hasSavedImage ? `<img src="${imgSrc}" class="filmstrip-img" alt="Scene ${idx + 1}" loading="lazy">` : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0d1124;color:var(--text-muted);font-size:24px;">🎨</div>`}
           ${hasVideo ? `<button class="scene-play-overlay-btn btn-filmstrip-play" data-idx="${idx}" style="display:flex;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);" title="Play Video">▶️</button>` : ''}
         </div>

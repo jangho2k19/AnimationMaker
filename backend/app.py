@@ -13,7 +13,7 @@ if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
@@ -37,7 +37,7 @@ class CreateStoryRequest(BaseModel):
     art_style: str = "ghibli"
     voice: str = "en-US-ChristopherNeural"
     num_scenes: int = 4  # 0 = Auto (agent determines optimal scene count)
-    target_duration: Optional[int] = None
+    target_duration: Optional[Union[int, str]] = None
     aspect_ratio: str = "16:9"
     language: str = "en"
     audience: str = "general"
@@ -465,14 +465,22 @@ async def create_story(req: CreateStoryRequest):
             ai_provider=req.ai_provider,
             ai_model=req.ai_model
         )
-        target_dur = req.target_duration if (req.target_duration and req.target_duration > 0) else (req.num_scenes * 8)
+        target_dur_raw = req.target_duration
+        is_auto_pacing = target_dur_raw == "auto" or (isinstance(target_dur_raw, str) and target_dur_raw.lower() in ("auto", "agent", "dynamic"))
+        if is_auto_pacing:
+            target_dur = "auto"
+        elif target_dur_raw and str(target_dur_raw).isdigit() and int(target_dur_raw) > 0:
+            target_dur = int(target_dur_raw)
+        else:
+            target_dur = (req.num_scenes * 8) if (req.num_scenes and req.num_scenes > 0) else None
+
         project = custom_pipeline.create_project(
             idea=req.idea,
             title=req.title or "",
             art_style=req.art_style,
             voice=req.voice,
             num_scenes=req.num_scenes,
-            target_duration=target_dur,
+            target_duration=target_dur if target_dur != "auto" else ((req.num_scenes or 4) * 8),
             aspect_ratio=req.aspect_ratio,
             image_mode=req.image_mode,
             enable_voiceover=req.enable_voiceover,
@@ -480,13 +488,16 @@ async def create_story(req: CreateStoryRequest):
             enable_multivoice=req.enable_multivoice,
             camera_on_speaker=req.camera_on_speaker
         )
+        if is_auto_pacing:
+            project["pacing_mode"] = "auto"
+            project["target_duration"] = "auto"
         project["video_mode"] = req.video_mode or "acting"
 
         # Generate story scenes
         updated_project = await custom_pipeline.generate_story(
             project_id=project["id"],
             num_scenes=req.num_scenes,
-            target_duration=req.target_duration,
+            target_duration=target_dur,
             language=req.language,
             audience=req.audience,
             title=req.title
@@ -575,7 +586,7 @@ async def create_advertisement(
     call_to_action: Optional[str] = Form("Order now!"),
     pricing_offer: Optional[str] = Form(""),
     num_scenes: int = Form(4),
-    target_duration: Optional[int] = Form(None),
+    target_duration: Optional[str] = Form(None),
     art_style: str = Form("realistic"),
     voice: str = Form("en-US-ChristopherNeural"),
     aspect_ratio: str = Form("16:9"),
@@ -606,10 +617,14 @@ async def create_advertisement(
         title_display = f"{clean_name} — Commercial" if not clean_brand else f"{clean_brand}: {clean_name}"
 
         # Auto scene count (0) for commercials: derive from duration or use the classic 5-beat ad structure
+        is_auto_dur = (not target_duration) or str(target_duration).strip().lower() in ("auto", "auto_acting", "none", "0")
         if not num_scenes or num_scenes <= 0:
-            num_scenes = max(3, min(10, int(round(target_duration / 8.0)))) if (target_duration and target_duration > 0) else 5
+            if not is_auto_dur and str(target_duration).isdigit():
+                num_scenes = max(3, min(10, int(round(int(target_duration) / 8.0))))
+            else:
+                num_scenes = 5
 
-        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 8)
+        calc_duration = "auto" if is_auto_dur else (int(target_duration) if str(target_duration).isdigit() else (num_scenes * 8))
 
         project = custom_pipeline.create_project(
             idea=f"Commercial advertisement for {clean_name}. {description.strip()}",
@@ -617,7 +632,7 @@ async def create_advertisement(
             art_style=art_style or "realistic",
             voice=voice,
             num_scenes=num_scenes,
-            target_duration=calc_duration,
+            target_duration=calc_duration if calc_duration != "auto" else (num_scenes * 8),
             aspect_ratio=aspect_ratio,
             image_mode=image_mode,
             enable_voiceover=enable_voiceover,

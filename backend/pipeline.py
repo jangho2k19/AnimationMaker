@@ -92,7 +92,15 @@ class AnimationPipeline:
         project_dir.mkdir(parents=True, exist_ok=True)
 
         dim = VIDEO_DIMENSIONS.get(aspect_ratio, VIDEO_DIMENSIONS["16:9"])
-        calc_duration = target_duration if (target_duration and target_duration > 0) else (num_scenes * 12)
+        is_auto_pacing = target_duration in ("auto", "dynamic", "agent") or (isinstance(target_duration, str) and target_duration.lower() == "auto")
+        if is_auto_pacing:
+            calc_duration = "auto"
+        elif target_duration and isinstance(target_duration, (int, float)) and target_duration > 0:
+            calc_duration = int(target_duration)
+        elif target_duration and str(target_duration).isdigit() and int(target_duration) > 0:
+            calc_duration = int(target_duration)
+        else:
+            calc_duration = ((num_scenes or 4) * 8)
 
         project_data = {
             "id": project_id,
@@ -111,6 +119,7 @@ class AnimationPipeline:
             "ai_model": self.ai_model or "",
             "api_key": self.api_key or "",
             "num_scenes": num_scenes,
+            "pacing_mode": "auto" if is_auto_pacing else "manual",
             "target_duration": calc_duration,
             "aspect_ratio": aspect_ratio,
             "video_width": dim["width"],
@@ -258,7 +267,9 @@ class AnimationPipeline:
             raise ValueError("Project not found")
 
         project_title = (title or project.get("title") or "").strip()
-        calc_duration = target_duration or project.get("target_duration") or (num_scenes * 8)
+        target_dur_param = target_duration if target_duration is not None else project.get("target_duration")
+        is_auto_pacing = target_dur_param in ("auto", "dynamic", "agent", None) or (isinstance(target_dur_param, (int, float)) and target_dur_param <= 0)
+        calc_duration = "auto" if is_auto_pacing else target_dur_param
 
         # Detect effective language from project content and align with voice
         effective_lang = ScriptAgent.detect_language(
@@ -312,8 +323,19 @@ class AnimationPipeline:
         if actual_count > 0:
             project["num_scenes_mode"] = "auto" if (not num_scenes or num_scenes <= 0) else "manual"
             project["num_scenes"] = actual_count
-            if not target_duration or target_duration <= 0:
+            total_calc_dur = 0.0
+            for sc in project["scenes"]:
+                if not sc.get("duration") or sc.get("duration") <= 0:
+                    w_cnt = len((sc.get("narration") or "").split())
+                    sc["duration"] = max(5.0, min(12.0, round(w_cnt / 2.3 + 2.0, 1))) if is_auto_pacing else 8.0
+                total_calc_dur += float(sc["duration"])
+            if is_auto_pacing:
+                project["pacing_mode"] = "auto"
+                project["target_duration"] = round(total_calc_dur, 1)
+            elif not target_dur_param or (isinstance(target_dur_param, (int, float)) and target_dur_param <= 0):
                 project["target_duration"] = actual_count * 8
+            else:
+                project["target_duration"] = target_dur_param
         project["status"] = "storyboard_ready"
         project["progress"] = 30
         project["current_step"] = "Storyboard ready for review"
@@ -433,9 +455,10 @@ class AnimationPipeline:
         audio_path = p_dir / f"scene_{scene_idx + 1}.mp3"
         srt_path = p_dir / f"scene_{scene_idx + 1}.srt"
 
-        # Determine target max duration for voiceover (e.g. 7.8s for Google Flow / Veo 8s video)
+        # Determine target max duration for voiceover (e.g. 7.8s for Google Flow / Veo 8s video or agent-decided duration)
         raw_acting_cand = p_dir / f"scene_{scene_idx + 1}_acting.mp4"
-        max_dur = 7.8
+        scene_dur = float(scene.get("duration") or 8.0)
+        max_dur = max(3.0, round(scene_dur - 0.2, 2))
         if raw_acting_cand.exists():
             v_eng = VideoEngine()
             act_dur = v_eng.get_media_duration(str(raw_acting_cand))
@@ -799,6 +822,14 @@ class AnimationPipeline:
                                 narrator_name="Narrator"
                             )
                             scene["dialogues"] = sc_dialogues
+                    raw_acting_cand = project_dir / f"scene_{idx + 1}_acting.mp4"
+                    scene_dur = float(scene.get("duration") or 8.0)
+                    scene_max_dur = max(3.0, round(scene_dur - 0.2, 2))
+                    if raw_acting_cand.exists():
+                        act_dur = engine.get_media_duration(str(raw_acting_cand))
+                        if act_dur > 0:
+                            scene_max_dur = max(3.0, round(act_dur - 0.2, 2))
+
                     try:
                         res = await self.voice_agent.synthesize(
                             text=scene["narration"],
@@ -807,6 +838,7 @@ class AnimationPipeline:
                             voice=clip_voice,
                             api_key=project.get("api_key"),
                             allow_voice_fallback=False,
+                            max_duration=scene_max_dur,
                             dialogues=sc_dialogues,
                             character_voices=char_voices,
                             enable_multivoice=enable_mv,
@@ -822,6 +854,7 @@ class AnimationPipeline:
                             voice=clip_voice,
                             api_key=project.get("api_key"),
                             allow_voice_fallback=True,
+                            max_duration=scene_max_dur,
                             dialogues=sc_dialogues,
                             character_voices=char_voices,
                             enable_multivoice=enable_mv,
