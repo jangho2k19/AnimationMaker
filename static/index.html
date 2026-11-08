@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
-  <link rel="stylesheet" href="/css/style.css?v=11">
+  <link rel="stylesheet" href="/css/style.css?v=12">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -93,6 +93,7 @@
           <div class="auto-wf-title-group">
             <span class="auto-wf-pulse"></span>
             <span class="auto-wf-badge" id="badgeAutoWfState">🤖 AUTO-PILOT ACTIVE</span>
+            <span class="auto-wf-batch-pill" id="badgeAutoWfBatchProgress" style="display: none;">📚 Story 1/1</span>
             <strong id="textAutoWfStatus" class="auto-wf-status-text">Running Step 1 → 4 Autonomous Pipeline...</strong>
             <span id="textAutoWfTimer" class="auto-wf-timer">⏱️ 0s</span>
           </div>
@@ -102,6 +103,9 @@
             </button>
             <button id="btnAutoWfSkipToRender" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn" style="display: none;" title="Skip countdown/painting and jump straight to Step 3 Full Film Render">
               <span>⏭ Render Now (Step 3)</span>
+            </button>
+            <button id="btnAutoWfSkipStory" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn" style="display: none;" title="Skip current story and start the next story in the Batch Queue">
+              <span>⏭ Next Story</span>
             </button>
             <button id="btnAutoWfCancel" type="button" class="glass-btn secondary-btn compact-btn text-danger-btn auto-wf-ctrl-btn" title="Stop Auto-Pilot workflow and stay on current stage">
               <span>⏹ Stop</span>
@@ -129,6 +133,8 @@
             <span class="auto-wf-step-name">Cinema Premiere</span>
           </div>
         </div>
+        <!-- Live Batch Story Queue Strip (visible when running a list of stories) -->
+        <div id="autoWfBatchStrip" class="auto-wf-batch-strip" style="display: none;"></div>
       </div>
 
       <!-- STAGE 1: IDEA & ART STYLE -->
@@ -152,6 +158,9 @@
             </button>
             <button id="tabModeAd" class="mode-tab-btn" type="button">
               🛍️ Option D: Goods Advertisement
+            </button>
+            <button id="tabModeBatch" class="mode-tab-btn batch-mode-tab-btn" type="button" title="Queue a list of multiple ideas/stories and automatically produce them one by one from Step 1 to Step 4">
+              📚 Option E: Batch Story Queue (<span id="badgeTabBatchCount">0</span>)
             </button>
           </div>
         </div>
@@ -339,6 +348,69 @@
                 </div>
               </div>
 
+              <!-- Panel E: Batch Story Queue (List of Ideas / Stories from Step 1 to 4, One by One) -->
+              <div id="panelBatchMode" style="display: none; margin-bottom: 14px;">
+                <div class="batch-queue-header-box">
+                  <div class="batch-queue-title-row">
+                    <div>
+                      <span class="batch-mode-badge">📚 Batch Story Queue (Step 1 → 4 One-by-One)</span>
+                      <p class="hint-text" style="margin: 2px 0 0 0;">Enter a list of story ideas or full scripts below. AniStory AI will automatically produce each film from Step 1 → Step 4 one by one!</p>
+                    </div>
+                    <div class="batch-header-actions">
+                      <button id="btnBatchLoadSamples" type="button" class="glass-btn secondary-btn mini-btn" title="Load 3 sample story ideas into the queue">
+                        ⚡ +3 Samples
+                      </button>
+                      <input type="file" id="inputBatchImportFile" accept=".txt,.json" style="display:none;">
+                      <button id="btnBatchImportFile" type="button" class="glass-btn secondary-btn mini-btn" title="Import a .txt or .json file containing multiple story ideas">
+                        📂 Import File
+                      </button>
+                      <button id="btnBatchClearCompleted" type="button" class="glass-btn secondary-btn mini-btn" title="Remove completed stories from the queue">
+                        🧹 Clear Done
+                      </button>
+                      <button id="btnBatchClearAll" type="button" class="glass-btn secondary-btn mini-btn text-danger-btn" title="Clear entire batch queue">
+                        🗑️ Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Multi-Story Input Box -->
+                  <div class="batch-input-composer">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+                      <label for="textareaBatchIdeas" class="input-label small-label" style="margin-bottom:0;">
+                        <span>📝 Paste or Write Multiple Ideas / Stories:</span>
+                      </label>
+                      <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="hint-text">Split by:</span>
+                        <select id="selectBatchDelimiter" class="styled-select compact-select" style="height:24px; font-size:11px; padding:1px 6px; width:auto;">
+                          <option value="auto" selected>🤖 Auto-Detect (Lines, ---, or 1. 2. 3.)</option>
+                          <option value="line">↵ One Idea Per Line</option>
+                          <option value="blank">⬜ Blank Line (Paragraphs)</option>
+                          <option value="divider">➖ Separated by --- (Full Scripts)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <textarea id="textareaBatchIdeas" rows="4" class="styled-textarea compact-textarea" placeholder="Enter multiple ideas (one per line, numbered 1. 2. 3., or separated by ---):&#10;1. Chiến Thuật Bình Xăng :: Ông Tư và Bà Tư ngồi quán cà phê bàn chuyện tiết kiệm tiền đổ đầy bình xăng.&#10;2. Chú Mèo Sao Thổ :: Một chú mèo nhỏ tinh nghịch lẻn lên tàu vũ trụ khám phá vành đai Sao Thổ lấp lánh.&#10;3. Trí Khôn Của Ta Đây :: Câu chuyện dân gian Bác Nông Dân, Con Trâu và Con Cọp trên cánh đồng lúa vàng."></textarea>
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
+                      <span class="hint-text">💡 Tip: Optional custom title using <code>Title :: Story idea</code></span>
+                      <button id="btnBatchAddIdeas" type="button" class="glass-btn primary-glow-btn compact-btn" style="padding:5px 12px; font-size:11.5px;">
+                        <span>➕ Add to Queue</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Active Queue Items List -->
+                  <div class="batch-queue-list-header">
+                    <span id="badgeBatchQueueSummary" class="batch-queue-summary-text">📋 Queue: 0 stories (0 pending • 0 completed)</span>
+                    <button id="btnBatchDownloadAllMp4" type="button" class="glass-btn secondary-btn mini-btn" style="display:none;" title="Download all completed MP4 films from this batch">
+                      ⬇️ Download All Completed MP4s
+                    </button>
+                  </div>
+                  <div id="batchQueueListContainer" class="batch-queue-list">
+                    <!-- Rendered dynamically via app.js -->
+                  </div>
+                </div>
+              </div>
+
               <!-- Multi-Provider AI Engine & Image Mode Selector -->
               <div class="ai-provider-panel glass-panel compact-provider-panel">
                 <div class="provider-panel-header">
@@ -408,9 +480,17 @@
                     <strong>Automation Workflow (Step 1 → 4)</strong>
                     <span class="auto-wf-sub-pill">Concept ➔ Storyboard ➔ Render ➔ Cinema</span>
                   </div>
-                  <button id="btnToggleAutoWorkflowStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer;" title="When ON, generating a story automatically runs all 4 stages end-to-end into a finished MP4">
-                    <span id="iconAutoWorkflowStage1">🤖</span> <span id="textAutoWorkflowStage1">Auto-Pilot: OFF</span>
-                  </button>
+                  <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <button id="btnAddCurrentToBatchQueue" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer; background:rgba(139,92,246,0.16); color:#c4b5fd; border-color:rgba(139,92,246,0.4);" title="Add current story idea in Option A to the Batch Queue">
+                      <span>➕ Queue Idea</span>
+                    </button>
+                    <button id="btnQuickOpenBatchQueue" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer; background:rgba(56,189,248,0.15); color:#7dd3fc; border-color:rgba(56,189,248,0.38);" title="Open Batch Story Queue (run a list of ideas/stories one by one)">
+                      <span>📚 Batch List (<span id="badgeQuickBatchCount">0</span>)</span>
+                    </button>
+                    <button id="btnToggleAutoWorkflowStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer;" title="When ON, generating a story automatically runs all 4 stages end-to-end into a finished MP4">
+                      <span id="iconAutoWorkflowStage1">🤖</span> <span id="textAutoWorkflowStage1">Auto-Pilot: OFF</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="auto-wf-options-row">
                   <label class="auto-wf-check-label" title="Automatically upgrade all scene video prompts to director-grade cinematic beats in Step 2">
@@ -448,6 +528,11 @@
                   <span class="btn-glow-layer"></span>
                   <span class="btn-text">Generate Ad Storyboard</span>
                   <span class="btn-arrow">🛍️</span>
+                </button>
+                <button id="btnRunBatchQueueStep1To4" type="button" class="hero-action-btn studio-autopilot-btn" style="display: none;" title="Automatically produce all queued stories one by one from Step 1 to Step 4">
+                  <span class="btn-glow-layer"></span>
+                  <span class="btn-text" id="textBtnRunBatchQueue">📚 Run Batch Queue 1-by-1 (Step 1→4)</span>
+                  <span class="btn-arrow">🚀</span>
                 </button>
                 <button id="btnAutoWorkflowStep1To4" type="button" class="hero-action-btn studio-autopilot-btn" title="1-Click Full Automation: Concept (Step 1) → Storyboard & Paint (Step 2) → Studio Render (Step 3) → Cinema Premiere (Step 4)">
                   <span class="btn-glow-layer"></span>

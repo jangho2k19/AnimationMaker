@@ -49,8 +49,14 @@ class AniStoryApp {
       step: 0,
       startTime: 0,
       timerId: null,
-      skipCountdown: false
+      skipCountdown: false,
+      batchMode: false,
+      batchIndex: 0,
+      batchTotal: 0,
+      skipCurrentStory: false
     };
+    this._renderCompleteResolver = null;
+    this.batchQueue = this.loadBatchQueueFromStorage();
 
     this.initElements();
     this.updateSpeakerCamUI(this.cameraOnSpeaker);
@@ -58,6 +64,7 @@ class AniStoryApp {
     this.updateMultivoiceUI(this.enableMultivoice);
     this.updateAutoPaintUI(localStorage.getItem("anistory_autopaint") === "true");
     this.updateAutoWorkflowToggleUI(this.autoWorkflowEnabled);
+    this.renderBatchQueueList();
     this.restoreCachedProjectSync();
     this.attachEvents();
     this.loadConfig();
@@ -503,11 +510,14 @@ class AniStoryApp {
     // Step 1 -> 4 Automation Workflow elements
     this.autoWorkflowBanner = document.getElementById("autoWorkflowBanner");
     this.badgeAutoWfState = document.getElementById("badgeAutoWfState");
+    this.badgeAutoWfBatchProgress = document.getElementById("badgeAutoWfBatchProgress");
     this.textAutoWfStatus = document.getElementById("textAutoWfStatus");
     this.textAutoWfTimer = document.getElementById("textAutoWfTimer");
     this.btnAutoWfPauseResume = document.getElementById("btnAutoWfPauseResume");
     this.btnAutoWfSkipToRender = document.getElementById("btnAutoWfSkipToRender");
+    this.btnAutoWfSkipStory = document.getElementById("btnAutoWfSkipStory");
     this.btnAutoWfCancel = document.getElementById("btnAutoWfCancel");
+    this.autoWfBatchStrip = document.getElementById("autoWfBatchStrip");
     this.btnToggleAutoWorkflowStage1 = document.getElementById("btnToggleAutoWorkflowStage1");
     this.iconAutoWorkflowStage1 = document.getElementById("iconAutoWorkflowStage1");
     this.textAutoWorkflowStage1 = document.getElementById("textAutoWorkflowStage1");
@@ -517,6 +527,27 @@ class AniStoryApp {
     this.chkAutoDownloadMp4 = document.getElementById("chkAutoDownloadMp4");
     this.btnAutoWorkflowStep1To4 = document.getElementById("btnAutoWorkflowStep1To4");
     this.btnAutoRunStage2To4 = document.getElementById("btnAutoRunStage2To4");
+
+    // Batch Story Queue (Option E) elements
+    this.tabModeBatch = document.getElementById("tabModeBatch");
+    this.panelBatchMode = document.getElementById("panelBatchMode");
+    this.badgeTabBatchCount = document.getElementById("badgeTabBatchCount");
+    this.badgeQuickBatchCount = document.getElementById("badgeQuickBatchCount");
+    this.btnAddCurrentToBatchQueue = document.getElementById("btnAddCurrentToBatchQueue");
+    this.btnQuickOpenBatchQueue = document.getElementById("btnQuickOpenBatchQueue");
+    this.btnBatchLoadSamples = document.getElementById("btnBatchLoadSamples");
+    this.inputBatchImportFile = document.getElementById("inputBatchImportFile");
+    this.btnBatchImportFile = document.getElementById("btnBatchImportFile");
+    this.btnBatchClearCompleted = document.getElementById("btnBatchClearCompleted");
+    this.btnBatchClearAll = document.getElementById("btnBatchClearAll");
+    this.textareaBatchIdeas = document.getElementById("textareaBatchIdeas");
+    this.selectBatchDelimiter = document.getElementById("selectBatchDelimiter");
+    this.btnBatchAddIdeas = document.getElementById("btnBatchAddIdeas");
+    this.badgeBatchQueueSummary = document.getElementById("badgeBatchQueueSummary");
+    this.btnBatchDownloadAllMp4 = document.getElementById("btnBatchDownloadAllMp4");
+    this.batchQueueListContainer = document.getElementById("batchQueueListContainer");
+    this.btnRunBatchQueueStep1To4 = document.getElementById("btnRunBatchQueueStep1To4");
+    this.textBtnRunBatchQueue = document.getElementById("textBtnRunBatchQueue");
 
     if (this.chkAutoRefinePrompts && localStorage.getItem("anistory_wf_refine") !== null) {
       this.chkAutoRefinePrompts.checked = localStorage.getItem("anistory_wf_refine") !== "false";
@@ -710,23 +741,28 @@ class AniStoryApp {
       this.switchStage(targetStage, false);
     });
 
-    // Stage 1 Creation Mode Tabs (Prompt vs Direct Paste vs Load Existing)
+    // Stage 1 Creation Mode Tabs (Prompt vs Direct Paste vs Load Existing vs Ad vs Batch Queue)
     const configGrid = document.querySelector(".config-grid");
     const aiProviderPanel = document.querySelector(".ai-provider-panel");
     const actionFooter = document.querySelector(".action-footer");
+    const hideAllStage1Modes = () => {
+      [this.tabModePrompt, this.tabModePaste, this.tabModeLoad, this.tabModeAd, this.tabModeBatch].forEach(t => t && t.classList.remove("active"));
+      [this.panelPromptMode, this.panelPasteMode, this.panelLoadMode, this.panelAdMode, this.panelBatchMode].forEach(p => {
+        if (p) p.style.display = "none";
+      });
+      if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
+      if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
+      if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "none";
+      if (this.btnRunBatchQueueStep1To4) this.btnRunBatchQueueStep1To4.style.display = "none";
+      if (this.btnAutoWorkflowStep1To4) this.btnAutoWorkflowStep1To4.style.display = "inline-flex";
+    };
+
     if (this.tabModePrompt) {
       this.tabModePrompt.addEventListener("click", () => {
+        hideAllStage1Modes();
         this.tabModePrompt.classList.add("active");
-        if (this.tabModePaste) this.tabModePaste.classList.remove("active");
-        if (this.tabModeLoad) this.tabModeLoad.classList.remove("active");
-        if (this.tabModeAd) this.tabModeAd.classList.remove("active");
         if (this.panelPromptMode) this.panelPromptMode.style.display = "block";
-        if (this.panelPasteMode) this.panelPasteMode.style.display = "none";
-        if (this.panelLoadMode) this.panelLoadMode.style.display = "none";
-        if (this.panelAdMode) this.panelAdMode.style.display = "none";
         if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "inline-flex";
-        if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
-        if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "none";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
         if (configGrid) configGrid.style.display = "";
         if (aiProviderPanel) aiProviderPanel.style.display = "";
@@ -737,17 +773,10 @@ class AniStoryApp {
 
     if (this.tabModePaste) {
       this.tabModePaste.addEventListener("click", () => {
+        hideAllStage1Modes();
         this.tabModePaste.classList.add("active");
-        if (this.tabModePrompt) this.tabModePrompt.classList.remove("active");
-        if (this.tabModeLoad) this.tabModeLoad.classList.remove("active");
-        if (this.tabModeAd) this.tabModeAd.classList.remove("active");
-        if (this.panelPromptMode) this.panelPromptMode.style.display = "none";
         if (this.panelPasteMode) this.panelPasteMode.style.display = "block";
-        if (this.panelLoadMode) this.panelLoadMode.style.display = "none";
-        if (this.panelAdMode) this.panelAdMode.style.display = "none";
-        if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
         if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "inline-flex";
-        if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "none";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
         if (configGrid) configGrid.style.display = "";
         if (aiProviderPanel) aiProviderPanel.style.display = "";
@@ -758,17 +787,9 @@ class AniStoryApp {
 
     if (this.tabModeLoad) {
       this.tabModeLoad.addEventListener("click", () => {
+        hideAllStage1Modes();
         this.tabModeLoad.classList.add("active");
-        if (this.tabModePrompt) this.tabModePrompt.classList.remove("active");
-        if (this.tabModePaste) this.tabModePaste.classList.remove("active");
-        if (this.tabModeAd) this.tabModeAd.classList.remove("active");
-        if (this.panelPromptMode) this.panelPromptMode.style.display = "none";
-        if (this.panelPasteMode) this.panelPasteMode.style.display = "none";
         if (this.panelLoadMode) this.panelLoadMode.style.display = "block";
-        if (this.panelAdMode) this.panelAdMode.style.display = "none";
-        if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
-        if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
-        if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "none";
         if (configGrid) configGrid.style.display = "none";
         if (aiProviderPanel) aiProviderPanel.style.display = "none";
         if (actionFooter) actionFooter.style.display = "none";
@@ -779,16 +800,9 @@ class AniStoryApp {
 
     if (this.tabModeAd) {
       this.tabModeAd.addEventListener("click", () => {
+        hideAllStage1Modes();
         this.tabModeAd.classList.add("active");
-        if (this.tabModePrompt) this.tabModePrompt.classList.remove("active");
-        if (this.tabModePaste) this.tabModePaste.classList.remove("active");
-        if (this.tabModeLoad) this.tabModeLoad.classList.remove("active");
-        if (this.panelPromptMode) this.panelPromptMode.style.display = "none";
-        if (this.panelPasteMode) this.panelPasteMode.style.display = "none";
-        if (this.panelLoadMode) this.panelLoadMode.style.display = "none";
         if (this.panelAdMode) this.panelAdMode.style.display = "block";
-        if (this.btnGenerateStoryboard) this.btnGenerateStoryboard.style.display = "none";
-        if (this.btnDirectLoadStoryboard) this.btnDirectLoadStoryboard.style.display = "none";
         if (this.btnGenerateAdVideo) this.btnGenerateAdVideo.style.display = "inline-flex";
         if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
         if (configGrid) configGrid.style.display = "";
@@ -801,6 +815,22 @@ class AniStoryApp {
           }
         });
         localStorage.setItem("anistory_cfg_creation_mode", "advertisement");
+      });
+    }
+
+    if (this.tabModeBatch) {
+      this.tabModeBatch.addEventListener("click", () => {
+        hideAllStage1Modes();
+        this.tabModeBatch.classList.add("active");
+        if (this.panelBatchMode) this.panelBatchMode.style.display = "block";
+        if (this.btnRunBatchQueueStep1To4) this.btnRunBatchQueueStep1To4.style.display = "inline-flex";
+        if (this.btnAutoWorkflowStep1To4) this.btnAutoWorkflowStep1To4.style.display = "none";
+        if (this.groupSceneCount) this.groupSceneCount.style.display = "block";
+        if (configGrid) configGrid.style.display = "";
+        if (aiProviderPanel) aiProviderPanel.style.display = "";
+        if (actionFooter) actionFooter.style.display = "";
+        localStorage.setItem("anistory_cfg_creation_mode", "batch");
+        this.renderBatchQueueList();
       });
     }
 
@@ -1033,8 +1063,86 @@ class AniStoryApp {
         this.showToast("⏭ Skipping directly to Step 3 Full Film Render!");
       });
     }
+    if (this.btnAutoWfSkipStory) {
+      this.btnAutoWfSkipStory.addEventListener("click", () => {
+        this.autoWorkflowState.skipCurrentStory = true;
+        this.autoWorkflowState.skipCountdown = true;
+        this.autoWorkflowState.paused = false;
+        if (this.pollInterval) {
+          clearInterval(this.pollInterval);
+          this.pollInterval = null;
+        }
+        if (this._renderCompleteResolver) {
+          const resFn = this._renderCompleteResolver;
+          this._renderCompleteResolver = null;
+          resFn({ ok: false, skipped: true });
+        }
+        this.showToast("⏭ Skipping current story and moving to next story in Batch Queue!");
+      });
+    }
     if (this.btnAutoWfCancel) {
       this.btnAutoWfCancel.addEventListener("click", () => this.stopAutoWorkflow(true));
+    }
+
+    // Batch Story Queue (Option E) event listeners
+    if (this.btnQuickOpenBatchQueue) {
+      this.btnQuickOpenBatchQueue.addEventListener("click", () => {
+        if (this.tabModeBatch) this.tabModeBatch.click();
+      });
+    }
+    if (this.btnAddCurrentToBatchQueue) {
+      this.btnAddCurrentToBatchQueue.addEventListener("click", () => {
+        const idea = this.inputIdeaPrompt?.value?.trim();
+        const title = this.inputProjectTitle?.value?.trim() || "";
+        if (!idea) {
+          this.showToast("Enter a story idea in Option A first, or click '📚 Batch List' to paste multiple ideas!", true);
+          this.inputIdeaPrompt?.focus();
+          return;
+        }
+        this.addItemsToBatchQueue([{ title, idea }]);
+        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
+        if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
+        localStorage.removeItem("anistory_draft_prompt");
+        this.showToast(`➕ Added to Batch Queue (${this.batchQueue.length} total)!`);
+      });
+    }
+    if (this.btnBatchAddIdeas) {
+      this.btnBatchAddIdeas.addEventListener("click", () => this.handleAddBatchIdeasFromTextarea());
+    }
+    if (this.btnBatchLoadSamples) {
+      this.btnBatchLoadSamples.addEventListener("click", () => this.loadSampleBatchStories());
+    }
+    if (this.btnBatchImportFile && this.inputBatchImportFile) {
+      this.btnBatchImportFile.addEventListener("click", () => this.inputBatchImportFile.click());
+      this.inputBatchImportFile.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.importBatchIdeasFile(e.target.files[0]);
+          e.target.value = "";
+        }
+      });
+    }
+    if (this.btnBatchClearCompleted) {
+      this.btnBatchClearCompleted.addEventListener("click", () => {
+        this.batchQueue = this.batchQueue.filter(item => item.status !== "completed");
+        this.saveBatchQueueToStorage();
+        this.renderBatchQueueList();
+        this.showToast("🧹 Cleared completed stories from Batch Queue.");
+      });
+    }
+    if (this.btnBatchClearAll) {
+      this.btnBatchClearAll.addEventListener("click", () => {
+        if (!this.batchQueue.length) return;
+        this.batchQueue = [];
+        this.saveBatchQueueToStorage();
+        this.renderBatchQueueList();
+        this.showToast("🗑️ Cleared Batch Story Queue.");
+      });
+    }
+    if (this.btnBatchDownloadAllMp4) {
+      this.btnBatchDownloadAllMp4.addEventListener("click", () => this.downloadAllCompletedBatchMp4s());
+    }
+    if (this.btnRunBatchQueueStep1To4) {
+      this.btnRunBatchQueueStep1To4.addEventListener("click", () => this.runBatchStoryQueueStep1To4());
     }
 
     // Storyboard Actions
@@ -5259,8 +5367,8 @@ ${isAutoScenes
     }
   }
 
-  async startRenderingProcess() {
-    if (!this.currentProject) return;
+  async startRenderingProcess(waitForCompletion = false) {
+    if (!this.currentProject) return { ok: false };
     await this.saveStoryboardEdits(false);
 
     this.switchStage(3);
@@ -5296,11 +5404,24 @@ ${isAutoScenes
       }
       this.refreshActiveTasks();
 
-      // Start polling
-      this.pollRenderProgress();
+      if (waitForCompletion) {
+        return await new Promise((resolve) => {
+          this._renderCompleteResolver = resolve;
+          this.pollRenderProgress();
+        });
+      } else {
+        this.pollRenderProgress();
+        return { ok: true };
+      }
     } catch (e) {
       console.error(e);
       this.showToast(e.message, true);
+      if (this._renderCompleteResolver) {
+        const fn = this._renderCompleteResolver;
+        this._renderCompleteResolver = null;
+        fn({ ok: false, error: e.message });
+      }
+      return { ok: false, error: e.message };
     }
   }
 
@@ -5330,14 +5451,24 @@ ${isAutoScenes
         if (proj.status === "completed") {
           clearInterval(this.pollInterval);
           this.pollInterval = null;
-          this.showCinemaPremiere();
+          this.showCinemaPremiere(!this.autoWorkflowState?.batchMode);
+          if (this._renderCompleteResolver) {
+            const fn = this._renderCompleteResolver;
+            this._renderCompleteResolver = null;
+            fn({ ok: true, project: proj });
+          }
         } else if (proj.status === "error") {
           clearInterval(this.pollInterval);
           this.pollInterval = null;
-          if (this.autoWorkflowState?.active) {
+          if (this.autoWorkflowState?.active && !this.autoWorkflowState?.batchMode) {
             this.updateAutoWorkflowBanner(3, `⚠️ Render Error: ${proj.current_step}`, "error");
           }
           this.showToast("Rendering error occurred: " + proj.current_step, true);
+          if (this._renderCompleteResolver) {
+            const fn = this._renderCompleteResolver;
+            this._renderCompleteResolver = null;
+            fn({ ok: false, error: proj.current_step });
+          }
         }
       } catch (e) {
         console.error("Poll error:", e);
@@ -5476,7 +5607,7 @@ ${isAutoScenes
     }
 
     this.switchStage(4);
-    if (this.autoWorkflowState?.active) {
+    if (this.autoWorkflowState?.active && !this.autoWorkflowState?.batchMode) {
       const elapsedSec = Math.max(1, Math.round((Date.now() - (this.autoWorkflowState.startTime || Date.now())) / 1000));
       const m = Math.floor(elapsedSec / 60);
       const s = elapsedSec % 60;
@@ -5493,20 +5624,32 @@ ${isAutoScenes
         this.cinemaVideoPlayer.play().catch(() => {});
       }
       if (this.chkAutoDownloadMp4?.checked && this.currentProject?.id) {
-        setTimeout(() => {
-          const dlLink = document.createElement("a");
-          dlLink.href = `/api/download/${encodeURIComponent(this.currentProject.id)}`;
-          dlLink.download = `${(this.currentProject.title || "Animated_Film").replace(/[^a-zA-Z0-9_-]/g, "_")}.mp4`;
-          document.body.appendChild(dlLink);
-          dlLink.click();
-          document.body.removeChild(dlLink);
-          this.showToast("⬇️ Auto-downloading finished Master MP4!");
-        }, 800);
+        this.triggerProjectMp4Download(this.currentProject.id, this.currentProject.title);
+      }
+    } else if (this.autoWorkflowState?.active && this.autoWorkflowState?.batchMode) {
+      if (this.cinemaVideoPlayer && this.currentProject?.video_path) {
+        this.cinemaVideoPlayer.play().catch(() => {});
+      }
+      if (this.chkAutoDownloadMp4?.checked && this.currentProject?.id) {
+        this.triggerProjectMp4Download(this.currentProject.id, this.currentProject.title);
       }
     }
     if (notify) {
       this.showToast("🎉 Your animated movie is ready to watch!");
     }
+  }
+
+  triggerProjectMp4Download(projectId, filmTitle) {
+    if (!projectId) return;
+    setTimeout(() => {
+      const dlLink = document.createElement("a");
+      dlLink.href = `/api/download/${encodeURIComponent(projectId)}`;
+      dlLink.download = `${(filmTitle || "Animated_Film").replace(/[^a-zA-Z0-9À-ỹ_-]/g, "_")}.mp4`;
+      document.body.appendChild(dlLink);
+      dlLink.click();
+      document.body.removeChild(dlLink);
+      this.showToast(`⬇️ Auto-downloading "${filmTitle || 'Animated Film'}.mp4"!`);
+    }, 600);
   }
 
   // ============================================================
@@ -5580,6 +5723,22 @@ ${isAutoScenes
     if (this.btnAutoWfSkipToRender) {
       this.btnAutoWfSkipToRender.style.display = (step === 2 && stateType !== "completed" && stateType !== "error") ? "inline-flex" : "none";
     }
+    if (this.btnAutoWfSkipStory) {
+      this.btnAutoWfSkipStory.style.display = (
+        this.autoWorkflowState.batchMode &&
+        this.autoWorkflowState.batchTotal > 1 &&
+        stateType !== "completed" &&
+        stateType !== "error"
+      ) ? "inline-flex" : "none";
+    }
+    if (this.badgeAutoWfBatchProgress) {
+      if (this.autoWorkflowState.batchMode && this.autoWorkflowState.batchTotal > 0) {
+        this.badgeAutoWfBatchProgress.style.display = "inline-flex";
+        this.badgeAutoWfBatchProgress.textContent = `📚 Story ${this.autoWorkflowState.batchIndex}/${this.autoWorkflowState.batchTotal}`;
+      } else {
+        this.badgeAutoWfBatchProgress.style.display = "none";
+      }
+    }
     if (this.btnAutoWfCancel) {
       this.btnAutoWfCancel.innerHTML = (stateType === "completed" || stateType === "error") ? `<span>✕ Dismiss</span>` : `<span>⏹ Stop</span>`;
     }
@@ -5594,6 +5753,12 @@ ${isAutoScenes
       if (connEl) {
         connEl.classList.toggle("done", i <= step || stateType === "completed");
       }
+    }
+
+    if (this.autoWorkflowState.batchMode) {
+      this.renderAutoWfBatchStrip();
+    } else if (this.autoWfBatchStrip) {
+      this.autoWfBatchStrip.style.display = "none";
     }
   }
 
@@ -5622,9 +5787,16 @@ ${isAutoScenes
     this.autoWorkflowState.active = false;
     this.autoWorkflowState.paused = false;
     this.autoWorkflowState.skipCountdown = false;
+    this.autoWorkflowState.batchMode = false;
+    this.autoWorkflowState.skipCurrentStory = false;
     if (this.autoWorkflowState.timerId) {
       clearInterval(this.autoWorkflowState.timerId);
       this.autoWorkflowState.timerId = null;
+    }
+    if (this._renderCompleteResolver) {
+      const fn = this._renderCompleteResolver;
+      this._renderCompleteResolver = null;
+      fn({ ok: false, stopped: true });
     }
     if (this.autoWorkflowBanner) {
       this.autoWorkflowBanner.style.display = "none";
@@ -5642,6 +5814,10 @@ ${isAutoScenes
 
   async runAutoWorkflowStep1To4() {
     const activeMode = localStorage.getItem("anistory_cfg_creation_mode") || "prompt";
+    if (activeMode === "batch") {
+      await this.runBatchStoryQueueStep1To4();
+      return;
+    }
     if (activeMode === "paste") {
       const pasted = this.inputDirectPasteText?.value?.trim();
       if (!pasted) {
@@ -5669,6 +5845,7 @@ ${isAutoScenes
     this.autoWorkflowState.active = true;
     this.autoWorkflowState.paused = false;
     this.autoWorkflowState.skipCountdown = false;
+    this.autoWorkflowState.batchMode = false;
     this.startAutoWorkflowTimer();
     this.updateAutoWorkflowBanner(1, "Step 1/4: Generating AI Screenplay, Scene Structure & Character Voice Casting...", "running");
 
@@ -5691,7 +5868,7 @@ ${isAutoScenes
         return;
       }
 
-      await this.runAutoWorkflowFromStep2To4(true);
+      await this.runAutoWorkflowFromStep2To4(true, false);
     } finally {
       if (this.btnAutoWorkflowStep1To4) {
         this.btnAutoWorkflowStep1To4.disabled = false;
@@ -5699,10 +5876,10 @@ ${isAutoScenes
     }
   }
 
-  async runAutoWorkflowFromStep2To4(alreadyStarted = false) {
+  async runAutoWorkflowFromStep2To4(alreadyStarted = false, waitForStep4 = false, batchItem = null) {
     if (!this.currentProject || !this.currentProject.scenes || !this.currentProject.scenes.length) {
       this.showToast("No active storyboard scenes to automate!", true);
-      return;
+      return { ok: false };
     }
 
     if (!alreadyStarted) {
@@ -5714,54 +5891,60 @@ ${isAutoScenes
 
     this.switchStage(2);
     const totalScenes = this.currentProject.scenes.length;
+    const prefix = batchItem ? `[${batchItem.title || 'Story'}] ` : "";
+    if (batchItem) {
+      batchItem.stepText = "⚡ Step 2/4: Storyboard & Art";
+      this.saveBatchQueueToStorage();
+      this.renderBatchQueueList();
+    }
     this.updateAutoWorkflowBanner(
       2,
-      `Step 2/4: Preparing ${totalScenes}-scene Storyboard & Character Voice Casting...`,
+      `${prefix}Step 2/4: Preparing ${totalScenes}-scene Storyboard & Character Voice Casting...`,
       "running"
     );
 
     await this.waitIfAutoWorkflowPaused();
-    if (!this.autoWorkflowState.active) return;
+    if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCurrentStory) return { ok: false };
 
     // Step 2a: Auto-Refine Video Prompts if enabled
     const doRefine = this.chkAutoRefinePrompts ? this.chkAutoRefinePrompts.checked : true;
-    if (doRefine && !this.autoWorkflowState.skipCountdown) {
-      this.updateAutoWorkflowBanner(2, `Step 2/4: Upgrading ${totalScenes} scenes to director-grade cinematic video prompts...`, "running");
+    if (doRefine && !this.autoWorkflowState.skipCountdown && !this.autoWorkflowState.skipCurrentStory) {
+      this.updateAutoWorkflowBanner(2, `${prefix}Step 2/4: Upgrading ${totalScenes} scenes to director-grade cinematic video prompts...`, "running");
       try {
         await this.refineAllVideoPrompts(this.btnRefineAllPrompts);
       } catch (e) {
         console.warn("Auto-workflow refine notice:", e);
       }
       await this.waitIfAutoWorkflowPaused();
-      if (!this.autoWorkflowState.active) return;
+      if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCurrentStory) return { ok: false };
     }
 
     // Step 2b: Live Paint scenes 1-by-1 on Stage 2 if enabled
     const doLivePaint = this.chkAutoPaintStep2 ? this.chkAutoPaintStep2.checked : true;
-    if (doLivePaint && !this.autoWorkflowState.skipCountdown) {
+    if (doLivePaint && !this.autoWorkflowState.skipCountdown && !this.autoWorkflowState.skipCurrentStory) {
       const unpaintedCount = (this.currentProject.scenes || []).filter(s => !s.image_path).length;
       if (unpaintedCount > 0) {
         this.updateAutoWorkflowBanner(
           2,
-          `Step 2/4: Painting ${unpaintedCount} scene keyframe(s) live on Storyboard...`,
+          `${prefix}Step 2/4: Painting ${unpaintedCount} scene keyframe(s) live on Storyboard...`,
           "running"
         );
         await this.paintAllSceneImages(false);
         await this.waitIfAutoWorkflowPaused();
-        if (!this.autoWorkflowState.active) return;
+        if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCurrentStory) return { ok: false };
       }
     }
 
     // Step 2c: Optional 5-second Review Window on Stage 2 before triggering Step 3 Render
     const doReviewPause = this.chkAutoReviewPause ? this.chkAutoReviewPause.checked : true;
-    if (doReviewPause && !this.autoWorkflowState.skipCountdown) {
+    if (doReviewPause && !this.autoWorkflowState.skipCountdown && !this.autoWorkflowState.skipCurrentStory) {
       for (let rem = 5; rem >= 1; rem--) {
-        if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown) break;
+        if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown || this.autoWorkflowState.skipCurrentStory) break;
         await this.waitIfAutoWorkflowPaused();
-        if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown) break;
+        if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown || this.autoWorkflowState.skipCurrentStory) break;
         this.updateAutoWorkflowBanner(
           2,
-          `Step 2/4 Ready! Advancing to Step 3 (Studio Render) in ${rem}s... (Click ⏸ Pause to edit or ⏭ Render Now)`,
+          `${prefix}Step 2/4 Ready! Advancing to Step 3 (Studio Render) in ${rem}s... (Click ⏸ Pause to edit or ⏭ Render Now)`,
           "running"
         );
         await new Promise(r => setTimeout(r, 1000));
@@ -5769,15 +5952,505 @@ ${isAutoScenes
     }
 
     await this.waitIfAutoWorkflowPaused();
-    if (!this.autoWorkflowState.active) return;
+    if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCurrentStory) return { ok: false };
 
     // Step 3: Trigger Full Studio Render
+    if (batchItem) {
+      batchItem.stepText = "⚡ Step 3/4: Studio Render";
+      this.saveBatchQueueToStorage();
+      this.renderBatchQueueList();
+    }
     this.updateAutoWorkflowBanner(
       3,
-      "Step 3/4: Studio Render in progress (Multi-Voice audio, burnt-in captions, camera motion & soundtrack)...",
+      `${prefix}Step 3/4: Studio Render in progress (Multi-Voice audio, burnt-in captions, camera motion & soundtrack)...`,
       "running"
     );
-    await this.startRenderingProcess();
+    return await this.startRenderingProcess(waitForStep4);
+  }
+
+  // ============================================================
+  // Batch Story Queue Engine (Multi-Story Step 1 -> 4 One-by-One)
+  // ============================================================
+  loadBatchQueueFromStorage() {
+    try {
+      const raw = localStorage.getItem("anistory_batch_story_queue");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map(item => ({
+          ...item,
+          status: item.status === "running" ? "queued" : (item.status || "queued"),
+          stepText: item.status === "running" ? "⏳ Queued" : (item.stepText || "⏳ Queued")
+        }));
+      }
+    } catch (e) {
+      console.warn("Could not load batch queue:", e);
+    }
+    return [];
+  }
+
+  saveBatchQueueToStorage() {
+    try {
+      localStorage.setItem("anistory_batch_story_queue", JSON.stringify(this.batchQueue || []));
+    } catch (e) {}
+    this.updateBatchQueueCounters();
+  }
+
+  updateBatchQueueCounters() {
+    const total = (this.batchQueue || []).length;
+    const completed = (this.batchQueue || []).filter(i => i.status === "completed").length;
+    const pending = (this.batchQueue || []).filter(i => i.status === "queued" || i.status === "running").length;
+
+    if (this.badgeTabBatchCount) this.badgeTabBatchCount.textContent = String(total);
+    if (this.badgeQuickBatchCount) this.badgeQuickBatchCount.textContent = String(total);
+    if (this.badgeBatchQueueSummary) {
+      this.badgeBatchQueueSummary.textContent = `📋 Queue: ${total} stor${total === 1 ? 'y' : 'ies'} (${pending} pending • ${completed} completed)`;
+    }
+    if (this.textBtnRunBatchQueue) {
+      const toRun = pending > 0 ? pending : total;
+      this.textBtnRunBatchQueue.textContent = toRun > 0
+        ? `📚 Run Batch Queue 1-by-1 (${toRun} Stor${toRun === 1 ? 'y' : 'ies'} • Step 1→4)`
+        : `📚 Run Batch Queue 1-by-1 (Step 1→4)`;
+    }
+    if (this.btnBatchDownloadAllMp4) {
+      this.btnBatchDownloadAllMp4.style.display = completed > 0 ? "inline-flex" : "none";
+    }
+  }
+
+  parseBatchInputText(rawText, delimiterMode = "auto") {
+    const cleaned = (rawText || "").trim();
+    if (!cleaned) return [];
+
+    let blocks = [];
+    if (delimiterMode === "divider" || (delimiterMode === "auto" && /\n\s*(?:---|===|\*\*\*)\s*\n/.test(cleaned))) {
+      blocks = cleaned.split(/\n\s*(?:---|===|\*\*\*)\s*\n/);
+    } else if (delimiterMode === "line") {
+      blocks = cleaned.split(/\r?\n/);
+    } else if (delimiterMode === "blank") {
+      blocks = cleaned.split(/\n\s*\n+/);
+    } else {
+      // Auto-detect numbered list items (e.g. "1. ...", "2. ...", "Story 1: ...")
+      const numberedLines = cleaned.split(/\r?\n(?=\s*(?:\d+[\.\)\-]|(?:Story|Idea|Truyện|Kịch bản)\s*\d+\s*[:\-]|[\•\*]\s+))/i);
+      if (numberedLines.length >= 2) {
+        blocks = numberedLines;
+      } else if (/\n\s*\n/.test(cleaned)) {
+        blocks = cleaned.split(/\n\s*\n+/);
+      } else {
+        blocks = cleaned.split(/\r?\n/);
+      }
+    }
+
+    const items = [];
+    blocks.forEach((b) => {
+      let line = (b || "").trim();
+      if (!line) return;
+      // Strip leading list bullet or numbering ("1. ", "Story 1: ", "- ")
+      line = line.replace(/^(?:\d+[\.\)\-]\s*|(?:Story|Idea|Truyện|Kịch bản)\s*\d+\s*[:\-]\s*|[\-\•\*]\s+)/i, "").trim();
+      if (!line) return;
+
+      let title = "";
+      let idea = line;
+      if (line.includes("::")) {
+        const parts = line.split("::");
+        title = parts[0].trim();
+        idea = parts.slice(1).join("::").trim();
+      }
+      if (idea) {
+        items.push({ title, idea });
+      }
+    });
+    return items;
+  }
+
+  handleAddBatchIdeasFromTextarea() {
+    const raw = this.textareaBatchIdeas?.value?.trim() || "";
+    if (!raw) {
+      this.showToast("Please paste or write 1 or more story ideas in the box first! 📝", true);
+      this.textareaBatchIdeas?.focus();
+      return 0;
+    }
+    const mode = this.selectBatchDelimiter?.value || "auto";
+    const parsedItems = this.parseBatchInputText(raw, mode);
+    if (!parsedItems.length) {
+      this.showToast("Could not find any valid story ideas to add.", true);
+      return 0;
+    }
+    this.addItemsToBatchQueue(parsedItems);
+    if (this.textareaBatchIdeas) this.textareaBatchIdeas.value = "";
+    this.showToast(`📚 Added ${parsedItems.length} stor${parsedItems.length === 1 ? 'y' : 'ies'} to Batch Queue (${this.batchQueue.length} total)!`);
+    return parsedItems.length;
+  }
+
+  addItemsToBatchQueue(items) {
+    if (!Array.isArray(items) || !items.length) return;
+    items.forEach((it) => {
+      if (!it || !it.idea) return;
+      this.batchQueue.push({
+        id: "bq_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        title: (it.title || "").trim(),
+        idea: (it.idea || "").trim(),
+        status: "queued",
+        stepText: "⏳ Queued (Step 1→4)",
+        projectId: null,
+        videoPath: null
+      });
+    });
+    this.saveBatchQueueToStorage();
+    this.renderBatchQueueList();
+    if (this.autoWorkflowState?.batchMode) {
+      this.autoWorkflowState.batchTotal = this.batchQueue.length;
+      this.renderAutoWfBatchStrip();
+    }
+  }
+
+  loadSampleBatchStories() {
+    const isVi = (this.selectLanguage?.value || "vi").startsWith("vi");
+    const samples = isVi ? [
+      {
+        title: "Chiến Thuật Bình Xăng",
+        idea: "Tại một quán cà phê sáng, Ông Tư và Bà Tư bàn chuyện tiết kiệm tiền. Ông Tư nói: \"Bà nó ơi, tôi tính kỹ rồi, bước đầu tiên là ra cây xăng đổ đầy bình!\" Bà Tư bật cười hỏi: \"Đổ đầy bình xong thì còn tiền đâu nữa hả ông?\""
+      },
+      {
+        title: "Chú Mèo Du Hành Sao Thổ",
+        idea: "Một chú mèo cam nhỏ tò mò lẻn lên con tàu vũ trụ thám hiểm vành đai Sao Thổ lấp lánh ánh kim cương và kết bạn với một chú robot bay dễ thương."
+      },
+      {
+        title: "Thỏ Và Rùa Mùa Thu",
+        idea: "Trong khu rừng mùa thu lá vàng rực rỡ, chú Thỏ nhanh nhẹn và chú Rùa tốt bụng cùng nhau thu hoạch những trái táo đỏ mọng để chia cho muôn loài."
+      }
+    ] : [
+      {
+        title: "Cosmic Kitten of Saturn",
+        idea: "A curious little ginger kitten sneaks aboard an exploration starship and floats weightlessly past the glittering ice rings of Saturn alongside a friendly helper drone."
+      },
+      {
+        title: "The Clockmaker's Hummingbird",
+        idea: "A gentle elderly clockmaker in a sunlit steampunk tower builds a tiny brass mechanical hummingbird that brings forgotten happy memories back to the village."
+      },
+      {
+        title: "Whisper of the Lantern Woods",
+        idea: "A young traveler carrying a glowing paper lantern meets a wise ancient fox spirit who guides her across a mystical moonlit river."
+      }
+    ];
+    this.addItemsToBatchQueue(samples);
+    this.showToast(`⚡ Loaded ${samples.length} sample stories into Batch Queue!`);
+  }
+
+  async importBatchIdeasFile(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (file.name.toLowerCase().endsWith(".json")) {
+        const data = JSON.parse(text);
+        const arr = Array.isArray(data) ? data : (data.stories || data.ideas || []);
+        const normalized = arr.map(item => {
+          if (typeof item === "string") return { title: "", idea: item };
+          return {
+            title: item.title || item.name || "",
+            idea: item.idea || item.prompt || item.story || item.text || ""
+          };
+        }).filter(x => x.idea);
+        if (normalized.length) {
+          this.addItemsToBatchQueue(normalized);
+          this.showToast(`📂 Imported ${normalized.length} stories from JSON!`);
+          return;
+        }
+      }
+      const mode = this.selectBatchDelimiter?.value || "auto";
+      const parsed = this.parseBatchInputText(text, mode);
+      if (parsed.length) {
+        this.addItemsToBatchQueue(parsed);
+        this.showToast(`📂 Imported ${parsed.length} stories from ${file.name}!`);
+      } else {
+        this.showToast("No valid stories found in file.", true);
+      }
+    } catch (e) {
+      this.showToast("Failed to import batch file: " + e.message, true);
+    }
+  }
+
+  renderBatchQueueList() {
+    this.updateBatchQueueCounters();
+    if (!this.batchQueueListContainer) return;
+    this.batchQueueListContainer.innerHTML = "";
+
+    if (!this.batchQueue || !this.batchQueue.length) {
+      this.batchQueueListContainer.innerHTML = `
+        <div class="batch-empty-state">
+          <span>📚</span>
+          <p>Your Batch Story Queue is empty. Paste multiple ideas above or click <strong>⚡ +3 Samples</strong>, then click <strong>📚 Run Batch Queue 1-by-1 (Step 1→4)</strong>!</p>
+        </div>
+      `;
+      return;
+    }
+
+    this.batchQueue.forEach((item, idx) => {
+      const row = document.createElement("div");
+      row.className = `batch-queue-item status-${item.status || 'queued'}`;
+      const displayTitle = item.title || `Story #${idx + 1}`;
+      const shortIdea = (item.idea || "").length > 160 ? item.idea.slice(0, 160) + "..." : (item.idea || "");
+
+      let statusBadgeClass = "queued";
+      if (item.status === "running") statusBadgeClass = "running";
+      else if (item.status === "completed") statusBadgeClass = "completed";
+      else if (item.status === "error") statusBadgeClass = "error";
+
+      row.innerHTML = `
+        <div class="batch-item-left">
+          <span class="batch-item-index">#${idx + 1}</span>
+          <div class="batch-item-info">
+            <div class="batch-item-title-line">
+              <strong class="batch-item-title">${this.escapeHtml(displayTitle)}</strong>
+              <span class="batch-status-pill ${statusBadgeClass}">${this.escapeHtml(item.stepText || '⏳ Queued')}</span>
+            </div>
+            <p class="batch-item-idea" title="${this.escapeHtml(item.idea)}">${this.escapeHtml(shortIdea)}</p>
+          </div>
+        </div>
+        <div class="batch-item-actions">
+          ${item.projectId && item.status === "completed" ? `
+            <button type="button" class="scene-action-pill btn-batch-watch" data-idx="${idx}" title="Watch finished film in Stage 4 Cinema">🎬 Watch</button>
+            <button type="button" class="scene-action-pill btn-batch-board" data-idx="${idx}" title="Open in Stage 2 Director's Storyboard">📋 Board</button>
+            <a class="scene-action-pill" href="/api/download/${encodeURIComponent(item.projectId)}" download title="Download Master MP4">⬇️ MP4</a>
+          ` : `
+            <button type="button" class="scene-action-pill btn-batch-run-single" data-idx="${idx}" title="Run Step 1 → 4 for this story now">▶️ Run</button>
+          `}
+          <button type="button" class="scene-icon-btn btn-batch-up" data-idx="${idx}" ${idx === 0 ? 'disabled' : ''} title="Move Up">⬆️</button>
+          <button type="button" class="scene-icon-btn btn-batch-down" data-idx="${idx}" ${idx === this.batchQueue.length - 1 ? 'disabled' : ''} title="Move Down">⬇️</button>
+          <button type="button" class="scene-icon-btn danger btn-batch-del" data-idx="${idx}" title="Remove from queue">🗑️</button>
+        </div>
+      `;
+
+      const btnWatch = row.querySelector(".btn-batch-watch");
+      if (btnWatch) {
+        btnWatch.addEventListener("click", () => this.loadProject(item.projectId, 4));
+      }
+      const btnBoard = row.querySelector(".btn-batch-board");
+      if (btnBoard) {
+        btnBoard.addEventListener("click", () => this.loadProject(item.projectId, 2));
+      }
+      const btnRunSingle = row.querySelector(".btn-batch-run-single");
+      if (btnRunSingle) {
+        btnRunSingle.addEventListener("click", () => this.runBatchStoryQueueStep1To4(item.id));
+      }
+      const btnUp = row.querySelector(".btn-batch-up");
+      if (btnUp) {
+        btnUp.addEventListener("click", () => {
+          if (idx <= 0) return;
+          const tmp = this.batchQueue[idx - 1];
+          this.batchQueue[idx - 1] = this.batchQueue[idx];
+          this.batchQueue[idx] = tmp;
+          this.saveBatchQueueToStorage();
+          this.renderBatchQueueList();
+        });
+      }
+      const btnDown = row.querySelector(".btn-batch-down");
+      if (btnDown) {
+        btnDown.addEventListener("click", () => {
+          if (idx >= this.batchQueue.length - 1) return;
+          const tmp = this.batchQueue[idx + 1];
+          this.batchQueue[idx + 1] = this.batchQueue[idx];
+          this.batchQueue[idx] = tmp;
+          this.saveBatchQueueToStorage();
+          this.renderBatchQueueList();
+        });
+      }
+      const btnDel = row.querySelector(".btn-batch-del");
+      if (btnDel) {
+        btnDel.addEventListener("click", () => {
+          this.batchQueue.splice(idx, 1);
+          this.saveBatchQueueToStorage();
+          this.renderBatchQueueList();
+        });
+      }
+
+      this.batchQueueListContainer.appendChild(row);
+    });
+  }
+
+  renderAutoWfBatchStrip() {
+    if (!this.autoWfBatchStrip) return;
+    if (!this.batchQueue || !this.batchQueue.length) {
+      this.autoWfBatchStrip.style.display = "none";
+      return;
+    }
+    this.autoWfBatchStrip.style.display = "flex";
+    this.autoWfBatchStrip.innerHTML = this.batchQueue.map((item, idx) => {
+      const icon = item.status === "completed" ? "✅" : item.status === "running" ? "⚡" : item.status === "error" ? "⚠️" : "⏳";
+      const label = item.title || (`Story #${idx + 1}`);
+      return `
+        <div class="auto-wf-batch-chip ${item.status || 'queued'}" data-idx="${idx}" title="${this.escapeHtml(item.idea)}">
+          <span>${icon} #${idx + 1}: ${this.escapeHtml(label.slice(0, 24))}</span>
+          ${item.projectId && item.status === "completed" ? `<a href="/api/download/${encodeURIComponent(item.projectId)}" download class="batch-chip-dl" title="Download MP4">⬇️</a>` : ""}
+        </div>
+      `;
+    }).join("");
+  }
+
+  downloadAllCompletedBatchMp4s() {
+    const completed = (this.batchQueue || []).filter(i => i.status === "completed" && i.projectId);
+    if (!completed.length) {
+      this.showToast("No completed batch films to download yet!", true);
+      return;
+    }
+    completed.forEach((item, idx) => {
+      setTimeout(() => {
+        this.triggerProjectMp4Download(item.projectId, item.title || `Story_${idx + 1}`);
+      }, idx * 900);
+    });
+  }
+
+  async runBatchStoryQueueStep1To4(singleItemId = null) {
+    // If user typed/pasted stories into textareaBatchIdeas and clicked Run directly, add them automatically!
+    if (this.textareaBatchIdeas && this.textareaBatchIdeas.value.trim()) {
+      this.handleAddBatchIdeasFromTextarea();
+    }
+
+    if (!this.batchQueue || !this.batchQueue.length) {
+      this.showToast("Please add at least 1 story idea to the Batch Queue first! 📚", true);
+      if (this.textareaBatchIdeas) this.textareaBatchIdeas.focus();
+      return;
+    }
+
+    let itemsToRun = [];
+    if (singleItemId) {
+      itemsToRun = this.batchQueue.filter(i => i.id === singleItemId);
+    } else {
+      itemsToRun = this.batchQueue.filter(i => i.status !== "completed");
+      if (itemsToRun.length === 0) {
+        // All were completed previously — reset all to queued so user can re-run the batch
+        this.batchQueue.forEach(i => {
+          i.status = "queued";
+          i.stepText = "⏳ Queued (Step 1→4)";
+        });
+        itemsToRun = [...this.batchQueue];
+      }
+    }
+
+    if (!itemsToRun.length) return;
+
+    this.autoWorkflowState.active = true;
+    this.autoWorkflowState.paused = false;
+    this.autoWorkflowState.skipCountdown = false;
+    this.autoWorkflowState.batchMode = true;
+    this.autoWorkflowState.batchIndex = 1;
+    this.autoWorkflowState.batchTotal = itemsToRun.length;
+    this.autoWorkflowState.skipCurrentStory = false;
+    this.startAutoWorkflowTimer();
+
+    if (this.btnRunBatchQueueStep1To4) this.btnRunBatchQueueStep1To4.disabled = true;
+    if (this.btnAutoWorkflowStep1To4) this.btnAutoWorkflowStep1To4.disabled = true;
+
+    let completedInRun = 0;
+
+    try {
+      for (let bIdx = 0; bIdx < itemsToRun.length; bIdx++) {
+        if (!this.autoWorkflowState.active) break;
+
+        const item = itemsToRun[bIdx];
+        this.autoWorkflowState.batchIndex = bIdx + 1;
+        this.autoWorkflowState.skipCountdown = false;
+        this.autoWorkflowState.skipCurrentStory = false;
+
+        item.status = "running";
+        item.stepText = "⚡ Step 1/4: Generating Storyboard...";
+        this.saveBatchQueueToStorage();
+        this.renderBatchQueueList();
+
+        const storyLabel = item.title || `Story #${bIdx + 1}`;
+        this.updateAutoWorkflowBanner(
+          1,
+          `[Story ${bIdx + 1}/${itemsToRun.length}: "${storyLabel}"] Step 1/4: Generating AI Screenplay & Character Voices...`,
+          "running"
+        );
+
+        await this.waitIfAutoWorkflowPaused();
+        if (!this.autoWorkflowState.active) break;
+
+        // Populate Stage 1 inputs with this story item and run Step 1
+        if (this.inputProjectTitle) this.inputProjectTitle.value = item.title || "";
+        if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = item.idea;
+
+        const step1Ok = await this.handleGenerateStoryboard(true);
+        if (!step1Ok || !this.currentProject || this.autoWorkflowState.skipCurrentStory) {
+          item.status = this.autoWorkflowState.skipCurrentStory ? "skipped" : "error";
+          item.stepText = this.autoWorkflowState.skipCurrentStory ? "⏭ Skipped" : "⚠️ Step 1 Error";
+          this.saveBatchQueueToStorage();
+          this.renderBatchQueueList();
+          this.renderAutoWfBatchStrip();
+          continue;
+        }
+
+        item.projectId = this.currentProject.id;
+        if (this.currentProject.title && !item.title) {
+          item.title = this.currentProject.title;
+        }
+        this.saveBatchQueueToStorage();
+        this.renderBatchQueueList();
+
+        // Run Step 2 (Refine + Paint) -> Step 3 (Studio Render) -> Wait for Step 4 (Cinema Premiere)
+        const renderResult = await this.runAutoWorkflowFromStep2To4(true, true, item);
+
+        if (!this.autoWorkflowState.active) break;
+
+        if (renderResult && renderResult.ok) {
+          completedInRun++;
+          item.status = "completed";
+          item.stepText = "✅ Step 4: Completed";
+          item.videoPath = this.currentProject?.video_path || null;
+          this.saveBatchQueueToStorage();
+          this.renderBatchQueueList();
+          this.updateAutoWorkflowBanner(
+            4,
+            `✅ Story ${bIdx + 1}/${itemsToRun.length} ("${item.title || storyLabel}") Finished Step 1 → 4!`,
+            "running"
+          );
+        } else {
+          item.status = this.autoWorkflowState.skipCurrentStory ? "skipped" : "error";
+          item.stepText = this.autoWorkflowState.skipCurrentStory ? "⏭ Skipped" : "⚠️ Render Error";
+          this.saveBatchQueueToStorage();
+          this.renderBatchQueueList();
+        }
+
+        // If there are more stories in the queue, show a 4s transition countdown before starting the next story
+        if (bIdx < itemsToRun.length - 1 && this.autoWorkflowState.active) {
+          const nextItem = itemsToRun[bIdx + 1];
+          const nextLabel = nextItem.title || `Story #${bIdx + 2}`;
+          for (let c = 4; c >= 1; c--) {
+            if (!this.autoWorkflowState.active) break;
+            await this.waitIfAutoWorkflowPaused();
+            this.updateAutoWorkflowBanner(
+              4,
+              `✅ Story ${bIdx + 1}/${itemsToRun.length} Complete! Starting Story ${bIdx + 2}/${itemsToRun.length} ("${nextLabel}") in ${c}s...`,
+              "running"
+            );
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+      }
+
+      if (this.autoWorkflowState.active) {
+        const elapsedSec = Math.max(1, Math.round((Date.now() - (this.autoWorkflowState.startTime || Date.now())) / 1000));
+        const m = Math.floor(elapsedSec / 60);
+        const s = elapsedSec % 60;
+        const durStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
+        this.updateAutoWorkflowBanner(
+          4,
+          `🏆 Batch Queue Complete in ${durStr}! Produced ${completedInRun}/${itemsToRun.length} Films (Step 1 → 4 One-by-One)!`,
+          "completed"
+        );
+        if (this.autoWorkflowState.timerId) {
+          clearInterval(this.autoWorkflowState.timerId);
+          this.autoWorkflowState.timerId = null;
+        }
+        this.autoWorkflowState.active = false;
+        this.autoWorkflowState.paused = false;
+        this.showToast(`🎉 Batch Queue Finished! ${completedInRun}/${itemsToRun.length} films produced from Step 1 to Step 4!`);
+      }
+    } finally {
+      if (this.btnRunBatchQueueStep1To4) this.btnRunBatchQueueStep1To4.disabled = false;
+      if (this.btnAutoWorkflowStep1To4) this.btnAutoWorkflowStep1To4.disabled = false;
+      this.renderBatchQueueList();
+    }
   }
 
   async loadProject(projectOrId, targetStage = 2) {
