@@ -418,21 +418,29 @@ class AnimationPipeline:
             if act_dur > 0:
                 max_dur = max(3.0, round(act_dur - 0.2, 2))
 
-        enable_mv = project.get("enable_multivoice", True)
-        enable_narrator = project.get("enable_voiceover", True)
+        scene_dial_only = scene.get("dialogue_only")
+        if scene_dial_only is None:
+            scene_dial_only = bool(project.get("dialogue_only", False)) or (
+                not project.get("enable_voiceover", True) and bool(project.get("enable_multivoice", True))
+            )
+        else:
+            scene_dial_only = bool(scene_dial_only)
+
+        enable_mv = bool(project.get("enable_multivoice", True) or scene_dial_only)
+        enable_narrator = False if scene_dial_only else bool(project.get("enable_voiceover", True))
         char_voices = project.get("character_voices") or {}
         sc_dialogues = scene.get("dialogues")
 
         # Ensure scene dialogues use actual named characters instead of generic "Character"
         named_chars = [c for c in char_voices.keys() if c.lower() not in ("narrator", "người kể chuyện", "character")]
-        if named_chars and (not sc_dialogues or any((d.get("speaker") or "").lower() == "character" for d in sc_dialogues)):
+        if (enable_mv or scene_dial_only) and (not sc_dialogues or (named_chars and any((d.get("speaker") or "").lower() == "character" for d in sc_dialogues))):
             from backend.agents.script_agent import ScriptAgent
             fresh_dialogues = ScriptAgent.extract_scene_dialogue_segments(
                 narration=scene.get("narration", ""),
                 characters=named_chars or project.get("characters"),
                 narrator_name="Narrator"
             )
-            if fresh_dialogues and len(fresh_dialogues) > 1:
+            if fresh_dialogues:
                 sc_dialogues = fresh_dialogues
                 scene["dialogues"] = fresh_dialogues
                 self.save_project(project)
@@ -469,6 +477,7 @@ class AnimationPipeline:
         scene["audio_path"] = str(audio_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
         scene["srt_path"] = str(srt_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
         scene["voiced_narration"] = (scene.get("narration") or "").strip()
+        scene["voiced_dialogue_only"] = scene_dial_only
         scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_path))
         self.save_project(project)
         return project
@@ -501,11 +510,26 @@ class AnimationPipeline:
             scene = project["scenes"][scene_idx]
 
         # 2. Ensure voiceover audio & subtitles exist if enabled
+        scene_dial_only = scene.get("dialogue_only")
+        if scene_dial_only is None:
+            scene_dial_only = bool(project.get("dialogue_only", False)) or (
+                not project.get("enable_voiceover", True) and bool(project.get("enable_multivoice", True))
+            )
+        else:
+            scene_dial_only = bool(scene_dial_only)
+
         enable_subtitles = project.get("enable_subtitles", True)
-        enable_voiceover = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
+        enable_voiceover = bool(
+            project.get("enable_voiceover", True)
+            or project.get("enable_multivoice", False)
+            or scene_dial_only
+        )
         audio_file = project_dir / f"scene_{scene_idx + 1}.mp3"
         srt_file = project_dir / f"scene_{scene_idx + 1}.srt"
-        narration_changed = (scene.get("voiced_narration") != (scene.get("narration") or "").strip())
+        narration_changed = (
+            scene.get("voiced_narration") != (scene.get("narration") or "").strip()
+            or scene.get("voiced_dialogue_only") != scene_dial_only
+        )
         if enable_voiceover or enable_subtitles:
             if force_revoice or narration_changed or not audio_file.exists() or not srt_file.exists() or not scene.get("audio_path") or not scene.get("srt_path"):
                 await self.generate_scene_audio(project_id, scene_idx)
@@ -664,7 +688,12 @@ class AnimationPipeline:
             if idx < total_scenes - 1:
                 await asyncio.sleep(0.8)
 
-        enable_voiceover = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
+        any_scene_dial_only = any(bool(s.get("dialogue_only")) for s in scenes)
+        enable_voiceover = bool(
+            project.get("enable_voiceover", True)
+            or project.get("enable_multivoice", False)
+            or any_scene_dial_only
+        )
         enable_subtitles = project.get("enable_subtitles", True)
 
         # 2. Voices & Subtitles
@@ -712,10 +741,22 @@ class AnimationPipeline:
             for idx, scene in enumerate(scenes):
                 audio_file = project_dir / f"scene_{idx + 1}.mp3"
                 srt_file = project_dir / f"scene_{idx + 1}.srt"
-                narration_changed = (scene.get("voiced_narration") != (scene.get("narration") or "").strip())
+                scene_dial_only = scene.get("dialogue_only")
+                if scene_dial_only is None:
+                    scene_dial_only = bool(project.get("dialogue_only", False)) or (
+                        not project.get("enable_voiceover", True) and bool(project.get("enable_multivoice", True))
+                    )
+                else:
+                    scene_dial_only = bool(scene_dial_only)
+
+                scene_include_narrator = False if scene_dial_only else bool(project.get("enable_voiceover", True))
+                narration_changed = (
+                    scene.get("voiced_narration") != (scene.get("narration") or "").strip()
+                    or scene.get("voiced_dialogue_only") != scene_dial_only
+                )
                 if narration_changed or not audio_file.exists() or not srt_file.exists():
                     notify(52 + int((idx / total_scenes) * 15), f"Narrating scene {idx + 1} of {total_scenes}..." if enable_voiceover else f"Preparing scene {idx + 1} subtitles...")
-                    enable_mv = project.get("enable_multivoice", True)
+                    enable_mv = bool(project.get("enable_multivoice", True) or scene_dial_only)
                     char_voices = project.get("character_voices") or {}
                     sc_dialogues = scene.get("dialogues")
                     if enable_mv:
@@ -745,7 +786,7 @@ class AnimationPipeline:
                             dialogues=sc_dialogues,
                             character_voices=char_voices,
                             enable_multivoice=enable_mv,
-                            include_narrator=enable_narrator
+                            include_narrator=scene_include_narrator
                         )
                     except Exception as e_voice_fail:
                         print(f"Scene {idx + 1} primary voice notice ({e_voice_fail}). Engaging resilient fallback...")
@@ -760,7 +801,7 @@ class AnimationPipeline:
                             dialogues=sc_dialogues,
                             character_voices=char_voices,
                             enable_multivoice=enable_mv,
-                            include_narrator=enable_narrator
+                            include_narrator=scene_include_narrator
                         )
                         # If this scene resolved to a fallback voice, update clip_voice so subsequent scenes stay consistent
                         if res.get("is_fallback") and res.get("voice"):
@@ -769,6 +810,7 @@ class AnimationPipeline:
                             self.save_project(project)
 
                     scene["voiced_narration"] = (scene.get("narration") or "").strip()
+                    scene["voiced_dialogue_only"] = scene_dial_only
                     scene["duration"] = res.get("duration", 4.0) if res else self.voice_agent.get_audio_duration(str(audio_file))
                     await asyncio.sleep(1.2)  # Pace requests to avoid socket throttling and preserve voice consistency
                 else:
@@ -784,8 +826,13 @@ class AnimationPipeline:
             clip_file = project_dir / f"clip_{idx + 1}.mp4"
             notify(70 + int((idx / total_scenes) * 15), f"Rendering camera motion for scene {idx + 1}...")
 
+            scene_has_voice = bool(
+                project.get("enable_voiceover", True)
+                or project.get("enable_multivoice", False)
+                or scene.get("dialogue_only", False)
+            )
             img_full = str(PROJECTS_DIR.parent / scene["image_path"]) if scene.get("image_path") else None
-            audio_full = str(PROJECTS_DIR.parent / scene["audio_path"]) if (scene.get("audio_path") and enable_voiceover) else None
+            audio_full = str(PROJECTS_DIR.parent / scene["audio_path"]) if (scene.get("audio_path") and scene_has_voice) else None
             srt_full = str(PROJECTS_DIR.parent / scene["srt_path"]) if (scene.get("srt_path") and enable_subtitles) else None
             # Check for acting video source (e.g. from Google Flow / I2V generator)
             acting_video_full = None
@@ -807,7 +854,7 @@ class AnimationPipeline:
                 motion_type=motion,
                 duration=scene.get("duration", 4.0),
                 enable_subtitles=enable_subtitles,
-                enable_voiceover=enable_voiceover,
+                enable_voiceover=scene_has_voice,
                 source_video_path=acting_video_full
             )
             scene["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")

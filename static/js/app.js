@@ -441,6 +441,9 @@ class AniStoryApp {
     this.btnToggleVoiceoverStage2 = document.getElementById("btnToggleVoiceoverStage2");
     this.iconVoiceoverStage2 = document.getElementById("iconVoiceoverStage2");
     this.textVoiceoverStage2 = document.getElementById("textVoiceoverStage2");
+    this.btnToggleAllScenesDialogueOnly = document.getElementById("btnToggleAllScenesDialogueOnly");
+    this.iconAllScenesDialogueOnly = document.getElementById("iconAllScenesDialogueOnly");
+    this.textAllScenesDialogueOnly = document.getElementById("textAllScenesDialogueOnly");
     this.btnToggleMultivoiceStage2 = document.getElementById("btnToggleMultivoiceStage2");
     this.iconMultivoiceStage2 = document.getElementById("iconMultivoiceStage2");
     this.textMultivoiceStage2 = document.getElementById("textMultivoiceStage2");
@@ -1434,6 +1437,10 @@ class AniStoryApp {
       });
     }
 
+    if (this.btnToggleAllScenesDialogueOnly) {
+      this.btnToggleAllScenesDialogueOnly.addEventListener("click", () => this.toggleAllScenesDialogueOnly());
+    }
+
     // Toggle Camera on Speaker (Dialogue Film) in Stage 1
     if (this.btnToggleSpeakerCamStage1) {
       this.btnToggleSpeakerCamStage1.addEventListener("click", () => {
@@ -2117,6 +2124,119 @@ class AniStoryApp {
           this.btnToggleVoiceoverStage2.style.color = "#f87171";
         }
       }
+    }
+    this.updateAllScenesDialogueOnlyUI();
+  }
+
+  isSceneDialogueOnly(scene) {
+    if (scene && typeof scene.dialogue_only === "boolean") {
+      return scene.dialogue_only;
+    }
+    return Boolean(
+      this.currentProject &&
+      (this.currentProject.dialogue_only === true ||
+        (this.currentProject.enable_voiceover === false && this.currentProject.enable_multivoice !== false))
+    );
+  }
+
+  updateAllScenesDialogueOnlyUI() {
+    if (!this.btnToggleAllScenesDialogueOnly) return;
+    const scenes = this.currentProject?.scenes || [];
+    const total = scenes.length;
+    const onCount = scenes.filter(s => this.isSceneDialogueOnly(s)).length;
+
+    if (total > 0 && onCount === total) {
+      if (this.iconAllScenesDialogueOnly) this.iconAllScenesDialogueOnly.textContent = "💬";
+      if (this.textAllScenesDialogueOnly) this.textAllScenesDialogueOnly.textContent = "Dialogue Only: ON";
+      this.btnToggleAllScenesDialogueOnly.style.background = "rgba(168, 85, 247, 0.22)";
+      this.btnToggleAllScenesDialogueOnly.style.borderColor = "rgba(192, 132, 252, 0.55)";
+      this.btnToggleAllScenesDialogueOnly.style.color = "#e9d5ff";
+    } else if (onCount > 0) {
+      if (this.iconAllScenesDialogueOnly) this.iconAllScenesDialogueOnly.textContent = "💬";
+      if (this.textAllScenesDialogueOnly) this.textAllScenesDialogueOnly.textContent = `Dialogue Only: ${onCount}/${total}`;
+      this.btnToggleAllScenesDialogueOnly.style.background = "rgba(168, 85, 247, 0.14)";
+      this.btnToggleAllScenesDialogueOnly.style.borderColor = "rgba(192, 132, 252, 0.4)";
+      this.btnToggleAllScenesDialogueOnly.style.color = "#d8b4fe";
+    } else {
+      if (this.iconAllScenesDialogueOnly) this.iconAllScenesDialogueOnly.textContent = "🎙️";
+      if (this.textAllScenesDialogueOnly) this.textAllScenesDialogueOnly.textContent = "Dialogue Only: OFF";
+      this.btnToggleAllScenesDialogueOnly.style.background = "";
+      this.btnToggleAllScenesDialogueOnly.style.borderColor = "rgba(255,255,255,0.12)";
+      this.btnToggleAllScenesDialogueOnly.style.color = "var(--text-secondary)";
+    }
+  }
+
+  async toggleSceneDialogueOnly(sceneIdx, btnEl = null) {
+    if (!this.currentProject || !this.currentProject.scenes?.[sceneIdx]) return;
+    const scene = this.currentProject.scenes[sceneIdx];
+    const currentVal = this.isSceneDialogueOnly(scene);
+    const nextVal = !currentVal;
+
+    // Preserve any unsaved narration text edits first
+    const narEl = document.getElementById(`narration_${sceneIdx}`);
+    if (narEl && narEl.value !== scene.narration) {
+      scene.narration = narEl.value;
+      await this.saveStoryboardEdits(false);
+    }
+
+    scene.dialogue_only = nextVal;
+    if (btnEl) btnEl.disabled = true;
+
+    try {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/scenes/${sceneIdx}/toggle-dialogue-only`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enable: nextVal })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.project) {
+          this.currentProject = data.project;
+        } else if (data.scene) {
+          this.currentProject.scenes[sceneIdx] = data.scene;
+        }
+        this.saveActiveProjectState();
+        this.renderStoryboardView();
+        if (nextVal) {
+          this.showToast(`💬 Scene ${sceneIdx + 1}: Dialogue Only is ON (Narrator skipped — only character dialogues voiced)`);
+        } else {
+          this.showToast(`🎙️ Scene ${sceneIdx + 1}: Dialogue Only is OFF (Narrator + Character dialogues voiced)`);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to toggle scene Dialogue Only:", e);
+      scene.dialogue_only = currentVal;
+      this.showToast("Failed to toggle Dialogue Only: " + e.message, true);
+    } finally {
+      if (btnEl) btnEl.disabled = false;
+    }
+  }
+
+  async toggleAllScenesDialogueOnly() {
+    if (!this.currentProject || !this.currentProject.scenes?.length) return;
+    await this.saveStoryboardEdits(false);
+    try {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/toggle-all-scenes-dialogue-only`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.project) {
+          this.currentProject = data.project;
+        }
+        this.saveActiveProjectState();
+        this.renderStoryboardView();
+        if (data.dialogue_only) {
+          this.showToast("💬 All Scenes set to Dialogue Only: ON (Narrator voiceover skipped; only character lines spoken)");
+        } else {
+          this.showToast("🎙️ All Scenes set to Dialogue Only: OFF (Narrator + Character dialogues enabled)");
+        }
+      }
+    } catch (e) {
+      console.error("Failed to toggle all scenes Dialogue Only:", e);
+      this.showToast("Failed to toggle Dialogue Only for all scenes: " + e.message, true);
     }
   }
 
@@ -3715,23 +3835,33 @@ ${isAutoScenes
       scene.visual_prompt = visPrompt;
       scene.acting_prompt = actPrompt;
 
+      const isSceneDialOnly = this.isSceneDialogueOnly(scene);
       const isMultiVoiceScene = Boolean(
         this.currentProject.enable_multivoice !== false &&
         scene.dialogues &&
         scene.dialogues.length > 1
       );
-      const dialogueBreakdownHtml = (isMultiVoiceScene && scene.dialogues) ? `
+      const hasCharDialogueSegments = Boolean(
+        scene.dialogues &&
+        scene.dialogues.some(d => {
+          const spk = (d.speaker || "").trim().toLowerCase();
+          return spk && spk !== "narrator" && spk !== "người kể chuyện";
+        })
+      );
+      const dialogueBreakdownHtml = ((isMultiVoiceScene || isSceneDialOnly) && scene.dialogues && scene.dialogues.length > 0) ? `
         <div class="scene-dialogue-breakdown">
           ${scene.dialogues.map(d => {
             const isNarr = (d.speaker || '').toLowerCase() === 'narrator' || (d.speaker || '').toLowerCase() === 'người kể chuyện';
-            const skipNarr = isNarr && this.currentProject.enable_voiceover === false;
+            const skipNarr = isNarr && isSceneDialOnly;
             return `
-            <div class="dialogue-segment-row" style="${skipNarr ? 'opacity:0.42; text-decoration:line-through;' : ''}" title="${skipNarr ? 'Narrator voiceover is OFF (skipped in Dialogue-Only mode)' : ''}">
+            <div class="dialogue-segment-row" style="${skipNarr ? 'opacity:0.42; text-decoration:line-through;' : ''}" title="${skipNarr ? 'Narrator voiceover is skipped (Dialogue Only is ON for this scene)' : ''}">
               <span class="dialogue-speaker-pill ${isNarr ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
               <span class="dialogue-text-bubble">"${d.text || ''}"</span>
+              ${skipNarr ? '<span style="font-size:10px; color:#f87171; margin-left:4px; text-decoration:none; display:inline-block;">(🔇 Skipped)</span>' : ''}
             </div>
           `;
           }).join('')}
+          ${(isSceneDialOnly && !hasCharDialogueSegments) ? `<div style="font-size:11px; color:#fbbf24; margin-top:4px;">ℹ️ No character dialogue quotes ("...") in this scene — narrator will stay silent while Dialogue Only is ON (or click 💬 +Dialogue).</div>` : ''}
         </div>
       ` : '';
 
@@ -3742,6 +3872,9 @@ ${isAutoScenes
             ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.25); color:#c4b5fd; font-weight:600; border:1px solid rgba(139,92,246,0.4);">🎭 ${scene.archetype}</span>` : ''}
             ${camMotion === 'speaker_focus' ? `<span class="scene-badge scene-speakercam-badge" id="sceneSpeakerCamBadge_${idx}" title="Camera focuses on speaking character (Medium Close-Up)">🗣️ Speaker Cam</span>` : `<span class="scene-badge scene-speakercam-badge" id="sceneSpeakerCamBadge_${idx}" style="display:none;" title="Camera focuses on speaking character (Medium Close-Up)">🗣️ Speaker Cam</span>`}
             ${isMultiVoiceScene ? `<span class="scene-badge scene-multivoice-badge" title="Multi-Voice Scene: ${scene.dialogues.length} character dialogue segments">🎭 Multi-Voice (${scene.dialogues.length})</span>` : ''}
+            <button type="button" class="scene-badge scene-dialonly-badge btn-toggle-scene-dialogue-only ${isSceneDialOnly ? 'active' : ''}" id="sceneDialOnlyBadge_${idx}" data-idx="${idx}" title="Click to toggle Dialogue Only ON/OFF for Scene ${idx + 1} (${isSceneDialOnly ? 'Currently ON: Narrator skipped, only character dialogues spoken' : 'Currently OFF: Narrator + Character dialogues spoken'})">
+              💬 Dialogue Only: ${isSceneDialOnly ? 'ON' : 'OFF'}
+            </button>
             ${scene.is_product_photo ? `<span class="scene-badge" style="background:rgba(16,185,129,0.2); color:#6ee7b7; border:1px solid rgba(16,185,129,0.4); font-weight:600;">🛍️ Product Photo</span>` : ''}
             <span class="scene-status-pill ${hasSavedImage ? 'ready' : 'pending'}" id="sceneStatusPill_${idx}">
               ${hasSavedImage ? '✓ Ready' : '⏳ Ready to Paint'}
@@ -3800,13 +3933,15 @@ ${isAutoScenes
 
           <!-- PANE 1: Voiceover Narration & Dialogue -->
           <div class="scene-prompt-tab-pane pane-script ${this.activePromptField === 'script' || this.activePromptField === 'all' ? 'active' : ''}" id="paneScript_${idx}">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <div style="display:flex; align-items:center; gap:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:6px;">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                 <label class="field-label" style="margin-bottom:0;">🎙️ Voiceover Narration</label>
+                <button type="button" class="scene-action-pill btn-toggle-scene-dialogue-only ${isSceneDialOnly ? 'active-dial-only' : ''}" id="btnSceneDialogueOnly_${idx}" data-idx="${idx}" title="Toggle Dialogue Only ON or OFF for Scene ${idx + 1} (ON = skip Narrator voiceover, only voice character dialogues)">
+                  💬 Dialogue Only: ${isSceneDialOnly ? 'ON' : 'OFF'}
+                </button>
                 <button class="scene-action-pill btn-sync-scene-dialogue" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#6ee7b7; border-color:rgba(16,185,129,0.45); background:rgba(16,185,129,0.15);" title="Add/sync dialogue from story to Voiceover Narration, Image & Video Clip prompts">💬 +Dialogue</button>
                 <button class="scene-action-pill btn-revoice-scene" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1; color:#c4b5fd; border-color:rgba(139,92,246,0.45); background:rgba(139,92,246,0.15);" title="Re-synthesize audio for this scene with assigned character voices">🎙️ Re-Voice</button>
-                ${(this.currentProject.enable_voiceover === false && !this.currentProject.enable_multivoice) ? '<span class="tag-badge" style="background:rgba(239,68,68,0.15); color:#f87171; font-size:10px; padding:1px 6px;">🔇 Muted</span>' : ''}
-                ${(this.currentProject.enable_voiceover === false && this.currentProject.enable_multivoice !== false) ? '<span class="tag-badge" style="background:rgba(139,92,246,0.18); color:#c4b5fd; font-size:10px; padding:1px 6px;" title="Narrator voiceover is OFF — only character dialogues are voiced">🎭 Dialogue Only</span>' : ''}
+                ${(this.currentProject.enable_voiceover === false && !this.currentProject.enable_multivoice && !isSceneDialOnly) ? '<span class="tag-badge" style="background:rgba(239,68,68,0.15); color:#f87171; font-size:10px; padding:1px 6px;">🔇 Muted</span>' : ''}
               </div>
               <span class="narration-badge" id="badgeNarr_${idx}" style="font-size:11px; padding:2px 7px; border-radius:12px; font-weight:500;"></span>
             </div>
@@ -3993,6 +4128,9 @@ ${isAutoScenes
       card.querySelectorAll(".btn-revoice-scene").forEach(btn => {
         btn.addEventListener("click", () => this.revoiceSceneAudio(idx, btn));
       });
+      card.querySelectorAll(".btn-toggle-scene-dialogue-only").forEach(btn => {
+        btn.addEventListener("click", () => this.toggleSceneDialogueOnly(idx, btn));
+      });
       const motionSelect = card.querySelector(`#motion_${idx}`);
       if (motionSelect) {
         motionSelect.addEventListener("change", (e) => {
@@ -4044,6 +4182,7 @@ ${isAutoScenes
     this.setStoryboardViewMode(this.storyboardViewMode);
     this.setStoryboardSceneFilter(this.storyboardSceneFilter);
     this.setActivePromptField(this.activePromptField);
+    this.updateAllScenesDialogueOnlyUI();
   }
 
   setStoryboardViewMode(mode) {
@@ -4152,15 +4291,21 @@ ${isAutoScenes
       scriptCard.id = `scriptScene_${idx}`;
       scriptCard.dataset.index = idx;
 
+      const isSceneDialOnly = this.isSceneDialogueOnly(scene);
       const dialoguesHtml = (scene.dialogues && scene.dialogues.length > 0) ? `
         <div class="script-dialogues-box">
           <label class="field-label" style="font-size:11px; margin-bottom:2px;">🎭 Character Dialogues (${scene.dialogues.length})</label>
-          ${scene.dialogues.map(d => `
-            <div class="dialogue-segment-row">
-              <span class="dialogue-speaker-pill ${(d.speaker || '').toLowerCase() === 'narrator' ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
+          ${scene.dialogues.map(d => {
+            const isNarr = (d.speaker || '').toLowerCase() === 'narrator' || (d.speaker || '').toLowerCase() === 'người kể chuyện';
+            const skipNarr = isNarr && isSceneDialOnly;
+            return `
+            <div class="dialogue-segment-row" style="${skipNarr ? 'opacity:0.42; text-decoration:line-through;' : ''}">
+              <span class="dialogue-speaker-pill ${isNarr ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
               <span class="dialogue-text-bubble">"${d.text || ''}"</span>
+              ${skipNarr ? '<span style="font-size:10px; color:#f87171; margin-left:4px; text-decoration:none; display:inline-block;">(🔇 Skipped)</span>' : ''}
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       ` : '';
 
@@ -4183,12 +4328,13 @@ ${isAutoScenes
         </div>
         <div class="script-scene-content-col">
           <div class="script-scene-heading">
-            <div style="display:flex; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <span class="scene-badge">SCENE ${scene.scene_number || idx + 1}</span>
               <span>${scene.title || "Scene " + (idx + 1)}</span>
               ${scene.archetype ? `<span class="scene-badge" style="background:rgba(139,92,246,0.2); color:#c4b5fd; font-size:10.5px;">🎭 ${scene.archetype}</span>` : ''}
             </div>
-            <div style="display:flex; align-items:center; gap:6px;">
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <button type="button" class="scene-action-pill btn-toggle-scene-dialogue-only ${isSceneDialOnly ? 'active-dial-only' : ''}" data-idx="${idx}" style="padding:2px 8px; font-size:10.5px; height:22px;" title="Toggle Dialogue Only ON or OFF for this scene">💬 Dialogue Only: ${isSceneDialOnly ? 'ON' : 'OFF'}</button>
               <button class="scene-action-pill btn-sync-scene-dialogue" data-idx="${idx}" style="padding:2px 8px; font-size:10.5px; height:22px; color:#6ee7b7; border-color:rgba(16,185,129,0.45); background:rgba(16,185,129,0.15);" title="Sync Dialogues">💬 +Dialogue</button>
               <button class="scene-action-pill btn-revoice-scene" data-idx="${idx}" style="padding:2px 8px; font-size:10.5px; height:22px; color:#c4b5fd; border-color:rgba(139,92,246,0.45); background:rgba(139,92,246,0.15);" title="Re-Voice">🎙️ Re-Voice</button>
             </div>
@@ -4244,6 +4390,10 @@ ${isAutoScenes
       const scriptRevoiceBtn = scriptCard.querySelector(".btn-revoice-scene");
       if (scriptRevoiceBtn) {
         scriptRevoiceBtn.addEventListener("click", () => this.revoiceSceneAudio(idx, scriptRevoiceBtn));
+      }
+      const scriptDialOnlyBtn = scriptCard.querySelector(".btn-toggle-scene-dialogue-only");
+      if (scriptDialOnlyBtn) {
+        scriptDialOnlyBtn.addEventListener("click", () => this.toggleSceneDialogueOnly(idx, scriptDialOnlyBtn));
       }
 
       this.storyboardScriptScenesList.appendChild(scriptCard);

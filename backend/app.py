@@ -846,17 +846,31 @@ async def update_scenes(project_id: str, req: UpdateScenesRequest):
     # Preserve existing scene assets if incoming payload omitted or has null
     existing_scenes = project.get("scenes", [])
     p_dir = Path(OUTPUT_DIR) / "projects" / project_id
+    char_voices = project.get("character_voices") or {}
+    named_chars = [k for k in char_voices.keys() if k.lower() not in ("narrator", "người kể chuyện", "character")]
     for idx, sc in enumerate(req.scenes):
         if idx < len(existing_scenes):
             old_sc = existing_scenes[idx]
             old_narr = (old_sc.get("narration") or "").strip()
             new_narr = (sc.get("narration") or "").strip()
-            for asset_key in ["image_path", "video_path", "audio_path", "srt_path", "duration", "voiced_narration"]:
-                if not sc.get(asset_key) and old_sc.get(asset_key):
+            old_dial_only = old_sc.get("dialogue_only")
+            new_dial_only = sc.get("dialogue_only")
+            for asset_key in ["image_path", "video_path", "audio_path", "srt_path", "duration", "voiced_narration", "voiced_dialogue_only", "dialogues"]:
+                if sc.get(asset_key) is None and old_sc.get(asset_key) is not None:
                     sc[asset_key] = old_sc[asset_key]
-            # If voiceover narration changed, invalidate cached audio/SRT so next render synthesizes the new dialogue
-            if new_narr != old_narr:
+            if new_dial_only is None and old_dial_only is not None:
+                sc["dialogue_only"] = old_dial_only
+                new_dial_only = old_dial_only
+            # If voiceover narration or dialogue_only mode changed, invalidate cached audio/SRT so next render synthesizes the new dialogue
+            if new_narr != old_narr or new_dial_only != old_dial_only:
                 sc["voiced_narration"] = None
+                sc["voiced_dialogue_only"] = None
+                if new_narr != old_narr or not sc.get("dialogues"):
+                    sc["dialogues"] = ScriptAgent.extract_scene_dialogue_segments(
+                        narration=new_narr,
+                        characters=named_chars or project.get("characters"),
+                        narrator_name="Narrator"
+                    )
                 for stale_f in [p_dir / f"scene_{idx + 1}.mp3", p_dir / f"scene_{idx + 1}.srt"]:
                     if stale_f.exists():
                         try:
@@ -1094,6 +1108,105 @@ async def toggle_project_speaker_camera(project_id: str, req: Optional[ToggleSpe
         return {"status": "ok", "camera_on_speaker": updated.get("camera_on_speaker", False), "project": updated}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class ToggleDialogueOnlyRequest(BaseModel):
+    enable: Optional[bool] = None
+
+@app.post("/api/projects/{project_id}/scenes/{scene_idx}/toggle-dialogue-only")
+async def toggle_scene_dialogue_only(project_id: str, scene_idx: int, req: Optional[ToggleDialogueOnlyRequest] = None):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    scenes = project.get("scenes", [])
+    if scene_idx < 0 or scene_idx >= len(scenes):
+        raise HTTPException(status_code=400, detail="Invalid scene index")
+
+    scene = scenes[scene_idx]
+    curr = scene.get("dialogue_only")
+    if curr is None:
+        curr = bool(project.get("dialogue_only", False)) or (
+            not project.get("enable_voiceover", True) and bool(project.get("enable_multivoice", True))
+        )
+    else:
+        curr = bool(curr)
+
+    new_val = (not curr) if (req is None or req.enable is None) else bool(req.enable)
+    scene["dialogue_only"] = new_val
+    scene["voiced_narration"] = None
+    scene["voiced_dialogue_only"] = None
+
+    char_voices = project.get("character_voices") or {}
+    named_chars = [k for k in char_voices.keys() if k.lower() not in ("narrator", "người kể chuyện", "character")]
+    if not scene.get("dialogues") or any((d.get("speaker") or "").lower() == "character" for d in (scene.get("dialogues") or [])):
+        scene["dialogues"] = ScriptAgent.extract_scene_dialogue_segments(
+            narration=scene.get("narration", ""),
+            characters=named_chars or project.get("characters"),
+            narrator_name="Narrator"
+        )
+
+    p_dir = Path(OUTPUT_DIR) / "projects" / project_id
+    for stale_f in [p_dir / f"scene_{scene_idx + 1}.mp3", p_dir / f"scene_{scene_idx + 1}.srt"]:
+        if stale_f.exists():
+            try:
+                os.remove(stale_f)
+            except Exception:
+                pass
+
+    pipeline.save_project(project)
+    return {
+        "status": "ok",
+        "scene_idx": scene_idx,
+        "dialogue_only": new_val,
+        "scene": scene,
+        "project": project
+    }
+
+@app.post("/api/projects/{project_id}/toggle-all-scenes-dialogue-only")
+async def toggle_all_scenes_dialogue_only(project_id: str, req: Optional[ToggleDialogueOnlyRequest] = None):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    scenes = project.get("scenes", [])
+
+    def is_sc_dial_only(sc):
+        val = sc.get("dialogue_only")
+        if val is None:
+            return bool(project.get("dialogue_only", False)) or (
+                not project.get("enable_voiceover", True) and bool(project.get("enable_multivoice", True))
+            )
+        return bool(val)
+
+    all_Currently_On = bool(scenes) and all(is_sc_dial_only(s) for s in scenes)
+    new_val = (not all_Currently_On) if (req is None or req.enable is None) else bool(req.enable)
+    project["dialogue_only"] = new_val
+
+    char_voices = project.get("character_voices") or {}
+    named_chars = [k for k in char_voices.keys() if k.lower() not in ("narrator", "người kể chuyện", "character")]
+    p_dir = Path(OUTPUT_DIR) / "projects" / project_id
+
+    for idx, sc in enumerate(scenes):
+        sc["dialogue_only"] = new_val
+        sc["voiced_narration"] = None
+        sc["voiced_dialogue_only"] = None
+        if not sc.get("dialogues") or any((d.get("speaker") or "").lower() == "character" for d in (sc.get("dialogues") or [])):
+            sc["dialogues"] = ScriptAgent.extract_scene_dialogue_segments(
+                narration=sc.get("narration", ""),
+                characters=named_chars or project.get("characters"),
+                narrator_name="Narrator"
+            )
+        for stale_f in [p_dir / f"scene_{idx + 1}.mp3", p_dir / f"scene_{idx + 1}.srt"]:
+            if stale_f.exists():
+                try:
+                    os.remove(stale_f)
+                except Exception:
+                    pass
+
+    pipeline.save_project(project)
+    return {
+        "status": "ok",
+        "dialogue_only": new_val,
+        "project": project
+    }
 
 @app.post("/api/projects/{project_id}/set-art-style")
 async def set_project_art_style(project_id: str, req: SetArtStyleRequest):
@@ -1522,7 +1635,8 @@ async def upload_acting_clip(project_id: str, scene_idx: int, file: UploadFile =
         f.write(content)
 
     # Only synthesize audio/subtitles if voiceover or subtitles are enabled
-    enable_voice = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
+    scene = project["scenes"][scene_idx]
+    enable_voice = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False) or scene.get("dialogue_only", False))
     enable_subs = project.get("enable_subtitles", True)
     if enable_voice or enable_subs:
         await pipeline.generate_scene_audio(project_id, scene_idx)
@@ -1600,7 +1714,8 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
         raise HTTPException(502, f"FlowKit Veo generation error: {str(e)}")
 
     # Only synthesize audio/subtitles if voiceover or subtitles are enabled
-    enable_voice = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False))
+    scene = project["scenes"][scene_idx]
+    enable_voice = bool(project.get("enable_voiceover", True) or project.get("enable_multivoice", False) or scene.get("dialogue_only", False))
     enable_subs = project.get("enable_subtitles", True)
     if enable_voice or enable_subs:
         await pipeline.generate_scene_audio(project_id, scene_idx)

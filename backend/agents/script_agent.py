@@ -1218,6 +1218,26 @@ Return ONLY raw JSON matching this structure:
             segments.append({"speaker": narrator_name, "text": remainder})
 
         if not segments:
+            # Check for unquoted Speaker: Dialogue lines (e.g. "Ông Tư: Bà nó ơi!" or "[Bà Tư]: Đây nè ông!")
+            colon_lines = [ln.strip() for ln in clean_narr.splitlines() if ln.strip()]
+            parsed_colon_segs = []
+            for ln in colon_lines:
+                m_col = re.match(r'^\[?([A-ZÀ-ỹ][A-Za-zÀ-ỹ0-9\s]{0,24}?)\]?\s*:\s*(.+)$', ln)
+                if m_col:
+                    cand_spk = m_col.group(1).strip()
+                    cand_txt = m_col.group(2).strip(' "“”')
+                    if cand_spk.lower() not in ("scene", "cảnh", "visual", "image", "video", "camera", "audio", "sfx", "title"):
+                        for c in chars:
+                            if c.lower() == cand_spk.lower() or c.lower() in cand_spk.lower():
+                                cand_spk = c
+                                break
+                        parsed_colon_segs.append({"speaker": cand_spk, "text": cand_txt})
+                    else:
+                        parsed_colon_segs.append({"speaker": narrator_name, "text": ln})
+                else:
+                    parsed_colon_segs.append({"speaker": narrator_name, "text": ln})
+            if any(s["speaker"] != narrator_name for s in parsed_colon_segs):
+                return parsed_colon_segs
             segments.append({"speaker": narrator_name, "text": clean_narr})
 
         return segments

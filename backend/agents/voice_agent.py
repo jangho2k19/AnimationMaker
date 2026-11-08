@@ -651,7 +651,7 @@ class VoiceAgent:
         each character with distinct personas (and optionally skip Narrator when include_narrator=False).
         When single-voice narration is desired, synthesizes using ONE consistent voice.
         """
-        if enable_multivoice:
+        if enable_multivoice or not include_narrator:
             return await self.synthesize_multivoice(
                 dialogues=dialogues,
                 narration=text,
