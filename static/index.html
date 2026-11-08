@@ -187,9 +187,19 @@
                 <div class="form-row compact-row">
                   <label for="inputIdeaPrompt" class="input-label small-label">
                     <span>🌟 Story Idea or Creative Prompt</span>
-                    <span class="hint-text">Brief or descriptive</span>
+                    <span class="hint-text">Single story or paste multiple stories (1. 2. / ---)</span>
                   </label>
                   <textarea id="inputIdeaPrompt" rows="3" class="styled-textarea compact-textarea" placeholder="e.g. A lonely clockmaker in a steampunk tower invents a mechanical humming-bird that brings memories back to the townspeople..."></textarea>
+                  <div id="promptMultiStoryBanner" class="multi-story-detect-banner" style="display:none;">
+                    <div class="multi-story-detect-info">
+                      <span class="multi-story-detect-icon">📚</span>
+                      <span id="textPromptMultiStoryCount">Detected 2 stories in your text!</span>
+                    </div>
+                    <div class="multi-story-detect-actions">
+                      <button id="btnPromptQueueDetectedStories" type="button" class="scene-action-pill" title="Move all detected stories into the Batch Story Queue">📥 Queue All in Batch List</button>
+                      <button id="btnPromptAutoRunDetectedStories" type="button" class="scene-action-pill active-dialogue-only" title="Queue all detected stories and produce them 1-by-1 from Step 1 to Step 4">🎬 Auto-Produce All (Step 1→4)</button>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Quick idea inspiration tags -->
@@ -219,10 +229,20 @@
 
                 <div class="form-row compact-row">
                   <label for="inputDirectPasteText" class="input-label small-label">
-                    <span>📋 Paste Output (JSON or Text):</span>
-                    <span class="hint-text">Auto-detects scenes, visual & dialogue</span>
+                    <span>📋 Paste Output (JSON, Screenplay, or Stories):</span>
+                    <span class="hint-text">Auto-detects scenes, multi-story lists, visual & dialogue</span>
                   </label>
-                  <textarea id="inputDirectPasteText" rows="6" class="styled-textarea compact-textarea" placeholder="Paste Gemini Pro's output here (JSON or Scene 1 / Visual / Narration)..."></textarea>
+                  <textarea id="inputDirectPasteText" rows="6" class="styled-textarea compact-textarea" placeholder="Paste Gemini Pro's output or 1+ narrative stories here (JSON, Scene 1 / Cảnh 1, or numbered stories 1. 2. separated by ---)..."></textarea>
+                  <div id="pasteMultiStoryBanner" class="multi-story-detect-banner" style="display:none;">
+                    <div class="multi-story-detect-info">
+                      <span class="multi-story-detect-icon">📚</span>
+                      <span id="textPasteMultiStoryCount">Detected 2 stories in your pasted text!</span>
+                    </div>
+                    <div class="multi-story-detect-actions">
+                      <button id="btnPasteQueueDetectedStories" type="button" class="scene-action-pill" title="Move all detected stories into the Batch Story Queue">📥 Queue All in Batch List</button>
+                      <button id="btnPasteAutoRunDetectedStories" type="button" class="scene-action-pill active-dialogue-only" title="Queue all detected stories and produce them 1-by-1 from Step 1 to Step 4">🎬 Auto-Produce All (Step 1→4)</button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -391,7 +411,7 @@
                     </div>
                     <textarea id="textareaBatchIdeas" rows="4" class="styled-textarea compact-textarea" placeholder="Enter multiple ideas (one per line, numbered 1. 2. 3., or separated by ---):&#10;1. Chiến Thuật Bình Xăng :: Ông Tư và Bà Tư ngồi quán cà phê bàn chuyện tiết kiệm tiền đổ đầy bình xăng.&#10;2. Chú Mèo Sao Thổ :: Một chú mèo nhỏ tinh nghịch lẻn lên tàu vũ trụ khám phá vành đai Sao Thổ lấp lánh.&#10;3. Trí Khôn Của Ta Đây :: Câu chuyện dân gian Bác Nông Dân, Con Trâu và Con Cọp trên cánh đồng lúa vàng."></textarea>
                     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
-                      <span class="hint-text">💡 Tip: Optional custom title using <code>Title :: Story idea</code></span>
+                      <span id="batchDetectHint" class="hint-text">💡 Tip: Supports stories separated by <code>---</code>, numbered <code>1. 2. 3.</code>, or <code>Title :: Story idea</code></span>
                       <button id="btnBatchAddIdeas" type="button" class="glass-btn primary-glow-btn compact-btn" style="padding:5px 12px; font-size:11.5px;">
                         <span>➕ Add to Queue</span>
                       </button>

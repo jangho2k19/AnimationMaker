@@ -551,6 +551,15 @@ class AniStoryApp {
     this.batchQueueListContainer = document.getElementById("batchQueueListContainer");
     this.btnRunBatchQueueStep1To4 = document.getElementById("btnRunBatchQueueStep1To4");
     this.textBtnRunBatchQueue = document.getElementById("textBtnRunBatchQueue");
+    this.batchDetectHint = document.getElementById("batchDetectHint");
+    this.promptMultiStoryBanner = document.getElementById("promptMultiStoryBanner");
+    this.textPromptMultiStoryCount = document.getElementById("textPromptMultiStoryCount");
+    this.btnPromptQueueDetectedStories = document.getElementById("btnPromptQueueDetectedStories");
+    this.btnPromptAutoRunDetectedStories = document.getElementById("btnPromptAutoRunDetectedStories");
+    this.pasteMultiStoryBanner = document.getElementById("pasteMultiStoryBanner");
+    this.textPasteMultiStoryCount = document.getElementById("textPasteMultiStoryCount");
+    this.btnPasteQueueDetectedStories = document.getElementById("btnPasteQueueDetectedStories");
+    this.btnPasteAutoRunDetectedStories = document.getElementById("btnPasteAutoRunDetectedStories");
 
     if (this.chkAutoRefinePrompts && localStorage.getItem("anistory_wf_refine") !== null) {
       this.chkAutoRefinePrompts.checked = localStorage.getItem("anistory_wf_refine") !== "false";
@@ -1102,11 +1111,89 @@ class AniStoryApp {
           this.inputIdeaPrompt?.focus();
           return;
         }
-        this.addItemsToBatchQueue([{ title, idea }]);
+        const multiDetected = this.parseBatchInputText(idea, "auto", true);
+        if (multiDetected.length >= 2) {
+          this.addItemsToBatchQueue(multiDetected);
+          if (this.inputProjectTitle) this.inputProjectTitle.value = "";
+          if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
+          localStorage.removeItem("anistory_draft_prompt");
+          this.updateLiveMultiStoryDetection();
+          this.showToast(`📚 Detected & added ${multiDetected.length} stories to Batch Queue (${this.batchQueue.length} total)!`);
+          return;
+        }
+        const singleParsed = multiDetected[0] || { title, idea };
+        this.addItemsToBatchQueue([{ title: title || singleParsed.title || "", idea: singleParsed.idea || idea }]);
         if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
         localStorage.removeItem("anistory_draft_prompt");
+        this.updateLiveMultiStoryDetection();
         this.showToast(`➕ Added to Batch Queue (${this.batchQueue.length} total)!`);
+      });
+    }
+    if (this.inputIdeaPrompt) {
+      this.inputIdeaPrompt.addEventListener("input", () => this.updateLiveMultiStoryDetection());
+    }
+    if (this.inputDirectPasteText) {
+      this.inputDirectPasteText.addEventListener("input", () => this.updateLiveMultiStoryDetection());
+    }
+    if (this.textareaBatchIdeas) {
+      this.textareaBatchIdeas.addEventListener("input", () => this.updateLiveMultiStoryDetection());
+    }
+    if (this.selectBatchDelimiter) {
+      this.selectBatchDelimiter.addEventListener("change", () => this.updateLiveMultiStoryDetection());
+    }
+    if (this.btnPromptQueueDetectedStories) {
+      this.btnPromptQueueDetectedStories.addEventListener("click", () => {
+        const raw = this.inputIdeaPrompt?.value?.trim() || "";
+        const detected = this.parseBatchInputText(raw, "auto", true);
+        if (detected.length >= 2) {
+          this.addItemsToBatchQueue(detected);
+          if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
+          localStorage.removeItem("anistory_draft_prompt");
+          this.updateLiveMultiStoryDetection();
+          if (this.tabModeBatch) this.tabModeBatch.click();
+          this.showToast(`📚 Queued ${detected.length} detected stories into Batch Story Queue!`);
+        }
+      });
+    }
+    if (this.btnPromptAutoRunDetectedStories) {
+      this.btnPromptAutoRunDetectedStories.addEventListener("click", async () => {
+        const raw = this.inputIdeaPrompt?.value?.trim() || "";
+        const detected = this.parseBatchInputText(raw, "auto", true);
+        if (detected.length >= 2) {
+          this.addItemsToBatchQueue(detected);
+          if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
+          localStorage.removeItem("anistory_draft_prompt");
+          this.updateLiveMultiStoryDetection();
+          if (this.tabModeBatch) this.tabModeBatch.click();
+          await this.runBatchStoryQueueStep1To4();
+        }
+      });
+    }
+    if (this.btnPasteQueueDetectedStories) {
+      this.btnPasteQueueDetectedStories.addEventListener("click", () => {
+        const raw = this.inputDirectPasteText?.value?.trim() || "";
+        const detected = this.parseBatchInputText(raw, "auto", true);
+        if (detected.length >= 2) {
+          this.addItemsToBatchQueue(detected);
+          if (this.inputDirectPasteText) this.inputDirectPasteText.value = "";
+          this.updateLiveMultiStoryDetection();
+          if (this.tabModeBatch) this.tabModeBatch.click();
+          this.showToast(`📚 Queued ${detected.length} detected stories into Batch Story Queue!`);
+        }
+      });
+    }
+    if (this.btnPasteAutoRunDetectedStories) {
+      this.btnPasteAutoRunDetectedStories.addEventListener("click", async () => {
+        const raw = this.inputDirectPasteText?.value?.trim() || "";
+        const detected = this.parseBatchInputText(raw, "auto", true);
+        if (detected.length >= 2) {
+          this.addItemsToBatchQueue(detected);
+          if (this.inputDirectPasteText) this.inputDirectPasteText.value = "";
+          this.updateLiveMultiStoryDetection();
+          if (this.tabModeBatch) this.tabModeBatch.click();
+          await this.runBatchStoryQueueStep1To4();
+        }
       });
     }
     if (this.btnBatchAddIdeas) {
@@ -3274,11 +3361,31 @@ ${isAutoScenes
   }
 
   async handleGenerateStoryboard(fromAutoWorkflow = false) {
-    const idea = this.inputIdeaPrompt.value.trim();
+    let idea = this.inputIdeaPrompt.value.trim();
     if (!idea) {
       this.showToast("Please enter a story idea or choose a quick spark! 💡", true);
       this.inputIdeaPrompt.focus();
       return false;
+    }
+
+    // Detect if the user pasted multiple stories into Option A
+    const detectedStories = this.parseBatchInputText(idea, "auto", true);
+    if (detectedStories.length >= 2) {
+      const firstStory = detectedStories[0];
+      const remainingStories = detectedStories.slice(1);
+      this.addItemsToBatchQueue(remainingStories);
+      idea = firstStory.idea || idea;
+      this.inputIdeaPrompt.value = idea;
+      if (this.inputProjectTitle && !this.inputProjectTitle.value.trim() && firstStory.title) {
+        this.inputProjectTitle.value = firstStory.title;
+      }
+      this.updateLiveMultiStoryDetection();
+      this.showToast(`📚 Detected ${detectedStories.length} stories! Generating #1 ("${firstStory.title || 'Story 1'}") now & queued ${remainingStories.length} more in Batch List.`);
+    } else if (detectedStories.length === 1 && detectedStories[0].title) {
+      idea = detectedStories[0].idea || idea;
+      if (this.inputProjectTitle && !this.inputProjectTitle.value.trim()) {
+        this.inputProjectTitle.value = detectedStories[0].title;
+      }
     }
 
     this.btnGenerateStoryboard.disabled = true;
@@ -3618,6 +3725,19 @@ ${isAutoScenes
   }
 
   async handleImportFromText(text, btnEl, fromAutoWorkflow = false) {
+    let importText = (text || "").trim();
+    const detectedStories = this.parseBatchInputText(importText, "auto", true);
+    if (detectedStories.length >= 2) {
+      const firstStory = detectedStories[0];
+      const remainingStories = detectedStories.slice(1);
+      this.addItemsToBatchQueue(remainingStories);
+      importText = firstStory.title ? `${firstStory.title}\n${firstStory.idea}` : firstStory.idea;
+      if (this.inputProjectTitle && !this.inputProjectTitle.value.trim() && firstStory.title) {
+        this.inputProjectTitle.value = firstStory.title;
+      }
+      this.showToast(`📚 Detected ${detectedStories.length} stories! Loading #1 ("${firstStory.title || 'Story 1'}") now & queued ${remainingStories.length} more in Batch List.`);
+    }
+
     if (btnEl) {
       btnEl.disabled = true;
       btnEl.innerHTML = `<span>Loading Scenes...</span> <span>⏳</span>`;
@@ -3632,7 +3752,7 @@ ${isAutoScenes
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: projectTitle,
-          text: text,
+          text: importText,
           art_style: this.selectedStyleKey,
           voice: this.selectVoice.value,
           aspect_ratio: aspectRatio,
@@ -5975,6 +6095,15 @@ ${isAutoScenes
         this.inputDirectPasteText?.focus();
         return;
       }
+      const multiPasted = this.parseBatchInputText(pasted, "auto", true);
+      if (multiPasted.length >= 2) {
+        this.addItemsToBatchQueue(multiPasted);
+        if (this.inputDirectPasteText) this.inputDirectPasteText.value = "";
+        this.updateLiveMultiStoryDetection();
+        this.showToast(`📚 Detected ${multiPasted.length} stories! Starting Batch Auto-Production (Step 1→4) 1-by-1...`);
+        await this.runBatchStoryQueueStep1To4();
+        return;
+      }
     } else if (activeMode === "advertisement") {
       const pName = this.inputAdProductName?.value?.trim();
       const pDesc = this.textareaAdDesc?.value?.trim();
@@ -5988,6 +6117,16 @@ ${isAutoScenes
       if (!idea) {
         this.showToast("Please enter a story idea or choose a quick spark first! 💡", true);
         this.inputIdeaPrompt?.focus();
+        return;
+      }
+      const multiPrompt = this.parseBatchInputText(idea, "auto", true);
+      if (multiPrompt.length >= 2) {
+        this.addItemsToBatchQueue(multiPrompt);
+        if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
+        localStorage.removeItem("anistory_draft_prompt");
+        this.updateLiveMultiStoryDetection();
+        this.showToast(`📚 Detected ${multiPrompt.length} stories! Starting Batch Auto-Production (Step 1→4) 1-by-1...`);
+        await this.runBatchStoryQueueStep1To4();
         return;
       }
     }
@@ -6167,49 +6306,257 @@ ${isAutoScenes
     }
   }
 
-  parseBatchInputText(rawText, delimiterMode = "auto") {
-    const cleaned = (rawText || "").trim();
+  extractStoryTitleAndBody(rawBlock) {
+    let text = (rawBlock || "").replace(/\r\n/g, "\n").trim();
+    if (!text) return null;
+
+    // Remove leading/trailing horizontal divider lines (---, ------------------------------------------, ===, ***)
+    text = text.replace(/^(?:[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,}|~{3,}|─{3,}|━{3,}|—{3,}|–{3,})[ \t]*\n?)+/g, "");
+    text = text.replace(/(?:\n?[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,}|~{3,}|─{3,}|━{3,}|—{3,}|–{3,})[ \t]*)+$/g, "");
+
+    // Remove standalone web-article SEO filler lines (e.g. "Top truyện cười dân gian ngắn và ý nghĩa trào phúng hay nhất")
+    text = text.replace(
+      /^[ \t]*(?:Top\s+(?:\d+\s+)?(?:những\s+)?(?:truyện|câu chuyện|mẩu chuyện)|Tổng hợp\s+(?:những\s+|các\s+)?(?:truyện|câu chuyện)|Tuyển tập\s+(?:truyện|câu chuyện)|Xem thêm\s*:|Đọc thêm\s*:|Nguồn\s*:)[^\n.!?]*$/gim,
+      ""
+    ).trim();
+    if (!text) return null;
+
+    // Strip leading top-level numbering or story label (e.g. "1. ", "2) ", "Story 1: ", "Truyện 1: ")
+    text = text.replace(
+      /^\s*(?:(?:\d+|#[0-9]+|[IVXLC]+)[\.\)\-]\s*|(?:Story|Idea|Tale|Fable|Truyện|Chuyện|Câu chuyện|Kịch bản)\s*\d+\s*[:\.\-\–\—]\s*|[\•\*]\s+)/i,
+      ""
+    ).trim();
+    if (!text) return null;
+
+    // 1. Explicit "Title :: Story" delimiter
+    if (text.includes("::")) {
+      const parts = text.split("::");
+      const rawTitle = parts[0].trim();
+      const rawIdea = parts.slice(1).join("::").trim();
+      if (rawIdea) {
+        return { title: this.cleanExtractedStoryTitle(rawTitle), idea: rawIdea };
+      }
+    }
+
+    let lines = text.split("\n");
+    let firstLine = lines[0].trim();
+
+    // 2. Fix glued heading-to-sentence on line 1 (e.g. 'Chuyện "Đẽo cày giữa đường" - Thiếu chính kiếnMột anh nông dân...')
+    const looksLikeStoryHeadingPrefix = /^(?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale|Tiêu đề|Title)\b|["“][^"”]+["”])/i.test(firstLine)
+      || (/["“][^"”]+["”]\s*[\-\–\—]/.test(firstLine));
+
+    if (looksLikeStoryHeadingPrefix) {
+      // Check for inline colon after heading: 'Chuyện "Thần tài gõ cửa" - Cơ hội và sự chủ quan: Có một anh chàng...'
+      const colonMatch = firstLine.match(
+        /^((?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale|Tiêu đề|Title)\b[^:\n]{2,95}|["“][^"”\n]+["”](?:\s*[\-\–\—]\s*[^:\n]{2,60})?))\s*:\s+([A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ][\s\S]+)$/i
+      );
+      if (colonMatch) {
+        const headingCandidate = colonMatch[1].trim();
+        const bodyStart = colonMatch[2].trim();
+        // Ensure headingCandidate does not end with a dialogue/thought verb like "báo mộng", "nghĩ thầm", "nói", "hỏi", "bảo"
+        if (!/\b(?:nói|hỏi|bảo|đáp|thưa|kêu|than|nghĩ|thầm|mộng|rằng|chê|mắng|cười|said|asked|replied|thought)\s*$/i.test(headingCandidate)) {
+          lines = [headingCandidate, bodyStart, ...lines.slice(1)];
+          firstLine = headingCandidate;
+        }
+      }
+
+      // Check for glued lowercase-to-CapitalWord boundary after heading (e.g. "Thiếu chính kiếnMột anh nông dân...")
+      const gluedMatch = firstLine.match(
+        /^((?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale)\b[^\n.!?]{3,90}|["“][^"”\n]+["”]\s*[\-\–\—]\s*[^\n.!?]{2,60}?)[a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ])([A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ][a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]+\s+[\s\S]+)$/
+      );
+      if (gluedMatch) {
+        const headingCandidate = gluedMatch[1].trim();
+        const bodyStart = gluedMatch[2].trim();
+        lines = [headingCandidate, bodyStart, ...lines.slice(1)];
+        firstLine = headingCandidate;
+      }
+    }
+
+    // 3. If multi-line block where Line 1 is a story title/heading and Lines 2..N are the narrative body
+    const remainingBody = lines.slice(1).join("\n").trim();
+    if (remainingBody.length >= 20) {
+      const isExplicitHeading = /^(?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale|Tiêu đề|Title)\b|["“][^"”]+["”]\s*(?:[\-\–\—]|$))/i.test(firstLine);
+      const isShortTitleLine = firstLine.length <= 95 && !/[.!?…]["”']?$/.test(firstLine);
+      if (isExplicitHeading || isShortTitleLine) {
+        return {
+          title: this.cleanExtractedStoryTitle(firstLine),
+          idea: remainingBody
+        };
+      }
+    }
+
+    // 4. Fallback: extract quoted story name if line starts with Chuyện "..."
+    let fallbackTitle = "";
+    const qMatch = firstLine.match(/^(?:Chuyện|Truyện|Câu chuyện)\s+["“]([^"”]+)["”](?:\s*[\-\–\—]\s*([^:.!\n]+))?/i);
+    if (qMatch) {
+      fallbackTitle = qMatch[2] ? `${qMatch[1].trim()} - ${qMatch[2].trim()}` : qMatch[1].trim();
+    }
+
+    return {
+      title: fallbackTitle,
+      idea: lines.join("\n").trim()
+    };
+  }
+
+  cleanExtractedStoryTitle(rawTitle) {
+    let t = (rawTitle || "").trim();
+    if (!t) return "";
+    t = t.replace(/^\s*(?:(?:\d+|#[0-9]+|[IVXLC]+)[\.\)\-]\s*)/i, "");
+    t = t.replace(/^(?:Tiêu đề|Title|Tên truyện|Tên phim)\s*[:\-–—]\s*/i, "");
+    // Convert 'Chuyện "Thần tài gõ cửa" - Cơ hội và sự chủ quan' -> 'Thần tài gõ cửa - Cơ hội và sự chủ quan'
+    const mQuoted = t.match(/^(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích)\s+["“]([^"”]+)["”]\s*(?:([\-\–\—:])\s*(.+))?$/i);
+    if (mQuoted) {
+      return mQuoted[3] ? `${mQuoted[1].trim()} - ${mQuoted[3].trim()}` : mQuoted[1].trim();
+    }
+    t = t.replace(/^(?:Chuyện|Truyện|Câu chuyện)\s*[:\-–—]\s*/i, "");
+    t = t.replace(/^["“]([^"”]+)["”]$/, "$1");
+    return t.trim();
+  }
+
+  parseBatchInputText(rawText, delimiterMode = "auto", strictMultiStory = false) {
+    let cleaned = (rawText || "").replace(/\r\n/g, "\n").trim();
     if (!cleaned) return [];
 
+    // Ignore raw JSON storyboards or explicit Scene 1 / Cảnh 1 single-story screenplays when checking strictMultiStory
+    if (strictMultiStory) {
+      if (/^\s*\{[\s\S]*"scenes"\s*:\s*\[/.test(cleaned)) return [];
+      const sceneMarkers = cleaned.match(/(?:^|\n)\s*(?:Scene|Cảnh|Phân cảnh)\s*\d+/gi) || [];
+      if (sceneMarkers.length >= 2) return [];
+    }
+
+    // Remove standalone web-article SEO filler lines before splitting
+    cleaned = cleaned.replace(
+      /^[ \t]*(?:Top\s+(?:\d+\s+)?(?:những\s+)?(?:truyện|câu chuyện|mẩu chuyện)|Tổng hợp\s+(?:những\s+|các\s+)?(?:truyện|câu chuyện)|Tuyển tập\s+(?:truyện|câu chuyện)|Xem thêm\s*:|Đọc thêm\s*:|Nguồn\s*:)[^\n.!?]*$/gim,
+      ""
+    ).trim();
+
+    // Horizontal divider regex: matches 3 or more -, =, *, _, ~, ─, ━, —, –
+    const dividerRe = /\n[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,}|~{3,}|─{3,}|━{3,}|—{3,}|–{3,})[ \t]*(?:\n|$)/;
+    // Top-level numbered or labeled story header regex:
+    // Matches "1. ...", "2. ...", "Chuyện 1: ...", "Truyện 2: ...", or "Chuyện "..." - ..." at line start
+    const topStoryHeaderSplitRe = /\n(?=[ \t]*(?:(?:\d+|#[0-9]+)\s*[\.\)]\s+(?:Chuyện|Truyện|Câu chuyện|Story|Tale|Fable|Idea|Kịch bản|["“A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ])|(?:Chuyện|Truyện|Câu chuyện|Story|Tale|Fable|Idea|Kịch bản)\s*\d+\s*[:\.\-\–\—]|(?:Chuyện|Truyện|Câu chuyện)\s+["“][^"”\n]+["”]))/i;
+
+    const splitByDividersAndStoryHeaders = (txt) => {
+      const initialChunks = dividerRe.test(txt) ? txt.split(dividerRe) : [txt];
+      const finalChunks = [];
+      initialChunks.forEach((chunk) => {
+        const c = (chunk || "").trim();
+        if (!c) return;
+        const subChunks = c.split(topStoryHeaderSplitRe).map(s => s.trim()).filter(Boolean);
+        if (subChunks.length >= 2) {
+          finalChunks.push(...subChunks);
+        } else {
+          finalChunks.push(c);
+        }
+      });
+      return finalChunks;
+    };
+
     let blocks = [];
-    if (delimiterMode === "divider" || (delimiterMode === "auto" && /\n\s*(?:---|===|\*\*\*)\s*\n/.test(cleaned))) {
-      blocks = cleaned.split(/\n\s*(?:---|===|\*\*\*)\s*\n/);
-    } else if (delimiterMode === "line") {
-      blocks = cleaned.split(/\r?\n/);
-    } else if (delimiterMode === "blank") {
-      blocks = cleaned.split(/\n\s*\n+/);
-    } else {
-      // Auto-detect numbered list items (e.g. "1. ...", "2. ...", "Story 1: ...")
-      const numberedLines = cleaned.split(/\r?\n(?=\s*(?:\d+[\.\)\-]|(?:Story|Idea|Truyện|Kịch bản)\s*\d+\s*[:\-]|[\•\*]\s+))/i);
-      if (numberedLines.length >= 2) {
-        blocks = numberedLines;
-      } else if (/\n\s*\n/.test(cleaned)) {
-        blocks = cleaned.split(/\n\s*\n+/);
+    const structuredBlocks = splitByDividersAndStoryHeaders(cleaned);
+
+    if (strictMultiStory) {
+      // In strict mode (Option A / Option B auto-detection), only split when explicit dividers, numbered stories, or "::" items exist
+      if (structuredBlocks.length >= 2) {
+        blocks = structuredBlocks;
       } else {
-        blocks = cleaned.split(/\r?\n/);
+        const colonLines = cleaned.split(/\n/).filter(l => l.includes("::"));
+        if (colonLines.length >= 2) {
+          blocks = cleaned.split(/\n+/);
+        } else {
+          blocks = [cleaned];
+        }
+      }
+    } else if (delimiterMode === "divider") {
+      blocks = structuredBlocks;
+    } else if (delimiterMode === "auto") {
+      if (structuredBlocks.length >= 2) {
+        blocks = structuredBlocks;
+      } else if (/\n\s*\n/.test(cleaned)) {
+        // Only split by blank lines if paragraphs are independent ideas (not continuation paragraphs of 1 story)
+        const paras = cleaned.split(/\n\s*\n+/).map(p => p.trim()).filter(Boolean);
+        const continuationRe = /^(?:Hôm sau|Tối đến|Sáng hôm sau|Đêm đó|Một hôm|Đúng giữa trưa|Người thứ hai|Người thứ ba|Cứ thế|Thế là|Thế rồi|Cuối cùng|Kết cục|Ý nghĩa|Bài học|Lời bàn)/i;
+        const hasContinuation = paras.some((p, idx) => idx > 0 && continuationRe.test(p));
+        blocks = hasContinuation ? [cleaned] : paras;
+      } else {
+        const lines = cleaned.split(/\n/).map(l => l.trim()).filter(Boolean);
+        const continuationRe = /^(?:Hôm sau|Tối đến|Sáng hôm sau|Đêm đó|Người thứ hai|Người thứ ba|Cứ thế|Thế là|Ý nghĩa|Bài học)/i;
+        const hasContinuation = lines.some((l, idx) => idx > 0 && continuationRe.test(l));
+        blocks = hasContinuation ? [cleaned] : lines;
+      }
+    } else if (delimiterMode === "blank") {
+      if (structuredBlocks.length >= 2 && dividerRe.test(cleaned)) {
+        blocks = structuredBlocks;
+      } else {
+        blocks = cleaned.split(/\n\s*\n+/);
+      }
+    } else if (delimiterMode === "line") {
+      if (structuredBlocks.length >= 2 && dividerRe.test(cleaned)) {
+        blocks = structuredBlocks;
+      } else {
+        blocks = cleaned.split(/\n/);
       }
     }
 
     const items = [];
     blocks.forEach((b) => {
-      let line = (b || "").trim();
-      if (!line) return;
-      // Strip leading list bullet or numbering ("1. ", "Story 1: ", "- ")
-      line = line.replace(/^(?:\d+[\.\)\-]\s*|(?:Story|Idea|Truyện|Kịch bản)\s*\d+\s*[:\-]\s*|[\-\•\*]\s+)/i, "").trim();
-      if (!line) return;
-
-      let title = "";
-      let idea = line;
-      if (line.includes("::")) {
-        const parts = line.split("::");
-        title = parts[0].trim();
-        idea = parts.slice(1).join("::").trim();
-      }
-      if (idea) {
-        items.push({ title, idea });
+      const parsed = this.extractStoryTitleAndBody(b);
+      if (parsed && parsed.idea) {
+        items.push(parsed);
       }
     });
     return items;
+  }
+
+  updateLiveMultiStoryDetection() {
+    // 1. Option E (#textareaBatchIdeas) live hint
+    if (this.batchDetectHint && this.textareaBatchIdeas) {
+      const rawBatch = this.textareaBatchIdeas.value.trim();
+      if (!rawBatch) {
+        this.batchDetectHint.innerHTML = `💡 Tip: Supports stories separated by <code>---</code>, numbered <code>1. 2. 3.</code>, or <code>Title :: Story idea</code>`;
+      } else {
+        const mode = this.selectBatchDelimiter?.value || "auto";
+        const parsed = this.parseBatchInputText(rawBatch, mode, false);
+        if (parsed.length > 0) {
+          const previewTitles = parsed.slice(0, 3).map((it, idx) => {
+            const label = it.title || (it.idea.slice(0, 28) + (it.idea.length > 28 ? "..." : ""));
+            return `#${idx + 1} "${this.escapeHtml(label)}"`;
+          }).join(" • ");
+          const moreTag = parsed.length > 3 ? ` (+${parsed.length - 3} more)` : "";
+          this.batchDetectHint.innerHTML = `<strong style="color:#34d399;">🔍 Detected ${parsed.length} stor${parsed.length === 1 ? 'y' : 'ies'}:</strong> ${previewTitles}${moreTag}`;
+        }
+      }
+    }
+
+    // 2. Option A (#inputIdeaPrompt) live multi-story banner
+    if (this.promptMultiStoryBanner && this.inputIdeaPrompt) {
+      const rawPrompt = this.inputIdeaPrompt.value.trim();
+      const detectedPrompt = rawPrompt ? this.parseBatchInputText(rawPrompt, "auto", true) : [];
+      if (detectedPrompt.length >= 2) {
+        const preview = detectedPrompt.slice(0, 3).map((it, idx) => `#${idx + 1} "${it.title || it.idea.slice(0, 24) + '...'}"`).join(" • ");
+        if (this.textPromptMultiStoryCount) {
+          this.textPromptMultiStoryCount.textContent = `Detected ${detectedPrompt.length} stories: ${preview}`;
+        }
+        this.promptMultiStoryBanner.style.display = "flex";
+      } else {
+        this.promptMultiStoryBanner.style.display = "none";
+      }
+    }
+
+    // 3. Option B (#inputDirectPasteText) live multi-story banner
+    if (this.pasteMultiStoryBanner && this.inputDirectPasteText) {
+      const rawPaste = this.inputDirectPasteText.value.trim();
+      const detectedPaste = rawPaste ? this.parseBatchInputText(rawPaste, "auto", true) : [];
+      if (detectedPaste.length >= 2) {
+        const preview = detectedPaste.slice(0, 3).map((it, idx) => `#${idx + 1} "${it.title || it.idea.slice(0, 24) + '...'}"`).join(" • ");
+        if (this.textPasteMultiStoryCount) {
+          this.textPasteMultiStoryCount.textContent = `Detected ${detectedPaste.length} stories: ${preview}`;
+        }
+        this.pasteMultiStoryBanner.style.display = "flex";
+      } else {
+        this.pasteMultiStoryBanner.style.display = "none";
+      }
+    }
   }
 
   handleAddBatchIdeasFromTextarea() {
@@ -6227,6 +6574,7 @@ ${isAutoScenes
     }
     this.addItemsToBatchQueue(parsedItems);
     if (this.textareaBatchIdeas) this.textareaBatchIdeas.value = "";
+    this.updateLiveMultiStoryDetection();
     this.showToast(`📚 Added ${parsedItems.length} stor${parsedItems.length === 1 ? 'y' : 'ies'} to Batch Queue (${this.batchQueue.length} total)!`);
     return parsedItems.length;
   }

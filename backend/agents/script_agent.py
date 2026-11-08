@@ -2219,7 +2219,168 @@ Return ONLY raw JSON matching this structure:
                     "scenes": scenes
                 }
 
+        # 3. Narrative Story / Multi-Story Fallback (when user pastes plain narrative stories without Scene 1 headers)
+        stories = ScriptAgent.split_multi_story_text(cleaned_text)
+        if stories:
+            first_story = stories[0]
+            st_title = first_story.get("title") or "Imported Story"
+            st_body = first_story.get("idea") or cleaned_text
+            if len(st_body.split()) >= 10:
+                is_vi = any(ord(c) > 127 for c in st_body)
+                lang_code = "vi" if is_vi else "en"
+                helper_agent = ScriptAgent()
+                num_sc = helper_agent.estimate_optimal_scene_count(st_body)
+                sents = [
+                    s.strip()
+                    for s in re.split(r'(?<=[.!?…])\s+|\n+', st_body)
+                    if len(s.strip()) > 10
+                ]
+                adapted = helper_agent._adapt_narrative_to_storyboard(
+                    raw_text=st_body,
+                    sentences=sents,
+                    num_scenes=num_sc,
+                    art_style="ghibli",
+                    language=lang_code,
+                    audience="General",
+                    title=st_title,
+                    camera_on_speaker=False
+                )
+                if adapted and adapted.get("scenes"):
+                    adapted["scenes"] = ScriptAgent.sync_story_dialogues_to_scenes(
+                        scenes=adapted["scenes"],
+                        idea=st_body,
+                        characters=adapted.get("characters", ""),
+                        language=lang_code,
+                        art_style="ghibli"
+                    )
+                    return adapted
+
         return {"title": "Imported Story", "logline": "", "scenes": []}
+
+    @staticmethod
+    def _clean_story_heading_title(raw_title: str) -> str:
+        t = (raw_title or "").strip()
+        if not t:
+            return ""
+        t = re.sub(r'^\s*(?:(?:\d+|#[0-9]+|[IVXLC]+)[\.\)\-]\s*)', '', t, flags=re.IGNORECASE)
+        t = re.sub(r'^(?:Tiêu đề|Title|Tên truyện|Tên phim)\s*[:\-–—]\s*', '', t, flags=re.IGNORECASE)
+        m_quoted = re.match(
+            r'^(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích)\s+["“]([^"”]+)["”]\s*(?:[\-\–\—:]\s*(.+))?$',
+            t,
+            flags=re.IGNORECASE
+        )
+        if m_quoted:
+            return f"{m_quoted.group(1).strip()} - {m_quoted.group(2).strip()}" if m_quoted.group(2) else m_quoted.group(1).strip()
+        t = re.sub(r'^(?:Chuyện|Truyện|Câu chuyện)\s*[:\-–—]\s*', '', t, flags=re.IGNORECASE)
+        t = re.sub(r'^["“]([^"”]+)["”]$', r'\1', t)
+        return t.strip()
+
+    @staticmethod
+    def split_multi_story_text(raw_text: str) -> List[Dict[str, str]]:
+        """
+        Detects and splits multi-story texts (separated by horizontal dividers like --- or ------,
+        numbered headers like '1. Chuyện ...', '2. Chuyện ...', or 'Title :: Story') into clean
+        individual story dictionaries: [{"title": ..., "idea": ...}, ...].
+        """
+        cleaned = (raw_text or "").replace("\r\n", "\n").strip()
+        if not cleaned:
+            return []
+
+        # Strip standalone web-article SEO filler lines (e.g. "Top truyện cười dân gian ngắn và ý nghĩa trào phúng hay nhất")
+        cleaned = re.sub(
+            r'(?im)^[ \t]*(?:Top\s+(?:\d+\s+)?(?:những\s+)?(?:truyện|câu chuyện|mẩu chuyện)|Tổng hợp\s+(?:những\s+|các\s+)?(?:truyện|câu chuyện)|Tuyển tập\s+(?:truyện|câu chuyện)|Xem thêm\s*:|Đọc thêm\s*:|Nguồn\s*:)[^\n.!?]*$',
+            '',
+            cleaned
+        ).strip()
+
+        divider_re = re.compile(r'\n[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,}|~{3,}|─{3,}|━{3,}|—{3,}|–{3,})[ \t]*(?:\n|$)')
+        top_header_re = re.compile(
+            r'\n(?=[ \t]*(?:(?:\d+|#[0-9]+)\s*[\.\)]\s+(?:Chuyện|Truyện|Câu chuyện|Story|Tale|Fable|Idea|Kịch bản|["“A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ])|(?:Chuyện|Truyện|Câu chuyện|Story|Tale|Fable|Idea|Kịch bản)\s*\d+\s*[:\.\-\–\—]|(?:Chuyện|Truyện|Câu chuyện)\s+["“][^"”\n]+["”]))',
+            re.IGNORECASE
+        )
+
+        initial_chunks = divider_re.split(cleaned) if divider_re.search(cleaned) else [cleaned]
+        raw_blocks: List[str] = []
+        for chunk in initial_chunks:
+            c = (chunk or "").strip()
+            if not c:
+                continue
+            sub_chunks = [s.strip() for s in top_header_re.split(c) if s and s.strip()]
+            if len(sub_chunks) >= 2:
+                raw_blocks.extend(sub_chunks)
+            else:
+                raw_blocks.append(c)
+
+        results: List[Dict[str, str]] = []
+        for block in raw_blocks:
+            text = re.sub(r'^(?:[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,}|~{3,}|─{3,}|━{3,}|—{3,}|–{3,})[ \t]*\n?)+', '', block)
+            text = re.sub(r'(?:\n?[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,}|~{3,}|─{3,}|━{3,}|—{3,}|–{3,})[ \t]*)+$', '', text).strip()
+            if not text:
+                continue
+            text = re.sub(
+                r'^\s*(?:(?:\d+|#[0-9]+|[IVXLC]+)[\.\)\-]\s*|(?:Story|Idea|Tale|Fable|Truyện|Chuyện|Câu chuyện|Kịch bản)\s*\d+\s*[:\.\-\–\—]\s*|[\•\*]\s+)',
+                '',
+                text,
+                flags=re.IGNORECASE
+            ).strip()
+            if not text:
+                continue
+
+            if "::" in text.splitlines()[0]:
+                parts = text.split("::", 1)
+                results.append({
+                    "title": ScriptAgent._clean_story_heading_title(parts[0]),
+                    "idea": parts[1].strip()
+                })
+                continue
+
+            lines = text.splitlines()
+            first_line = lines[0].strip()
+
+            looks_like_heading = bool(
+                re.match(r'^(?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale|Tiêu đề|Title)\b|["“][^"”]+["”])', first_line, re.IGNORECASE)
+                or re.search(r'["“][^"”]+["”]\s*[\-\–\—]', first_line)
+            )
+            if looks_like_heading:
+                m_colon = re.match(
+                    r'^((?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale|Tiêu đề|Title)\b[^:\n]{2,95}|["“][^"”\n]+["”](?:\s*[\-\–\—]\s*[^:\n]{2,60})?))\s*:\s+([A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ][\s\S]+)$',
+                    first_line,
+                    re.IGNORECASE
+                )
+                if m_colon:
+                    h_cand = m_colon.group(1).strip()
+                    b_start = m_colon.group(2).strip()
+                    if not re.search(r'\b(?:nói|hỏi|bảo|đáp|thưa|kêu|than|nghĩ|thầm|mộng|rằng|chê|mắng|cười|said|asked|replied|thought)\s*$', h_cand, re.IGNORECASE):
+                        lines = [h_cand, b_start] + lines[1:]
+                        first_line = h_cand
+
+                m_glued = re.match(
+                    r'^((?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale)\b[^\n.!?]{3,90}|["“][^"”\n]+["”]\s*[\-\–\—]\s*[^\n.!?]{2,60}?)[a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ])([A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ][a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]+\s+[\s\S]+)$',
+                    first_line
+                )
+                if m_glued:
+                    h_cand = m_glued.group(1).strip()
+                    b_start = m_glued.group(2).strip()
+                    lines = [h_cand, b_start] + lines[1:]
+                    first_line = h_cand
+
+            rem_body = "\n".join(lines[1:]).strip()
+            if len(rem_body) >= 20:
+                is_explicit_h = bool(re.match(r'^(?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale|Tiêu đề|Title)\b|["“][^"”]+["”]\s*(?:[\-\–\—]|$))', first_line, re.IGNORECASE))
+                is_short_h = len(first_line) <= 95 and not re.search(r'[.!?…]["”\']?$', first_line)
+                if is_explicit_h or is_short_h:
+                    results.append({
+                        "title": ScriptAgent._clean_story_heading_title(first_line),
+                        "idea": rem_body
+                    })
+                    continue
+
+            results.append({
+                "title": "",
+                "idea": "\n".join(lines).strip()
+            })
+
+        return results
 
     @staticmethod
     def _extract_gemini_cookies(cookie_input: str) -> tuple:
@@ -2423,38 +2584,72 @@ Return ONLY raw JSON matching this structure:
         Dynamically extracts and adapts scenes from a user's rich narrative or fairy tale text.
         Guarantees that the storyboard faithfully reflects the user's actual plot and entities.
         """
-        is_vi = language.startswith("vi")
+        is_vi = language.startswith("vi") or any(ord(c) > 127 for c in raw_text)
+        # Extract moral / satirical meaning ("Ý nghĩa trào phúng: ...", "Bài học: ...") if present
+        moral_logline = ""
+        m_moral = re.search(r'(?:^|\n)\s*(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học(?:\s+rút ra)?|Thông điệp)\s*:\s*([^\n]+)', raw_text, re.IGNORECASE)
+        if m_moral:
+            moral_logline = m_moral.group(1).strip()
+
+        # Filter out pure meta/commentary sentences if there are enough narrative sentences
+        narrative_sentences = [
+            s for s in sentences
+            if not re.match(r'^(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học|Top truyện|Nó chế giễu|Nó châm biếm|Câu chuyện là lời cảnh tỉnh|Câu chuyện là bài học)', s.strip(), re.IGNORECASE)
+        ]
+        if len(narrative_sentences) >= 3:
+            sentences = narrative_sentences
+
         if not num_scenes or num_scenes <= 0:
-            num_scenes = self.estimate_optimal_scene_count(raw_text)
+            num_scenes = self.estimate_optimal_scene_count(" ".join(sentences) or raw_text)
         total_s = len(sentences)
         chunk_size = max(1, total_s / float(num_scenes))
 
         lower_all = raw_text.lower()
         characters_list = []
 
-        if any(w in lower_all for w in ["youngest son", "prince", "king's son", "hoàng tử", "chàng trai"]):
-            characters_list.append("The Young Prince: 18yo courageous youth with messy light brown hair, forest-green royal tunic, worn brown leather belt, and sturdy traveling boots")
-        elif any(w in lower_all for w in ["girl", "cô gái", "young woman", "nàng"]):
-            characters_list.append("The Heroine: youthful courageous female with gentle eyes, flowing hair, and simple linen garments")
-        else:
-            characters_list.append("Protagonist: determined youthful character with expressive eyes and signature traveler attire")
+        if "thần tài" in lower_all:
+            characters_list.append("Thần Tài: vị thần phúc hậu râu dài trắng muốt, mặc áo gấm đỏ thêu kim tuyến lấp lánh hào quang vàng")
+        if any(w in lower_all for w in ["anh chàng lười", "chàng lười", "lười biếng"]):
+            characters_list.append("Anh Chàng Lười: thanh niên dáng vẻ lười nhác, mặc áo vải nâu giản dị trong ngôi nhà gỗ mộc mạc")
+        if "hàng xóm" in lower_all:
+            characters_list.append("Người Hàng Xóm: bác nông dân hiền lành chất phác, mặc áo bà ba nâu, tay cầm cuốc làm đồng")
+        if any(w in lower_all for w in ["anh nông dân", "bác nông dân", "đẽo cày"]):
+            characters_list.append("Anh Nông Dân: người nông dân chất phác mặc áo nâu sồng, tay cầm đục đẽo khúc gỗ bên vệ đường làng")
+        if any(w in lower_all for w in ["người đi qua", "người thứ hai", "người thứ ba", "qua đường"]):
+            characters_list.append("Người Qua Đường: khách bộ hành đi ngang đường làng với cử chỉ chỉ trỏ góp ý sôi nổi")
 
-        if any(w in lower_all for w in ["golden bird", "chim vàng", "bird", "con chim"]):
-            characters_list.append("The Golden Bird: radiant mythical bird with feathers glittering like pure molten gold, brilliant golden eyes, and a luminous crest")
+        if not characters_list:
+            if any(w in lower_all for w in ["youngest son", "prince", "king's son", "hoàng tử", "chàng trai"]):
+                characters_list.append("The Young Prince: 18yo courageous youth with messy light brown hair, forest-green royal tunic, worn brown leather belt, and sturdy traveling boots")
+            elif any(w in lower_all for w in ["girl", "cô gái", "young woman", "nàng"]):
+                characters_list.append("The Heroine: youthful courageous female with gentle eyes, flowing hair, and simple linen garments")
+            else:
+                characters_list.append("Protagonist: expressive main character in traditional storytelling attire")
 
-        if any(w in lower_all for w in ["fox", "cáo", "con cáo"]):
-            characters_list.append("The Faithful Fox: sleek oversized red fox with intelligent amber eyes, mystical wisdom, and distinctive white-tipped tail")
+            if any(w in lower_all for w in ["golden bird", "chim vàng", "bird", "con chim"]):
+                characters_list.append("The Golden Bird: radiant mythical bird with feathers glittering like pure molten gold, brilliant golden eyes, and a luminous crest")
 
-        if any(w in lower_all for w in ["princess", "công chúa"]):
-            characters_list.append("Princess: 19yo noble maiden with flowing golden hair, radiant gentle gaze, and sky-blue silk gown")
+            if any(w in lower_all for w in ["fox", "cáo", "con cáo"]):
+                characters_list.append("The Faithful Fox: sleek oversized red fox with intelligent amber eyes, mystical wisdom, and distinctive white-tipped tail")
 
-        if any(w in lower_all for w in ["golden horse", "ngựa vàng", "horse", "con ngựa"]):
-            characters_list.append("The Golden Horse: magnificent steed with shimmering golden coat and flowing mane")
+            if any(w in lower_all for w in ["princess", "công chúa"]):
+                characters_list.append("Princess: 19yo noble maiden with flowing golden hair, radiant gentle gaze, and sky-blue silk gown")
+
+            if any(w in lower_all for w in ["golden horse", "ngựa vàng", "horse", "con ngựa"]):
+                characters_list.append("The Golden Horse: magnificent steed with shimmering golden coat and flowing mane")
 
         char_string = " | ".join(characters_list[:4])
 
         scenes = []
         archetypes = ["Establishing Shot", "Action Beat", "Dialogue Two-Shot", "Reaction Focus", "Climax", "Resolution"]
+        vi_scene_titles = [
+            "Khởi Đầu Câu Chuyện",
+            "Tình Huống Bất Ngờ",
+            "Cuộc Đối Thoại",
+            "Bước Ngoặt Câu Chuyện",
+            "Cao Trào Sự Việc",
+            "Bài Học Sâu Sắc"
+        ]
 
         for idx in range(num_scenes):
             start_i = int(idx * chunk_size)
@@ -2466,46 +2661,28 @@ Return ONLY raw JSON matching this structure:
             chunk_text = " ".join(chunk_sentences)
             arch = archetypes[min(idx, len(archetypes) - 1)]
 
-            # Build a complete, story-tied narration from the chunk without mid-sentence truncation
-            narr_parts = []
-            for cs in chunk_sentences:
-                cs_clean = re.sub(r'\s+', ' ', cs).strip()
-                if not cs_clean:
-                    continue
-                if len(" ".join(narr_parts + [cs_clean]).split()) <= 26 or not narr_parts:
-                    narr_parts.append(cs_clean)
-                else:
-                    break
-
-            narr_raw = " ".join(narr_parts).strip()
-            if len(narr_raw.split()) > 28:
-                # Trim cleanly at a clause boundary (comma, semicolon, dash) if overly long
-                clauses = re.split(r'([,;–—:])', narr_raw)
-                acc = ""
-                for c_piece in clauses:
-                    if len((acc + c_piece).split()) <= 24 or not acc:
-                        acc += c_piece
-                    else:
-                        break
-                narr_raw = acc.strip(' ,;–—:')
-                if len(narr_raw.split()) > 26:
-                    narr_raw = " ".join(narr_raw.split()[:24])
-
+            # Keep full chunk sentences intact so dialogues and punchlines are never cut off mid-sentence
+            narr_raw = " ".join(re.sub(r'\s+', ' ', cs).strip() for cs in chunk_sentences if cs.strip()).strip()
             if not narr_raw:
                 narr_raw = "Câu chuyện tiếp tục mở ra những tình tiết bất ngờ." if is_vi else "The adventure continues through ancient lands."
             if not narr_raw.endswith((".", "!", "?", '"', '”', '…')):
                 narr_raw += "."
 
-            if idx == 0:
-                sc_title = "The Golden Apple Garden" if "apple" in lower_all else "The Journey Begins"
-            elif idx == num_scenes - 1:
-                sc_title = "The Triumphant Return" if not is_vi else "Sự Trở Về Vinh Quang"
-            elif idx == 1:
-                sc_title = "The Fox's Guidance" if "fox" in lower_all else "Crossing The Trials"
+            if is_vi:
+                sc_title = vi_scene_titles[min(idx, len(vi_scene_titles) - 1)] if idx < len(vi_scene_titles) - 1 else f"Cảnh {idx + 1}"
+                if idx == num_scenes - 1:
+                    sc_title = "Kết Cục & Bài Học"
             else:
-                sc_title = f"The Turn of Fortune" if not is_vi else f"Bước Ngoặt Định Mệnh"
+                if idx == 0:
+                    sc_title = "The Golden Apple Garden" if "apple" in lower_all else "The Journey Begins"
+                elif idx == num_scenes - 1:
+                    sc_title = "The Triumphant Return"
+                elif idx == 1:
+                    sc_title = "The Fox's Guidance" if "fox" in lower_all else "Crossing The Trials"
+                else:
+                    sc_title = "The Turn of Fortune"
 
-            vis_snippet = chunk_text[:200].replace('"', '')
+            vis_snippet = re.sub(r'["“][^"”]*["”]', '', chunk_text)[:200].strip() or chunk_text[:200].replace('"', '')
             if art_style == "realistic":
                 style_tag = "Photorealistic cinematic live-action"
             elif art_style == "stick_figure":
@@ -2533,8 +2710,8 @@ Return ONLY raw JSON matching this structure:
             })
 
         return {
-            "title": title or "The Golden Bird",
-            "logline": "An epic journey of virtue, magical companions, and triumphant destiny.",
+            "title": title or ("Câu Chuyện Dân Gian" if is_vi else "The Golden Bird"),
+            "logline": moral_logline or ("Câu chuyện dân gian mang ý nghĩa trào phúng và bài học sâu sắc." if is_vi else "An epic journey of virtue, magical companions, and triumphant destiny."),
             "characters": char_string,
             "scenes": scenes
         }
@@ -2553,17 +2730,24 @@ Return ONLY raw JSON matching this structure:
         tailored screenplays and narrative beats tailored to the story topic.
         """
         clean_idea_raw = idea.strip()
+        parsed_stories = ScriptAgent.split_multi_story_text(clean_idea_raw)
+        extracted_heading_title = ""
+        if parsed_stories:
+            extracted_heading_title = parsed_stories[0].get("title", "").strip()
+            if parsed_stories[0].get("idea"):
+                clean_idea_raw = parsed_stories[0]["idea"].strip()
+
         if not num_scenes or num_scenes <= 0:
             num_scenes = self.estimate_optimal_scene_count(clean_idea_raw)
         genre = self._detect_genre(clean_idea_raw)
-        is_vi = language.startswith("vi")
+        is_vi = language.startswith("vi") or any(ord(c) > 127 for c in clean_idea_raw)
 
         # 1. Extract quoted title or user-defined title
-        quote_title = re.search(r'["“]([^"”\n]+)["”]', clean_idea_raw)
-        extracted_title = quote_title.group(1).strip() if quote_title else None
+        quote_title = re.search(r'["“]([^"”\n]+)["”]', extracted_heading_title or clean_idea_raw[:120])
+        extracted_title = extracted_heading_title or (quote_title.group(1).strip() if quote_title else None)
 
         # Check if user provided a rich story or multi-sentence narrative
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_idea_raw) if len(s.strip()) > 15]
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?…])\s+|\n+', clean_idea_raw) if len(s.strip()) > 12]
         if len(sentences) >= 3 or len(clean_idea_raw.split()) > 45:
             first_sentence = re.split(r'[.!?\n]', clean_idea_raw)[0].strip()
             w_words = [w for w in first_sentence.split() if w]
