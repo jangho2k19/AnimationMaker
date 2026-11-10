@@ -1033,7 +1033,16 @@ Return ONLY raw JSON matching this structure:
         elif primary_quote:
             # Ensure spoken dialogue from acting_prompt is included in voiceover narration when not already present
             quote_is_vi = any(ord(c) > 127 for c in primary_quote)
-            has_quote_in_narr = ('"' in narr or '“' in narr or '”' in narr or primary_quote.lower().rstrip('.!?') in narr.lower())
+            q_words = set(re.findall(r'[a-zA-ZÀ-ỹ0-9]+', primary_quote.lower()))
+            n_words = set(re.findall(r'[a-zA-ZÀ-ỹ0-9]+', narr.lower()))
+            common_q_words = q_words & n_words
+            overlap_q = len(common_q_words) / max(len(q_words), 1)
+
+            has_quote_in_narr = (
+                '"' in narr or '“' in narr or '”' in narr
+                or primary_quote.lower().rstrip('.!?') in narr.lower()
+                or (len(q_words) >= 3 and overlap_q >= 0.55)
+            )
             if not has_quote_in_narr and (is_vi == quote_is_vi):
                 lower_narr = narr.lower()
                 clean_n = narr.rstrip(' .!?')
@@ -1115,11 +1124,20 @@ Return ONLY raw JSON matching this structure:
                     return c
             return "Thần Tài"
 
+        # Strip recipient prepositional phrases (e.g. "nhắn tin lại cho chồng", "nói với vợ")
+        # so the recipient is never mistaken for the speaking subject
+        subj_clause = re.sub(
+            r'\b(?:cho|với|tới|gửi|về cho)\s+(?:chồng|vợ|ông|bà|anh|cô|nàng|chàng|hắn|nó|cha|mẹ|con|hàng xóm|ông chồng|bà vợ)\b.*$',
+            '',
+            low_clause,
+            flags=re.IGNORECASE
+        ).strip() or low_clause
+
         # 2. Match against known character roster (preferring the character mentioned closest to the quote)
         if clean_chars:
             matched_chars = []
             for c in clean_chars:
-                pos = low_clause.rfind(c.lower())
+                pos = subj_clause.rfind(c.lower())
                 if pos != -1:
                     matched_chars.append((pos + 1000, c))
                 else:
@@ -1130,17 +1148,29 @@ Return ONLY raw JSON matching this structure:
                 matched_chars.sort(key=lambda x: x[0], reverse=True)
                 return matched_chars[0][1]
 
-            # 3. Resolve third-person pronouns ("anh ta", "chàng", "ông ta", "cô ấy") to the protagonist in chars
-            if re.search(r'\b(?:anh ta|anh ấy|chàng|hắn|ông ta|ông ấy)\b', low_clause):
+            # 3. Resolve role aliases / pronouns ("chồng", "vợ", "anh ta", "chàng", "ông chồng", "bà vợ")
+            if any(w in subj_clause for w in ["bà vợ", "người vợ", "cô vợ", "vợ", "bà nhắn tin"]):
                 for c in clean_chars:
-                    c_low = c.lower()
-                    if any(k in c_low for k in ["anh", "chàng", "nông dân", "lười", "trai", "ông", "chủ"]):
+                    if any(w in c.lower() for w in ["vợ", "mai", "cô", "bà", "nữ"]):
+                        return c
+                return clean_chars[-1] if len(clean_chars) >= 2 else clean_chars[0]
+
+            if any(w in subj_clause for w in ["ông chồng", "người chồng", "anh chồng", "chồng", "anh đi công tác", "ông đi xa"]):
+                for c in clean_chars:
+                    if any(w in c.lower() for w in ["chồng", "hùng", "anh", "nam"]):
                         return c
                 return clean_chars[0]
-            if re.search(r'\b(?:cô ta|cô ấy|nàng|bà ta|bà ấy)\b', low_clause):
+
+            if re.search(r'\b(?:anh ta|anh ấy|chàng|hắn|ông ta|ông ấy)\b', subj_clause):
                 for c in clean_chars:
                     c_low = c.lower()
-                    if any(k in c_low for k in ["cô", "nàng", "bà", "gái", "vợ", "mẹ"]):
+                    if any(k in c_low for k in ["anh", "chàng", "nông dân", "lười", "trai", "ông", "chủ", "hùng"]):
+                        return c
+                return clean_chars[0]
+            if re.search(r'\b(?:cô ta|cô ấy|nàng|bà ta|bà ấy)\b', subj_clause):
+                for c in clean_chars:
+                    c_low = c.lower()
+                    if any(k in c_low for k in ["cô", "nàng", "bà", "gái", "vợ", "mẹ", "mai"]):
                         return c
 
         # 4. Heuristic extraction of subject before speech verb
@@ -1406,10 +1436,32 @@ Return ONLY raw JSON matching this structure:
                     or re.search(r'\b(?:nói|bảo|hỏi|chê|đáp|đi qua)\b', spk.lower())
                 ):
                     inferred = ScriptAgent.infer_speaker_from_context(prefix_candidate or md.get("intro", ""), chars)
+                    if not inferred and len(chars) >= 2:
+                        q_low = d_line.lower()
+                        if any(w in q_low for w in ["em ", "em đã", "em còn", "nhớ anh"]):
+                            for c in chars:
+                                if any(w in c.lower() for w in ["mai", "vợ", "cô", "bà", "nữ"]):
+                                    inferred = c
+                                    break
+                        elif any(w in q_low for w in ["anh ", "anh gửi", "anh đi", "nhớ em"]):
+                            for c in chars:
+                                if any(w in c.lower() for w in ["hùng", "chồng", "anh", "ông", "nam"]):
+                                    inferred = c
+                                    break
                     spk = inferred or (chars[0] if len(chars) == 1 else "Character")
 
                 if pos != -1:
                     prefix = curr_text[:pos].rstrip(' "“”:\t\n')
+                    if ':' in prefix:
+                        intro_part, trailing_part = prefix.rsplit(':', 1)
+                        t_toks = set(re.findall(r'[a-zA-ZÀ-ỹ0-9]+', trailing_part.lower()))
+                        q_toks = set(re.findall(r'[a-zA-ZÀ-ỹ0-9]+', d_line.lower()))
+                        common_pq = t_toks & q_toks
+                        if common_pq and (len(common_pq) / max(len(t_toks), 1) >= 0.4 or len(common_pq) / max(len(q_toks), 1) >= 0.5):
+                            prefix = intro_part.strip(' :\t')
+                    elif prefix and d_line.lower().startswith(prefix.lower()[:min(len(prefix), 25)]):
+                        prefix = ""
+
                     if prefix:
                         segments.append({"speaker": narrator_name, "text": prefix})
                     segments.append({"speaker": spk, "text": d_line})
@@ -1450,9 +1502,39 @@ Return ONLY raw JSON matching this structure:
                 continue
 
             pending_narrator_prefix = ""
-            speaker = ScriptAgent.infer_speaker_from_context(prefix, chars) or (chars[0] if len(chars) == 1 else "Character")
-
             clean_prefix = prefix.rstrip(' :\t')
+            # Deduplicate prefix if it contains the quote leaked after a speech colon or matches quote start
+            if ':' in clean_prefix:
+                intro_part, trailing_part = clean_prefix.rsplit(':', 1)
+                t_toks = set(re.findall(r'[a-zA-ZÀ-ỹ0-9]+', trailing_part.lower()))
+                q_toks = set(re.findall(r'[a-zA-ZÀ-ỹ0-9]+', quote.lower()))
+                common_pq = t_toks & q_toks
+                if common_pq and (len(common_pq) / max(len(t_toks), 1) >= 0.4 or len(common_pq) / max(len(q_toks), 1) >= 0.5):
+                    clean_prefix = intro_part.strip(' :\t')
+            elif clean_prefix and quote.lower().startswith(clean_prefix.lower()[:min(len(clean_prefix), 25)]):
+                clean_prefix = ""
+
+            speaker = ScriptAgent.infer_speaker_from_context(prefix, chars)
+            if not speaker:
+                if len(chars) == 1:
+                    speaker = chars[0]
+                elif len(chars) >= 2:
+                    q_low = quote.lower()
+                    if any(w in q_low for w in ["em ", "em đã", "em còn", "nhớ anh"]):
+                        for c in chars:
+                            if any(w in c.lower() for w in ["mai", "vợ", "cô", "bà", "nữ"]):
+                                speaker = c
+                                break
+                    elif any(w in q_low for w in ["anh ", "anh gửi", "anh đi", "nhớ em"]):
+                        for c in chars:
+                            if any(w in c.lower() for w in ["hùng", "chồng", "anh", "ông", "nam"]):
+                                speaker = c
+                                break
+                    if not speaker:
+                        speaker = chars[0]
+                else:
+                    speaker = "Character"
+
             if clean_prefix:
                 segments.append({"speaker": narrator_name, "text": clean_prefix})
             if quote:
@@ -1553,16 +1635,33 @@ Return ONLY raw JSON matching this structure:
                 p_strip = p.strip()
                 if not p_strip:
                     continue
-                m = re.match(r'^(?:[A-Za-z0-9_\s]+:)?\s*([^,:\(\)]+)', p_strip)
-                if m:
-                    c_name = m.group(1).strip()
-                    if (
-                        c_name
-                        and c_name.lower() not in ("narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character")
-                        and c_name.lower() not in invalid_speaker_keys
-                    ):
-                        if c_name not in char_names:
-                            char_names.append(c_name)
+                generic_role_labels = {
+                    "protagonist", "nhân vật chính", "companion", "creature", "antagonist",
+                    "hero", "heroine", "villain", "sidekick", "mentor", "vai chính", "vai phụ"
+                }
+                c_name = ""
+                if ":" in p_strip:
+                    before_col, after_col = p_strip.split(":", 1)
+                    before_col = before_col.strip()
+                    after_col = after_col.strip()
+                    if before_col.lower() in generic_role_labels or re.match(r'^(?:character|nhân vật)\s*\d+$', before_col, re.IGNORECASE):
+                        m_after = re.match(r'^([^,:\(\)\-]+)', after_col)
+                        c_name = m_after.group(1).strip() if m_after else after_col
+                    else:
+                        c_name = before_col
+                else:
+                    m = re.match(r'^([^,:\(\)\-]+)', p_strip)
+                    c_name = m.group(1).strip() if m else p_strip
+
+                c_name = re.sub(r'^[\[\(]|[\)\]]$', '', c_name).strip()
+                if (
+                    c_name
+                    and c_name.lower() not in ("narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character")
+                    and c_name.lower() not in invalid_speaker_keys
+                    and len(c_name.split()) <= 4
+                ):
+                    if c_name not in char_names:
+                        char_names.append(c_name)
 
         if scenes:
             for sc in scenes:
@@ -1624,10 +1723,10 @@ Return ONLY raw JSON matching this structure:
                     break
             low_name = f"{name} {context}".lower()
 
-            is_elder = any(w in low_name for w in ["ông", "cụ", "bà lão", "già", "bụt", "tiên", "thần tài", "thần", "old", "elder", "grandfather", "grandmother"])
-            is_child_energetic = any(w in low_name for w in ["bé", "nhỏ", "tí", "khôi", "con", "lười", "child", "young boy", "kid", "boy", "lively", "energetic"])
-            is_female = any(w in low_name for w in ["cô", "bé gái", "nữ", "mẹ", "bà", "nàng", "chị", "em gái", "lan", "phương", "mai", "hoa", "girl", "woman", "mother", "female", "princess", "queen", "daughter", "lady"])
-            is_heroic_official = any(w in low_name for w in ["quan", "huyện", "đại nhân", "tướng", "vua", "hoàng đế", "phán quan", "thẩm phán", "heroic", "magistrate", "judge", "king", "general", "warrior"])
+            is_elder = bool(re.search(r'\b(?:ông|cụ|bà lão|ông lão|ông già|bà già|già|bụt|tiên|thần tài|thần|old|elder|grandfather|grandmother)\b', low_name))
+            is_child_energetic = bool(re.search(r'\b(?:bé|nhỏ|tí|khôi|con|lười|child|young boy|kid|boy|lively|energetic)\b', low_name))
+            is_female = bool(re.search(r'\b(?:cô|bé gái|nữ|mẹ|bà|nàng|chị|em gái|vợ|lan|phương|mai|hoa|girl|woman|mother|female|princess|queen|daughter|lady)\b', low_name))
+            is_heroic_official = bool(re.search(r'\b(?:quan|huyện|đại nhân|tướng|vua|hoàng đế|phán quan|thẩm phán|heroic|magistrate|judge|king|general|warrior)\b', low_name))
 
             if is_vi:
                 if is_female:
@@ -1864,19 +1963,37 @@ Return ONLY raw JSON matching this structure:
                         d_toks = get_tokens(d_line)
                         n_toks = get_tokens(narr)
                         clean_d_sub = d_line.lower().strip(' "“”.!?…')
+                        overlap_n = len(d_toks & n_toks) / max(1, len(n_toks)) if n_toks else 0
+                        overlap_d = len(d_toks & n_toks) / max(1, len(d_toks)) if d_toks else 0
                         already_in_narr = (
                             bool(clean_d_sub and clean_d_sub in narr.lower())
-                            or (d_toks and len(d_toks & n_toks) >= max(2, int(len(d_toks) * 0.75)))
+                            or overlap_d >= 0.70
+                            or overlap_n >= 0.50
+                            or (len(d_toks & n_toks) >= 4 and len(d_line.split()) > 16)
                         )
                         narr_is_vi = any(ord(c) > 127 for c in narr) if narr else is_vi
                         d_is_vi = any(ord(c) > 127 for c in d_line)
                         # Only append quote to narration if not already present AND language matches
                         if not already_in_narr and (narr_is_vi == d_is_vi):
+                            if len(d_line.split()) > 16:
+                                sub_clauses = [c.strip() for c in re.split(r'[:;\n]+', d_line) if len(c.strip().split()) >= 3]
+                                best_sub = ""
+                                best_sub_overlap = 0
+                                for sub_c in sub_clauses:
+                                    sub_toks = get_tokens(sub_c)
+                                    sub_overlap = len(sub_toks & n_toks)
+                                    if sub_overlap > best_sub_overlap:
+                                        best_sub_overlap = sub_overlap
+                                        best_sub = sub_c
+                                d_line_to_use = best_sub if (best_sub and best_sub_overlap >= 2) else d_line
+                            else:
+                                d_line_to_use = d_line
+
                             # Strip any abbreviated/synthetic trailing quote in narration (e.g. : "Bẩm quan con mất bò.")
                             base_narr = re.split(r'\s*:\s*["“]', narr)[0].strip(' .!?')
                             if not base_narr:
                                 base_narr = narr.rstrip(' .!?')
-                            narr = f'{base_narr}: "{d_line}"'
+                            narr = f'{base_narr}: "{d_line_to_use}"'
                 else:
                     # Multiple dialogues in this scene
                     has_screenplay_speakers = any(d.get("speaker") for d in matched_d)
