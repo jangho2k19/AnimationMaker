@@ -17,19 +17,20 @@ def get_server_credentials() -> dict:
     if CREDENTIALS_FILE.exists():
         try:
             with open(CREDENTIALS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except Exception as e:
+            print(f"[config] Warning: could not read {CREDENTIALS_FILE.name}: {e}")
     return {}
 
 def save_server_credentials(creds: dict):
-    try:
-        existing = get_server_credentials()
-        existing.update(creds)
-        with open(CREDENTIALS_FILE, "w", encoding="utf-8") as f:
-            json.dump(existing, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+    """Merges and atomically persists credentials. Raises on failure so callers can report it."""
+    existing = get_server_credentials()
+    existing.update(creds)
+    tmp_file = CREDENTIALS_FILE.with_suffix(".json.tmp")
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_file, CREDENTIALS_FILE)
 
 # Path to self-contained bundled FFmpeg binary
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()

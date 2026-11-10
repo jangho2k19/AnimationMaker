@@ -30,33 +30,12 @@ class MusicService:
 
         chord_dur = 4.0  # 4 seconds per chord
 
+        raw_data = MusicService._synthesize_pcm(total_samples, sample_rate, chord_progression, chord_dur)
+
         with wave.open(wav_path, "w") as wav_file:
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
             wav_file.setframerate(sample_rate)
-
-            raw_data = bytearray()
-            for n in range(total_samples):
-                t = n / float(sample_rate)
-                chord_idx = int(t / chord_dur) % len(chord_progression)
-                chord_time = t % chord_dur
-                chord = chord_progression[chord_idx]
-
-                sample = 0.0
-                # Sum harmonics for a soft bell/celeste timbre
-                for freq in chord:
-                    # Exponential decay envelope
-                    env = math.exp(-1.4 * chord_time) + 0.12 * math.sin(math.pi * (chord_time / chord_dur))
-                    # Fundamental + soft octave overtone
-                    tone = math.sin(2 * math.pi * freq * t) + 0.35 * math.sin(4 * math.pi * freq * t)
-                    sample += tone * env
-
-                # Gentle master normalization and soft limiter
-                sample = (sample / len(chord)) * 0.70
-                sample = max(-0.95, min(0.95, sample))
-                ival = int(sample * 32767.0)
-                raw_data.extend(struct.pack("<h", ival))
-
             wav_file.writeframes(raw_data)
 
         # Convert WAV to MP3 using FFmpeg
@@ -73,3 +52,54 @@ class MusicService:
             return wav_path
 
         return output_path
+
+    @staticmethod
+    def _synthesize_pcm(total_samples: int, sample_rate: int, chord_progression, chord_dur: float) -> bytes:
+        """Renders the chord bed to 16-bit little-endian mono PCM. Uses NumPy when available (~100x faster)."""
+        try:
+            import numpy as np
+        except ImportError:
+            np = None
+
+        if np is not None:
+            chords = np.asarray(chord_progression, dtype=np.float64)
+            out = bytearray()
+            block = sample_rate * 10  # process 10s at a time to bound memory use
+            for start in range(0, total_samples, block):
+                t = np.arange(start, min(start + block, total_samples), dtype=np.float64) / float(sample_rate)
+                chord_idx = (t // chord_dur).astype(np.int64) % len(chord_progression)
+                chord_time = np.mod(t, chord_dur)
+                # Exponential decay envelope (shared by all tones of the active chord)
+                env = np.exp(-1.4 * chord_time) + 0.12 * np.sin(np.pi * (chord_time / chord_dur))
+                freqs = chords[chord_idx]  # (n, tones)
+                phase = 2 * np.pi * freqs * t[:, None]
+                # Fundamental + soft octave overtone
+                tones = np.sin(phase) + 0.35 * np.sin(2 * phase)
+                sample = tones.sum(axis=1) * env
+                # Gentle master normalization and soft limiter
+                sample = np.clip((sample / chords.shape[1]) * 0.70, -0.95, 0.95)
+                out.extend((sample * 32767.0).astype("<i2").tobytes())
+            return bytes(out)
+
+        raw_data = bytearray()
+        for n in range(total_samples):
+            t = n / float(sample_rate)
+            chord_idx = int(t / chord_dur) % len(chord_progression)
+            chord_time = t % chord_dur
+            chord = chord_progression[chord_idx]
+
+            sample = 0.0
+            # Sum harmonics for a soft bell/celeste timbre
+            for freq in chord:
+                # Exponential decay envelope
+                env = math.exp(-1.4 * chord_time) + 0.12 * math.sin(math.pi * (chord_time / chord_dur))
+                # Fundamental + soft octave overtone
+                tone = math.sin(2 * math.pi * freq * t) + 0.35 * math.sin(4 * math.pi * freq * t)
+                sample += tone * env
+
+            # Gentle master normalization and soft limiter
+            sample = (sample / len(chord)) * 0.70
+            sample = max(-0.95, min(0.95, sample))
+            ival = int(sample * 32767.0)
+            raw_data.extend(struct.pack("<h", ival))
+        return bytes(raw_data)

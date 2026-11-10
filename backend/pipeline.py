@@ -5,6 +5,7 @@ import uuid
 import re
 import asyncio
 import shutil
+import hashlib
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional
 
@@ -14,6 +15,30 @@ from backend.agents.voice_agent import VoiceAgent
 from backend.services.image_service import ImageService
 from backend.services.video_engine import VideoEngine
 from backend.services.music_service import MusicService
+
+# Serializes project.json writes across concurrent requests / background renders
+import threading
+_PROJECT_IO_LOCK = threading.RLock()
+
+
+def safe_project_dir(project_id: str) -> Optional[Path]:
+    """
+    Resolves a project folder path and guarantees it stays inside PROJECTS_DIR.
+    Returns None for empty / traversal ids (e.g. '..', 'a/../../b', absolute paths).
+    """
+    if not project_id or not isinstance(project_id, str):
+        return None
+    if any(sep in project_id for sep in ("/", "\\", "\x00")) or project_id.strip() in ("", ".", ".."):
+        return None
+    try:
+        base = PROJECTS_DIR.resolve()
+        candidate = (PROJECTS_DIR / project_id).resolve()
+    except (OSError, ValueError):
+        return None
+    if candidate.parent != base:
+        return None
+    return PROJECTS_DIR / project_id
+
 
 class AnimationPipeline:
     def __init__(self, api_key: str = None, ai_provider: str = "gemini", ai_model: str = None):
@@ -43,6 +68,12 @@ class AnimationPipeline:
         return clean
 
     @staticmethod
+    def stable_seed(text: str, modulus: int = 999999) -> int:
+        """Deterministic seed across process restarts (built-in hash() is randomized per process)."""
+        digest = hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+        return int(digest[:12], 16) % modulus
+
+    @staticmethod
     def get_unique_project_id(base_name: str, current_id: str = None) -> str:
         """Finds an unused project folder name by appending (2), (3), etc. if needed."""
         candidate = base_name
@@ -52,6 +83,9 @@ class AnimationPipeline:
         while (PROJECTS_DIR / candidate).exists() and candidate != current_id:
             candidate = f"{base_name} ({counter})"
             counter += 1
+            if counter > 10000:
+                # Pathological collision count: fall back to a guaranteed-unique suffix
+                return f"{base_name} ({uuid.uuid4().hex[:8]})"
         return candidate
 
     def create_project(
@@ -141,57 +175,79 @@ class AnimationPipeline:
         return project_data
 
     def get_project(self, project_id: str) -> Optional[Dict[str, Any]]:
-        meta_file = PROJECTS_DIR / project_id / "project.json"
+        p_dir = safe_project_dir(project_id)
+        if p_dir is None:
+            return None
+        meta_file = p_dir / "project.json"
         if meta_file.exists():
-            with open(meta_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                p_dir = PROJECTS_DIR / project_id
-                changed = False
-                # Normalize legacy 'dialogue_cinema' art_style into combinable visual style + camera_on_speaker
-                if data.get("art_style") == "dialogue_cinema":
-                    data["art_style"] = "ghibli"
-                    data["camera_on_speaker"] = True
-                    changed = True
-                elif "camera_on_speaker" not in data:
-                    data["camera_on_speaker"] = False
-                for idx, sc in enumerate(data.get("scenes", [])):
-                    # Auto-recover image_path from disk if missing or file deleted/recreated
-                    cur_img = sc.get("image_path")
-                    if not cur_img or not (PROJECTS_DIR.parent / cur_img).exists():
-                        for ext in [".jpg", ".png", ".jpeg", ".webp"]:
-                            img_file = p_dir / f"scene_{idx + 1}{ext}"
-                            if img_file.exists():
-                                sc["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
-                                changed = True
-                                break
-                    # Auto-recover video_path from disk
-                    if not sc.get("video_path"):
-                        clip_file = p_dir / f"clip_{idx + 1}.mp4"
-                        if clip_file.exists():
-                            sc["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"[pipeline] Could not read project '{project_id}': {e}")
+                return None
+            changed = False
+            # Normalize legacy 'dialogue_cinema' art_style into combinable visual style + camera_on_speaker
+            if data.get("art_style") == "dialogue_cinema":
+                data["art_style"] = "ghibli"
+                data["camera_on_speaker"] = True
+                changed = True
+            elif "camera_on_speaker" not in data:
+                data["camera_on_speaker"] = False
+            for idx, sc in enumerate(data.get("scenes", [])):
+                # Auto-recover image_path from disk if missing or file deleted/recreated
+                cur_img = sc.get("image_path")
+                if not cur_img or not (PROJECTS_DIR.parent / cur_img).exists():
+                    for ext in [".jpg", ".png", ".jpeg", ".webp"]:
+                        img_file = p_dir / f"scene_{idx + 1}{ext}"
+                        if img_file.exists():
+                            sc["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
                             changed = True
-                    # Auto-recover audio_path from disk
-                    if not sc.get("audio_path"):
-                        audio_file = p_dir / f"scene_{idx + 1}.mp3"
-                        if audio_file.exists():
-                            sc["audio_path"] = str(audio_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
-                            changed = True
-                if changed:
-                    try:
-                        with open(meta_file, "w", encoding="utf-8") as fw:
-                            json.dump(data, fw, indent=2, ensure_ascii=False)
-                    except Exception:
-                        pass
-                return data
+                            break
+                # Auto-recover video_path from disk
+                if not sc.get("video_path"):
+                    clip_file = p_dir / f"clip_{idx + 1}.mp4"
+                    if clip_file.exists():
+                        sc["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                        changed = True
+                # Auto-recover audio_path from disk
+                if not sc.get("audio_path"):
+                    audio_file = p_dir / f"scene_{idx + 1}.mp3"
+                    if audio_file.exists():
+                        sc["audio_path"] = str(audio_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                        changed = True
+            if changed:
+                try:
+                    self._atomic_write_json(meta_file, data)
+                except Exception as e:
+                    print(f"[pipeline] Could not persist recovered paths for '{project_id}': {e}")
+            return data
         return None
+
+    @staticmethod
+    def _atomic_write_json(meta_file: Path, data: Dict[str, Any]):
+        """Write JSON to a temp file then atomically replace, so a crash never leaves a truncated project.json."""
+        tmp_file = meta_file.with_name(f".{meta_file.name}.{uuid.uuid4().hex[:8]}.tmp")
+        with _PROJECT_IO_LOCK:
+            try:
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_file, meta_file)
+            finally:
+                if tmp_file.exists():
+                    try:
+                        tmp_file.unlink()
+                    except OSError:
+                        pass
 
     def save_project(self, data: Dict[str, Any]):
         project_id = data["id"]
-        meta_dir = PROJECTS_DIR / project_id
+        meta_dir = safe_project_dir(project_id)
+        if meta_dir is None:
+            raise ValueError(f"Invalid project id: {project_id!r}")
         meta_dir.mkdir(parents=True, exist_ok=True)
-        meta_file = meta_dir / "project.json"
-        with open(meta_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        data["updated_at"] = time.time()
+        self._atomic_write_json(meta_dir / "project.json", data)
 
     def list_projects(self) -> list:
         projects = []
@@ -232,15 +288,21 @@ class AnimationPipeline:
         return active
 
     def delete_project(self, project_id: str) -> bool:
-        p_dir = PROJECTS_DIR / project_id
+        p_dir = safe_project_dir(project_id)
+        if p_dir is None:
+            return False
         if p_dir.exists() and p_dir.is_dir():
             shutil.rmtree(p_dir, ignore_errors=True)
             return True
         return False
 
     def import_project_json(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(raw_data, dict):
+            raise ValueError("Imported project must be a JSON object")
+        if not isinstance(raw_data.get("scenes", []), list):
+            raise ValueError("Imported project 'scenes' must be a list")
         existing_id = raw_data.get("id")
-        if existing_id and (PROJECTS_DIR / existing_id).exists():
+        if existing_id and safe_project_dir(existing_id) is not None and (PROJECTS_DIR / existing_id).exists():
             project_id = existing_id
         else:
             title = raw_data.get("title") or raw_data.get("idea") or "Imported Project"
@@ -361,17 +423,12 @@ class AnimationPipeline:
     async def generate_scene_image(self, project_id: str, scene_idx: int) -> Dict[str, Any]:
         """Generate image for a specific scene with character consistency from reference scenes."""
         project = self.get_project(project_id)
-        if not project or scene_idx >= len(project["scenes"]):
+        if not project or scene_idx < 0 or scene_idx >= len(project["scenes"]):
             raise ValueError("Invalid project or scene index")
 
         scene = project["scenes"][scene_idx]
         p_dir = PROJECTS_DIR / project_id
         img_path = p_dir / f"scene_{scene_idx + 1}.jpg"
-
-        if project.get("api_key"):
-            self.image_service.api_key = project["api_key"]
-        if project.get("ai_provider"):
-            self.image_service.provider = project["ai_provider"]
 
         w = project.get("video_width", 1280)
         h = project.get("video_height", 720)
@@ -390,7 +447,7 @@ class AnimationPipeline:
 
         character_desc = (project.get("characters") or "").strip()
         # Stable project character seed anchor for visual consistency across scenes
-        char_seed = abs(hash(project_id + (character_desc or project.get("idea", "")))) % 999999
+        char_seed = self.stable_seed(project_id + (character_desc or project.get("idea", "")))
         scene_seed = (char_seed + (scene_idx * 17)) % 999999
 
         is_spk_cam = bool(
@@ -447,7 +504,7 @@ class AnimationPipeline:
     async def generate_scene_audio(self, project_id: str, scene_idx: int) -> Dict[str, Any]:
         """Regenerate voiceover and subtitles for a specific scene."""
         project = self.get_project(project_id)
-        if not project or scene_idx >= len(project["scenes"]):
+        if not project or scene_idx < 0 or scene_idx >= len(project["scenes"]):
             raise ValueError("Invalid project or scene index")
 
         scene = project["scenes"][scene_idx]
@@ -543,7 +600,7 @@ class AnimationPipeline:
         3. Renders MP4 clip using Ken Burns camera motion & burnt-in subtitles
         """
         project = self.get_project(project_id)
-        if not project or scene_idx >= len(project.get("scenes", [])):
+        if not project or scene_idx < 0 or scene_idx >= len(project.get("scenes", [])):
             raise ValueError("Invalid project or scene index")
 
         project_dir = PROJECTS_DIR / project_id
@@ -605,7 +662,8 @@ class AnimationPipeline:
             if cand_p.exists():
                 acting_video_full = str(cand_p)
 
-        engine.render_scene_clip(
+        await asyncio.to_thread(
+            engine.render_scene_clip,
             image_path=img_full,
             audio_path=audio_full,
             srt_path=srt_full,
@@ -674,10 +732,6 @@ class AnimationPipeline:
                 progress_callback(pct, msg)
 
         project["status"] = "rendering"
-        if project.get("api_key"):
-            self.image_service.api_key = project["api_key"]
-        if project.get("ai_provider"):
-            self.image_service.provider = project["ai_provider"]
         notify(35, "Generating scene illustrations with AI...")
 
         scenes = project["scenes"]
@@ -706,7 +760,7 @@ class AnimationPipeline:
                         ref_img_path = str(char_portrait)
 
                 character_desc = (project.get("characters") or "").strip()
-                char_seed = abs(hash(project_id + (character_desc or project.get("idea", "")))) % 999999
+                char_seed = self.stable_seed(project_id + (character_desc or project.get("idea", "")))
                 scene_seed = (char_seed + (idx * 17)) % 999999
                 is_spk_cam = bool(
                     project.get("camera_on_speaker", False)
@@ -903,7 +957,8 @@ class AnimationPipeline:
 
             motion = scene.get("camera_motion", "zoom_in")
 
-            engine.render_scene_clip(
+            await asyncio.to_thread(
+                engine.render_scene_clip,
                 image_path=img_full,
                 audio_path=audio_full,
                 srt_path=srt_full,
@@ -922,7 +977,8 @@ class AnimationPipeline:
         notify(88, "Composing atmospheric ambient soundtrack...")
         bgm_file = project_dir / "soundtrack.mp3"
         total_anim_dur = sum(s.get("duration", 4.0) + 0.4 for s in scenes)
-        self.music_service.generate_ambient_track(
+        await asyncio.to_thread(
+            self.music_service.generate_ambient_track,
             output_path=str(bgm_file),
             duration=max(15.0, total_anim_dur + 5.0)
         )
@@ -931,7 +987,8 @@ class AnimationPipeline:
         notify(94, "Final mastering and encoding complete animation...")
         final_video = project_dir / "final_animation.mp4"
         bgm_vol = 0.22 if enable_voiceover else 0.75
-        engine.concatenate_and_mix(
+        await asyncio.to_thread(
+            engine.concatenate_and_mix,
             scene_clip_paths=scene_clips,
             output_video_path=str(final_video),
             bgm_path=str(bgm_file),

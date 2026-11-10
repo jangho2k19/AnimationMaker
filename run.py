@@ -75,4 +75,7 @@ if __name__ == "__main__":
     # Open browser automatically after server boots
     Timer(1.2, open_browser, args=[port]).start()
 
-    uvicorn.run("backend.app:app", host="0.0.0.0", port=port, reload=True)
+    # Bind to localhost by default so projects/credentials are not exposed to the LAN.
+    # Set HOST=0.0.0.0 to intentionally allow access from other devices.
+    host = os.environ.get("HOST", "127.0.0.1")
+    uvicorn.run("backend.app:app", host=host, port=port, reload=True)

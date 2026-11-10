@@ -14,7 +14,7 @@ if sys.platform == "win32":
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from typing import Optional, List, Dict, Any, Union
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Body
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Body, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
@@ -135,6 +135,45 @@ class GeminiImageGenRequest(BaseModel):
 
 pipeline = AnimationPipeline()
 
+# Upload safety limits (bytes)
+MAX_IMAGE_UPLOAD_BYTES = 25 * 1024 * 1024      # 25 MB per image
+MAX_VIDEO_UPLOAD_BYTES = 500 * 1024 * 1024     # 500 MB per acting clip
+MAX_JSON_UPLOAD_BYTES = 10 * 1024 * 1024       # 10 MB per imported project
+
+
+async def read_upload_limited(upload: UploadFile, max_bytes: int) -> bytes:
+    """Reads an UploadFile in chunks and rejects it with HTTP 413 once it exceeds max_bytes."""
+    chunks = []
+    total = 0
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Uploaded file is too large (limit {max_bytes // (1024 * 1024)} MB)"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def resolve_media_path(rel_path: str) -> Path:
+    """Resolves a stored media path (relative to OUTPUT_DIR) and refuses anything outside OUTPUT_DIR."""
+    if not rel_path:
+        raise HTTPException(status_code=404, detail="Media file not found")
+    base = OUTPUT_DIR.resolve()
+    full = (OUTPUT_DIR / rel_path).resolve()
+    if full != base and base not in full.parents:
+        raise HTTPException(status_code=403, detail="Media path is outside the output directory")
+    return full
+
+
+def is_loopback_request(request: Request) -> bool:
+    host = (request.client.host if request.client else "") or ""
+    return host in ("127.0.0.1", "::1", "localhost") or host.startswith("127.")
+
 class SaveCredentialsRequest(BaseModel):
     gemini_api_key: Optional[str] = None
     gemini_cookie_psid: Optional[str] = None
@@ -157,7 +196,12 @@ async def save_credentials(req: SaveCredentialsRequest):
     if req.claude_api_key: creds_dict["claude_api_key"] = req.claude_api_key
     if req.deepseek_api_key: creds_dict["deepseek_api_key"] = req.deepseek_api_key
     if req.nvidia_api_key: creds_dict["nvidia_api_key"] = req.nvidia_api_key
-    save_server_credentials(creds_dict)
+    try:
+        save_server_credentials(creds_dict)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save credentials: {e}")
     if "gemini_cookie_psid" in creds_dict or "gemini_cookie_psidts" in creds_dict:
         try:
             from backend.services.gemini_web_session import GeminiWebSessionManager
@@ -167,13 +211,15 @@ async def save_credentials(req: SaveCredentialsRequest):
     return {"status": "success", "saved_keys": list(creds_dict.keys())}
 
 @app.get("/api/credentials")
-async def get_credentials():
+async def get_credentials(request: Request):
     from backend.config import get_server_credentials
     creds = get_server_credentials()
+    # Raw secret values are only returned to the local machine (never to other hosts on the LAN)
+    local = is_loopback_request(request)
     return {
-        "gemini_cookie_psid": creds.get("gemini_cookie_psid", ""),
-        "gemini_cookie_psidts": creds.get("gemini_cookie_psidts", ""),
-        "neural_love_key": creds.get("neural_love_key", ""),
+        "gemini_cookie_psid": creds.get("gemini_cookie_psid", "") if local else "",
+        "gemini_cookie_psidts": creds.get("gemini_cookie_psidts", "") if local else "",
+        "neural_love_key": creds.get("neural_love_key", "") if local else "",
         "has_gemini_api_key": bool(creds.get("gemini_api_key")),
         "has_gemini_cookie": bool(creds.get("gemini_cookie_psid")),
         "has_neural_love_key": bool(creds.get("neural_love_key")),
@@ -271,7 +317,8 @@ async def detect_gemini_models(
         try:
             from google import genai
             client = genai.Client(api_key=key_input)
-            for m in client.models.list():
+            model_list = await asyncio.to_thread(lambda: list(client.models.list()))
+            for m in model_list:
                 raw_id = m.name or ""
                 clean_id = raw_id.replace("models/", "")
                 clean_lower = clean_id.lower()
@@ -348,6 +395,8 @@ async def gemini_web_generate(req: GeminiGenerateRequest):
             "images": [img.url for img in res.images],
             "model_used": res.model_used
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -370,6 +419,8 @@ async def gemini_web_chat(req: GeminiChatRequest):
             "images": [img.url for img in res.images],
             "history": chat.history
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -400,6 +451,8 @@ async def gemini_web_generate_image(req: GeminiImageGenRequest):
             "media_url": f"/media/{rel_path}",
             "prompt": req.prompt
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -418,8 +471,11 @@ async def gemini_web_list_models():
 async def gemini_web_status():
     """Returns the authentication and auto-refresh health of the Gemini Web session."""
     from backend.services.gemini_wrapper import GeminiWebWrapper
-    wrapper = GeminiWebWrapper.get_instance()
-    return await wrapper.get_status()
+    try:
+        wrapper = GeminiWebWrapper.get_instance()
+        return await wrapper.get_status()
+    except Exception as e:
+        return {"status": "error", "authenticated": False, "message": str(e)}
 
 @app.get("/api/projects")
 async def list_projects():
@@ -442,7 +498,7 @@ async def delete_project(project_id: str):
 @app.post("/api/projects/import-json")
 async def import_project_json_file(file: UploadFile = File(...)):
     try:
-        content = await file.read()
+        content = await read_upload_limited(file, MAX_JSON_UPLOAD_BYTES)
         data = json.loads(content.decode("utf-8"))
         if not isinstance(data, dict):
             raise HTTPException(status_code=400, detail="Invalid project JSON structure")
@@ -450,6 +506,10 @@ async def import_project_json_file(file: UploadFile = File(...)):
         return imported
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="File is not valid JSON")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -457,6 +517,8 @@ async def import_project_json_file(file: UploadFile = File(...)):
 async def create_story(req: CreateStoryRequest):
     if not req.idea.strip():
         raise HTTPException(status_code=400, detail="Please provide a story idea.")
+    if req.num_scenes is not None and (req.num_scenes < 0 or req.num_scenes > 50):
+        raise HTTPException(status_code=400, detail="num_scenes must be between 0 and 50.")
 
     try:
         # Instantiate pipeline with selected provider & model
@@ -566,6 +628,8 @@ async def import_story(req: ImportStoryRequest):
         project["current_step"] = "AI Storyboard imported and ready for review"
         custom_pipeline.save_project(project)
         return project
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create project from storyboard: {str(e)}")
 
@@ -662,7 +726,7 @@ async def create_advertisement(
         for idx, img_file in enumerate(images):
             if not img_file.filename:
                 continue
-            content = await img_file.read()
+            content = await read_upload_limited(img_file, MAX_IMAGE_UPLOAD_BYTES)
             if not content:
                 continue
             save_name = f"product_raw_{idx + 1}.jpg"
@@ -754,10 +818,12 @@ async def set_scene_product_image(project_id: str, req: SetSceneProductImageRequ
     if target_idx < 0 or target_idx >= len(scenes):
         raise HTTPException(status_code=404, detail=f"Scene index {target_idx} not found")
 
-    target_img = req.image_path or req.product_image_name or ""
-    src_path = Path(OUTPUT_DIR) / target_img
+    target_img = (req.image_path or req.product_image_name or "").strip()
+    if not target_img:
+        raise HTTPException(status_code=400, detail="Product image path is required")
+    src_path = resolve_media_path(target_img)
     if not src_path.exists():
-        alt_path = Path(OUTPUT_DIR) / "projects" / project_id / target_img
+        alt_path = resolve_media_path(f"projects/{project_id}/{target_img}")
         if alt_path.exists():
             src_path = alt_path
         else:
@@ -1113,6 +1179,8 @@ async def toggle_project_multivoice(project_id: str, req: Optional[ToggleMultivo
     try:
         updated = pipeline.toggle_multivoice(project_id, enable=req.enable if req else None)
         return {"status": "ok", "enable_multivoice": updated.get("enable_multivoice", True), "project": updated}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1121,6 +1189,8 @@ async def toggle_project_speaker_camera(project_id: str, req: Optional[ToggleSpe
     try:
         updated = pipeline.toggle_camera_on_speaker(project_id, enable=req.enable if req else None)
         return {"status": "ok", "camera_on_speaker": updated.get("camera_on_speaker", False), "project": updated}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1242,6 +1312,8 @@ async def set_project_character_voice(project_id: str, req: SetCharacterVoiceReq
     try:
         updated = pipeline.set_character_voice(project_id, req.character_name, req.voice_id)
         return {"status": "ok", "character_voices": updated.get("character_voices", {}), "project": updated}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1250,19 +1322,21 @@ async def auto_cast_project_voices(project_id: str):
     try:
         updated = pipeline.auto_cast_project_voices(project_id)
         return {"status": "ok", "character_voices": updated.get("character_voices", {}), "project": updated}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/projects/{project_id}/upload-image/{scene_idx}")
 async def upload_scene_image(project_id: str, scene_idx: int, file: UploadFile = File(...)):
     project = pipeline.get_project(project_id)
-    if not project or scene_idx >= len(project["scenes"]):
+    if not project or scene_idx < 0 or scene_idx >= len(project["scenes"]):
         raise HTTPException(status_code=404, detail="Invalid project or scene index")
 
     p_dir = Path(OUTPUT_DIR) / "projects" / project_id
     img_path = p_dir / f"scene_{scene_idx + 1}.jpg"
 
-    content = await file.read()
+    content = await read_upload_limited(file, MAX_IMAGE_UPLOAD_BYTES)
     w = project.get("video_width", 1280)
     h = project.get("video_height", 720)
 
@@ -1295,6 +1369,8 @@ async def regenerate_scene_image(project_id: str, scene_idx: int, req: Optional[
 
         updated = await pipeline.generate_scene_image(project_id, scene_idx)
         return updated
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1313,6 +1389,8 @@ async def generate_all_images(project_id: str, req: Optional[RegenerateImageRequ
 
         updated = await pipeline.generate_all_scene_images(project_id)
         return updated
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1321,6 +1399,8 @@ async def regenerate_scene_audio(project_id: str, scene_idx: int):
     try:
         updated = await pipeline.generate_scene_audio(project_id, scene_idx)
         return updated
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1424,6 +1504,8 @@ async def audition_voice(req: AuditionVoiceRequest):
             "is_fallback": is_fallback,
             "cached": False
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1518,7 +1600,7 @@ async def download_video(project_id: str):
     if not project or not project.get("video_path"):
         raise HTTPException(status_code=404, detail="Video file not found or not yet rendered")
 
-    full_path = OUTPUT_DIR / project["video_path"]
+    full_path = resolve_media_path(project["video_path"])
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Video file missing from disk")
 
@@ -1558,6 +1640,8 @@ async def render_scene_video_endpoint(
             "video_url": f"/media/{scene['video_path']}" if scene.get("video_path") else None,
             "project": updated_project
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1586,13 +1670,15 @@ async def render_all_scene_videos_endpoint(
             "status": "success",
             "project": updated_project
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/projects/{project_id}/download-scene-video/{scene_idx}")
 async def download_scene_video(project_id: str, scene_idx: int):
     project = pipeline.get_project(project_id)
-    if not project or scene_idx >= len(project.get("scenes", [])):
+    if not project or scene_idx < 0 or scene_idx >= len(project.get("scenes", [])):
         raise HTTPException(status_code=404, detail="Scene not found")
 
     scene = project["scenes"][scene_idx]
@@ -1606,7 +1692,7 @@ async def download_scene_video(project_id: str, scene_idx: int):
         else:
             raise HTTPException(status_code=404, detail="Scene video clip not yet rendered")
 
-    full_path = OUTPUT_DIR / video_path
+    full_path = resolve_media_path(video_path)
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Scene video clip missing from disk")
 
@@ -1639,13 +1725,13 @@ async def open_flow_browser(target_url: Optional[str] = "https://flow.google.com
 async def upload_acting_clip(project_id: str, scene_idx: int, file: UploadFile = File(...)):
     """Uploads an acting MP4 video clip (e.g. from Google Flow / I2V) and immediately composites it with voiceover and subtitles."""
     project = pipeline.get_project(project_id)
-    if not project or scene_idx >= len(project.get("scenes", [])):
+    if not project or scene_idx < 0 or scene_idx >= len(project.get("scenes", [])):
         raise HTTPException(status_code=404, detail="Invalid project or scene index")
 
     p_dir = Path(OUTPUT_DIR) / "projects" / project_id
     acting_video_path = p_dir / f"scene_{scene_idx + 1}_acting.mp4"
 
-    content = await file.read()
+    content = await read_upload_limited(file, MAX_VIDEO_UPLOAD_BYTES)
     with open(acting_video_path, "wb") as f:
         f.write(content)
 
@@ -1680,7 +1766,7 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
     """Automatically triggers Google Veo via FlowKit for the scene, then composites voiceover and subtitles."""
     from backend.services.flowkit_service import FlowKitService
     project = pipeline.get_project(project_id)
-    if not project or scene_idx >= len(project.get("scenes", [])):
+    if not project or scene_idx < 0 or scene_idx >= len(project.get("scenes", [])):
         raise HTTPException(status_code=404, detail="Invalid project or scene index")
 
     scene = project["scenes"][scene_idx]

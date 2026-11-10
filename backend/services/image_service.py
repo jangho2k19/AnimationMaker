@@ -483,7 +483,9 @@ class ImageService:
             b = int(top_color[2] * (1 - ratio) + bot_color[2] * ratio)
             draw.line([(0, y), (width, y)], fill=(r, g, b))
 
-        rng = random.Random((hash(title + prompt) + scene_idx * 1337) & 0xffffffff)
+        import hashlib
+        _stable = int(hashlib.sha256((title + prompt).encode("utf-8")).hexdigest()[:8], 16)
+        rng = random.Random((_stable + scene_idx * 1337) & 0xffffffff)
 
         # Celestial body (sun / moon / digital orb)
         orb_x = int(width * (0.25 if scene_idx % 2 == 1 else 0.75))
