@@ -6408,7 +6408,11 @@ ${isAutoScenes
     const remainingBody = lines.slice(1).join("\n").trim();
     if (remainingBody.length >= 20) {
       const isExplicitHeading = /^(?:(?:Chuyện|Truyện|Câu chuyện|Truyện cười|Truyện ngụ ngôn|Truyện cổ tích|Ngụ ngôn|Fable|Story|Tale|Tiêu đề|Title)\b|["“][^"”]+["”]\s*(?:[\-\–\—]|$))/i.test(firstLine);
-      const isShortTitleLine = firstLine.length <= 95 && !/[.!?…]["”']?$/.test(firstLine);
+      const isDialogueLeadIn = /[:：]\s*$/.test(firstLine)
+        || /^[\-\–\—]/.test(firstLine)
+        || /[.!?]\s+\S/.test(firstLine)
+        || /\b(?:nói|hỏi|bảo|đáp|thưa|kêu|than|nghĩ|rằng|chê|mắng|cười|trợn mắt)\s*[:：.]?\s*$/i.test(firstLine);
+      const isShortTitleLine = firstLine.length <= 65 && !/[.!?…:：]["”']?$/.test(firstLine) && !isDialogueLeadIn;
       if (isExplicitHeading || isShortTitleLine) {
         return {
           title: this.cleanExtractedStoryTitle(firstLine),
@@ -6507,13 +6511,15 @@ ${isAutoScenes
       } else if (/\n\s*\n/.test(cleaned)) {
         // Only split by blank lines if paragraphs are independent ideas (not continuation paragraphs of 1 story)
         const paras = cleaned.split(/\n\s*\n+/).map(p => p.trim()).filter(Boolean);
-        const continuationRe = /^(?:Hôm sau|Tối đến|Sáng hôm sau|Đêm đó|Một hôm|Đúng giữa trưa|Người thứ hai|Người thứ ba|Cứ thế|Thế là|Thế rồi|Cuối cùng|Kết cục|Ý nghĩa|Bài học|Lời bàn)/i;
-        const hasContinuation = paras.some((p, idx) => idx > 0 && continuationRe.test(p));
+        const continuationRe = /^(?:[\-\–\—"“]|(?:Ông|Bà|Anh|Chị|Cô|Chú|Bác|Vợ|Chồng|Con|Bạn)\b[^.!?\n]{0,40}:|Hôm sau|Tối đến|Sáng hôm sau|Đêm đó|Một hôm|Đúng giữa trưa|Người thứ hai|Người thứ ba|Cứ thế|Thế là|Thế rồi|Cuối cùng|Kết cục|Ý nghĩa|Bài học|Lời bàn)/i;
+        const hasContinuation = paras.some((p, idx) => idx > 0 && continuationRe.test(p))
+          || paras.some((p, idx) => idx < paras.length - 1 && /[:：]\s*$/.test(p));
         blocks = hasContinuation ? [cleaned] : paras;
       } else {
         const lines = cleaned.split(/\n/).map(l => l.trim()).filter(Boolean);
-        const continuationRe = /^(?:Hôm sau|Tối đến|Sáng hôm sau|Đêm đó|Người thứ hai|Người thứ ba|Cứ thế|Thế là|Ý nghĩa|Bài học)/i;
-        const hasContinuation = lines.some((l, idx) => idx > 0 && continuationRe.test(l));
+        const continuationRe = /^(?:[\-\–\—"“]|(?:Ông|Bà|Anh|Chị|Cô|Chú|Bác|Vợ|Chồng|Con|Bạn)\b[^.!?\n]{0,40}:|Hôm sau|Tối đến|Sáng hôm sau|Đêm đó|Người thứ hai|Người thứ ba|Cứ thế|Thế là|Ý nghĩa|Bài học)/i;
+        const hasContinuation = lines.some((l, idx) => idx > 0 && continuationRe.test(l))
+          || lines.some((l, idx) => idx < lines.length - 1 && /[:：]\s*$/.test(l));
         blocks = hasContinuation ? [cleaned] : lines;
       }
     } else if (delimiterMode === "blank") {
