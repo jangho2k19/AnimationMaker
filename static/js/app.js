@@ -545,7 +545,10 @@ class AniStoryApp {
     this.btnBatchClearAll = document.getElementById("btnBatchClearAll");
     this.textareaBatchIdeas = document.getElementById("textareaBatchIdeas");
     this.selectBatchDelimiter = document.getElementById("selectBatchDelimiter");
+    this.chkBatchAutoStart = document.getElementById("chkBatchAutoStart");
     this.btnBatchAddIdeas = document.getElementById("btnBatchAddIdeas");
+    this.btnBatchAddAndRun = document.getElementById("btnBatchAddAndRun");
+    this.btnBatchHeaderRunAll = document.getElementById("btnBatchHeaderRunAll");
     this.badgeBatchQueueSummary = document.getElementById("badgeBatchQueueSummary");
     this.btnBatchDownloadAllMp4 = document.getElementById("btnBatchDownloadAllMp4");
     this.batchQueueListContainer = document.getElementById("batchQueueListContainer");
@@ -560,6 +563,10 @@ class AniStoryApp {
     this.textPasteMultiStoryCount = document.getElementById("textPasteMultiStoryCount");
     this.btnPasteQueueDetectedStories = document.getElementById("btnPasteQueueDetectedStories");
     this.btnPasteAutoRunDetectedStories = document.getElementById("btnPasteAutoRunDetectedStories");
+
+    if (this.chkBatchAutoStart && localStorage.getItem("anistory_batch_autostart") !== null) {
+      this.chkBatchAutoStart.checked = localStorage.getItem("anistory_batch_autostart") !== "false";
+    }
 
     if (this.chkAutoRefinePrompts && localStorage.getItem("anistory_wf_refine") !== null) {
       this.chkAutoRefinePrompts.checked = localStorage.getItem("anistory_wf_refine") !== "false";
@@ -1142,8 +1149,13 @@ class AniStoryApp {
     if (this.selectBatchDelimiter) {
       this.selectBatchDelimiter.addEventListener("change", () => this.updateLiveMultiStoryDetection());
     }
+    if (this.chkBatchAutoStart) {
+      this.chkBatchAutoStart.addEventListener("change", (e) => {
+        localStorage.setItem("anistory_batch_autostart", e.target.checked ? "true" : "false");
+      });
+    }
     if (this.btnPromptQueueDetectedStories) {
-      this.btnPromptQueueDetectedStories.addEventListener("click", () => {
+      this.btnPromptQueueDetectedStories.addEventListener("click", async () => {
         const raw = this.inputIdeaPrompt?.value?.trim() || "";
         const detected = this.parseBatchInputText(raw, "auto", true);
         if (detected.length >= 2) {
@@ -1153,6 +1165,9 @@ class AniStoryApp {
           this.updateLiveMultiStoryDetection();
           if (this.tabModeBatch) this.tabModeBatch.click();
           this.showToast(`📚 Queued ${detected.length} detected stories into Batch Story Queue!`);
+          if (!this.chkBatchAutoStart || this.chkBatchAutoStart.checked) {
+            await this.runBatchStoryQueueStep1To4();
+          }
         }
       });
     }
@@ -1171,7 +1186,7 @@ class AniStoryApp {
       });
     }
     if (this.btnPasteQueueDetectedStories) {
-      this.btnPasteQueueDetectedStories.addEventListener("click", () => {
+      this.btnPasteQueueDetectedStories.addEventListener("click", async () => {
         const raw = this.inputDirectPasteText?.value?.trim() || "";
         const detected = this.parseBatchInputText(raw, "auto", true);
         if (detected.length >= 2) {
@@ -1180,6 +1195,9 @@ class AniStoryApp {
           this.updateLiveMultiStoryDetection();
           if (this.tabModeBatch) this.tabModeBatch.click();
           this.showToast(`📚 Queued ${detected.length} detected stories into Batch Story Queue!`);
+          if (!this.chkBatchAutoStart || this.chkBatchAutoStart.checked) {
+            await this.runBatchStoryQueueStep1To4();
+          }
         }
       });
     }
@@ -1197,17 +1215,34 @@ class AniStoryApp {
       });
     }
     if (this.btnBatchAddIdeas) {
-      this.btnBatchAddIdeas.addEventListener("click", () => this.handleAddBatchIdeasFromTextarea());
+      this.btnBatchAddIdeas.addEventListener("click", async () => {
+        const added = this.handleAddBatchIdeasFromTextarea();
+        if (added > 0 && (!this.chkBatchAutoStart || this.chkBatchAutoStart.checked)) {
+          await this.runBatchStoryQueueStep1To4();
+        }
+      });
+    }
+    if (this.btnBatchAddAndRun) {
+      this.btnBatchAddAndRun.addEventListener("click", async () => {
+        this.handleAddBatchIdeasFromTextarea();
+        await this.runBatchStoryQueueStep1To4();
+      });
+    }
+    if (this.btnBatchHeaderRunAll) {
+      this.btnBatchHeaderRunAll.addEventListener("click", () => this.runBatchStoryQueueStep1To4());
     }
     if (this.btnBatchLoadSamples) {
       this.btnBatchLoadSamples.addEventListener("click", () => this.loadSampleBatchStories());
     }
     if (this.btnBatchImportFile && this.inputBatchImportFile) {
       this.btnBatchImportFile.addEventListener("click", () => this.inputBatchImportFile.click());
-      this.inputBatchImportFile.addEventListener("change", (e) => {
+      this.inputBatchImportFile.addEventListener("change", async (e) => {
         if (e.target.files && e.target.files[0]) {
-          this.importBatchIdeasFile(e.target.files[0]);
+          await this.importBatchIdeasFile(e.target.files[0]);
           e.target.value = "";
+          if (!this.chkBatchAutoStart || this.chkBatchAutoStart.checked) {
+            await this.runBatchStoryQueueStep1To4();
+          }
         }
       });
     }
@@ -2021,6 +2056,7 @@ class AniStoryApp {
       this.restoreSavedConfig();
       await this.loadServerCredentials();
       await this.restoreActiveProject();
+      await this.syncBatchQueueWithProjects();
     } catch (e) {
       console.error("Config load error:", e);
       this.showToast("Failed to connect to backend engine", true);
@@ -2032,6 +2068,8 @@ class AniStoryApp {
       const resp = await fetch("/api/credentials");
       if (resp.ok) {
         const creds = await resp.json();
+        this.hasServerGeminiCookie = Boolean(creds.has_gemini_cookie || creds.gemini_cookie_psid);
+        this.hasServerGeminiKey = Boolean(creds.has_gemini_api_key);
         if (creds.neural_love_key && !localStorage.getItem("anistory_key_neural_love")) {
           localStorage.setItem("anistory_key_neural_love", creds.neural_love_key);
           if (this.inputNeuralLoveApiKey) this.inputNeuralLoveApiKey.value = creds.neural_love_key;
@@ -2080,12 +2118,16 @@ class AniStoryApp {
       this.inputIdeaPrompt.value = savedPrompt;
     }
 
-    // 7. Creation Mode (Prompt vs Direct Paste vs Load tab)
+    // 7. Creation Mode (Prompt vs Direct Paste vs Load vs Ad vs Batch tab)
     const savedMode = localStorage.getItem("anistory_cfg_creation_mode");
     if (savedMode === "paste" && this.tabModePaste) {
       this.tabModePaste.click();
     } else if (savedMode === "load" && this.tabModeLoad) {
       this.tabModeLoad.click();
+    } else if (savedMode === "advertisement" && this.tabModeAd) {
+      this.tabModeAd.click();
+    } else if (savedMode === "batch" && this.tabModeBatch) {
+      this.tabModeBatch.click();
     } else if (savedMode === "prompt" && this.tabModePrompt) {
       this.tabModePrompt.click();
     }
@@ -3374,23 +3416,24 @@ ${isAutoScenes
       return false;
     }
 
-    // Detect if the user pasted multiple stories into Option A
-    const detectedStories = this.parseBatchInputText(idea, "auto", true);
-    if (detectedStories.length >= 2) {
-      const firstStory = detectedStories[0];
-      const remainingStories = detectedStories.slice(1);
-      this.addItemsToBatchQueue(remainingStories);
-      idea = firstStory.idea || idea;
-      this.inputIdeaPrompt.value = idea;
-      if (this.inputProjectTitle && !this.inputProjectTitle.value.trim() && firstStory.title) {
-        this.inputProjectTitle.value = firstStory.title;
-      }
-      this.updateLiveMultiStoryDetection();
-      this.showToast(`📚 Detected ${detectedStories.length} stories! Generating #1 ("${firstStory.title || 'Story 1'}") now & queued ${remainingStories.length} more in Batch List.`);
-    } else if (detectedStories.length === 1 && detectedStories[0].title) {
-      idea = detectedStories[0].idea || idea;
-      if (this.inputProjectTitle && !this.inputProjectTitle.value.trim()) {
-        this.inputProjectTitle.value = detectedStories[0].title;
+    // Detect if the user pasted multiple stories into Option A (only when triggered directly, not from inside the batch loop)
+    if (!fromAutoWorkflow) {
+      const detectedStories = this.parseBatchInputText(idea, "auto", true);
+      if (detectedStories.length >= 2) {
+        this.addItemsToBatchQueue(detectedStories);
+        this.inputIdeaPrompt.value = "";
+        localStorage.removeItem("anistory_draft_prompt");
+        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
+        this.updateLiveMultiStoryDetection();
+        if (this.tabModeBatch) this.tabModeBatch.click();
+        this.showToast(`📚 Detected ${detectedStories.length} stories! Automatically producing each film from Step 1 → Step 4 one-by-one...`);
+        await this.runBatchStoryQueueStep1To4();
+        return true;
+      } else if (detectedStories.length === 1 && detectedStories[0].title) {
+        idea = detectedStories[0].idea || idea;
+        if (this.inputProjectTitle && !this.inputProjectTitle.value.trim()) {
+          this.inputProjectTitle.value = detectedStories[0].title;
+        }
       }
     }
 
@@ -3427,12 +3470,12 @@ ${isAutoScenes
       const model = this.selectAiModel ? this.selectAiModel.value : "";
       let apiKey = this.getEffectiveApiKey(provider);
 
-      if (provider === "gemini_cookie" && !apiKey) {
+      if (provider === "gemini_cookie" && !apiKey && !this.hasServerGeminiCookie) {
         clearInterval(timerInterval);
         this.showToast("Please paste your Gemini __Secure-1PSID cookie in Settings ⚙️ first! 🍪", true);
         this.btnGenerateStoryboard.disabled = false;
         this.btnGenerateStoryboard.innerHTML = `<span class="btn-text">Generate Storyboard</span><span class="btn-arrow">✨</span>`;
-        return;
+        return false;
       }
       const isAutoScenes = this.isAutoSceneCount();
       const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto";
@@ -3753,16 +3796,19 @@ ${isAutoScenes
 
   async handleImportFromText(text, btnEl, fromAutoWorkflow = false) {
     let importText = (text || "").trim();
-    const detectedStories = this.parseBatchInputText(importText, "auto", true);
-    if (detectedStories.length >= 2) {
-      const firstStory = detectedStories[0];
-      const remainingStories = detectedStories.slice(1);
-      this.addItemsToBatchQueue(remainingStories);
-      importText = firstStory.title ? `${firstStory.title}\n${firstStory.idea}` : firstStory.idea;
-      if (this.inputProjectTitle && !this.inputProjectTitle.value.trim() && firstStory.title) {
-        this.inputProjectTitle.value = firstStory.title;
+    if (!fromAutoWorkflow) {
+      const detectedStories = this.parseBatchInputText(importText, "auto", true);
+      if (detectedStories.length >= 2) {
+        this.addItemsToBatchQueue(detectedStories);
+        if (this.inputDirectPasteText) this.inputDirectPasteText.value = "";
+        if (this.inputImportText) this.inputImportText.value = "";
+        if (this.modalImport) this.modalImport.classList.remove("active");
+        this.updateLiveMultiStoryDetection();
+        if (this.tabModeBatch) this.tabModeBatch.click();
+        this.showToast(`📚 Detected ${detectedStories.length} stories! Automatically producing each film from Step 1 → Step 4 one-by-one...`);
+        await this.runBatchStoryQueueStep1To4();
+        return true;
       }
-      this.showToast(`📚 Detected ${detectedStories.length} stories! Loading #1 ("${firstStory.title || 'Story 1'}") now & queued ${remainingStories.length} more in Batch List.`);
     }
 
     if (btnEl) {
@@ -5015,6 +5061,13 @@ ${isAutoScenes
       if (this.autoWorkflowState?.active) {
         await this.waitIfAutoWorkflowPaused();
         if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown) break;
+        if (this.autoWorkflowState.activeBatchItem) {
+          this.updateBatchItemStatus(
+            this.autoWorkflowState.activeBatchItem,
+            "running",
+            `🎨 Step 2/4: Painting ${i + 1}/${scenesToPaint.length}`
+          );
+        }
         this.updateAutoWorkflowBanner(
           2,
           `Step 2/4: Painting Scene ${i + 1} of ${scenesToPaint.length} on Storyboard with character consistency...`
@@ -5035,7 +5088,7 @@ ${isAutoScenes
       try {
         const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
         const curKey = this.getEffectiveApiKey(curProvider);
-        const resp = await fetch(`/api/projects/${projectId}/regenerate-image/${sceneIdx}`, {
+        const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/regenerate-image/${sceneIdx}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ api_key: curKey, ai_provider: curProvider })
@@ -5649,7 +5702,7 @@ ${isAutoScenes
     });
 
     try {
-      const resp = await fetch(`/api/projects/${this.currentProject.id}/scenes`, {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/scenes`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -5661,6 +5714,9 @@ ${isAutoScenes
       });
       if (resp.ok) {
         this.currentProject = await resp.json();
+        if (this.autoWorkflowState?.activeBatchItem && this.currentProject?.id) {
+          this.autoWorkflowState.activeBatchItem.projectId = this.currentProject.id;
+        }
         this.saveActiveProjectState();
         if (notify) this.showToast("Script changes saved! 💾");
       }
@@ -5687,11 +5743,12 @@ ${isAutoScenes
     try {
       const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
       const curKey = this.getEffectiveApiKey(curProvider);
-      const resp = await fetch(`/api/projects/${this.currentProject.id}/render`, {
+      const targetProjId = this.currentProject.id;
+      const resp = await fetch(`/api/projects/${encodeURIComponent(targetProjId)}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          project_id: this.currentProject.id,
+          project_id: targetProjId,
           api_key: curKey,
           ai_provider: curProvider
         })
@@ -5700,19 +5757,19 @@ ${isAutoScenes
       if (!resp.ok) throw new Error("Render trigger failed");
 
       // Track this render in background monitor
-      if (this.currentProject?.id) {
-        this.trackedRenderIds.add(this.currentProject.id);
-        this.completedNotified.delete(this.currentProject.id);
+      if (targetProjId) {
+        this.trackedRenderIds.add(targetProjId);
+        this.completedNotified.delete(targetProjId);
       }
       this.refreshActiveTasks();
 
       if (waitForCompletion) {
         return await new Promise((resolve) => {
           this._renderCompleteResolver = resolve;
-          this.pollRenderProgress();
+          this.pollRenderProgress(targetProjId);
         });
       } else {
-        this.pollRenderProgress();
+        this.pollRenderProgress(targetProjId);
         return { ok: true };
       }
     } catch (e) {
@@ -5727,12 +5784,15 @@ ${isAutoScenes
     }
   }
 
-  pollRenderProgress() {
+  pollRenderProgress(explicitProjectId = null) {
     if (this.pollInterval) clearInterval(this.pollInterval);
+    const targetProjectId = explicitProjectId || this.currentProject?.id;
+    if (!targetProjectId) return;
 
     this.pollInterval = setInterval(async () => {
       try {
-        const resp = await fetch(`/api/projects/${this.currentProject.id}`);
+        const pollId = explicitProjectId || this.currentProject?.id || targetProjectId;
+        const resp = await fetch(`/api/projects/${encodeURIComponent(pollId)}`);
         if (!resp.ok) return;
 
         const proj = await resp.json();
@@ -5747,25 +5807,43 @@ ${isAutoScenes
         // Update activity log
         this.updateActivityLogs(pct, proj.current_step);
         if (this.autoWorkflowState?.active) {
+          if (this.autoWorkflowState.activeBatchItem) {
+            this.updateBatchItemStatus(
+              this.autoWorkflowState.activeBatchItem,
+              "running",
+              `🎬 Step 3/4: Render ${pct}%`,
+              { projectId: proj.id }
+            );
+          }
           this.updateAutoWorkflowBanner(3, `Step 3/4: ${proj.current_step || 'Rendering full animated film...'} (${pct}%)`);
         }
 
         if (proj.status === "completed") {
           clearInterval(this.pollInterval);
           this.pollInterval = null;
+          if (this.autoWorkflowState?.activeBatchItem) {
+            this.updateBatchItemStatus(
+              this.autoWorkflowState.activeBatchItem,
+              "completed",
+              "✅ Step 4: Completed",
+              { projectId: proj.id, videoPath: proj.video_path || null }
+            );
+          }
           this.showCinemaPremiere(!this.autoWorkflowState?.batchMode);
           if (this._renderCompleteResolver) {
             const fn = this._renderCompleteResolver;
             this._renderCompleteResolver = null;
             fn({ ok: true, project: proj });
           }
-        } else if (proj.status === "error") {
+        } else if (proj.status === "error" || proj.status === "storyboard_ready") {
           clearInterval(this.pollInterval);
           this.pollInterval = null;
-          if (this.autoWorkflowState?.active && !this.autoWorkflowState?.batchMode) {
+          if (this.autoWorkflowState?.active && !this.autoWorkflowState?.batchMode && proj.status === "error") {
             this.updateAutoWorkflowBanner(3, `⚠️ Render Error: ${proj.current_step}`, "error");
           }
-          this.showToast("Rendering error occurred: " + proj.current_step, true);
+          if (proj.status === "error") {
+            this.showToast("Rendering error occurred: " + proj.current_step, true);
+          }
           if (this._renderCompleteResolver) {
             const fn = this._renderCompleteResolver;
             this._renderCompleteResolver = null;
@@ -6210,13 +6288,18 @@ ${isAutoScenes
       this.startAutoWorkflowTimer();
     }
 
+    if (batchItem) {
+      this.autoWorkflowState.activeBatchItem = batchItem;
+    }
+
     this.switchStage(2);
     const totalScenes = this.currentProject.scenes.length;
     const prefix = batchItem ? `[${batchItem.title || 'Story'}] ` : "";
     if (batchItem) {
-      batchItem.stepText = "⚡ Step 2/4: Storyboard & Art";
-      this.saveBatchQueueToStorage();
-      this.renderBatchQueueList();
+      this.updateBatchItemStatus(batchItem, "running", "⚡ Step 2/4: Storyboard & Art", {
+        projectId: this.currentProject.id,
+        title: batchItem.title || this.currentProject.title || ""
+      });
     }
     this.updateAutoWorkflowBanner(
       2,
@@ -6230,6 +6313,9 @@ ${isAutoScenes
     // Step 2a: Auto-Refine Video Prompts if enabled
     const doRefine = this.chkAutoRefinePrompts ? this.chkAutoRefinePrompts.checked : true;
     if (doRefine && !this.autoWorkflowState.skipCountdown && !this.autoWorkflowState.skipCurrentStory) {
+      if (batchItem) {
+        this.updateBatchItemStatus(batchItem, "running", "✨ Step 2/4: Refining Prompts...");
+      }
       this.updateAutoWorkflowBanner(2, `${prefix}Step 2/4: Upgrading ${totalScenes} scenes to director-grade cinematic video prompts...`, "running");
       try {
         await this.refineAllVideoPrompts(this.btnRefineAllPrompts);
@@ -6245,6 +6331,9 @@ ${isAutoScenes
     if (doLivePaint && !this.autoWorkflowState.skipCountdown && !this.autoWorkflowState.skipCurrentStory) {
       const unpaintedCount = (this.currentProject.scenes || []).filter(s => !s.image_path).length;
       if (unpaintedCount > 0) {
+        if (batchItem) {
+          this.updateBatchItemStatus(batchItem, "running", `🎨 Step 2/4: Painting (0/${unpaintedCount})`);
+        }
         this.updateAutoWorkflowBanner(
           2,
           `${prefix}Step 2/4: Painting ${unpaintedCount} scene keyframe(s) live on Storyboard...`,
@@ -6263,6 +6352,9 @@ ${isAutoScenes
         if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown || this.autoWorkflowState.skipCurrentStory) break;
         await this.waitIfAutoWorkflowPaused();
         if (!this.autoWorkflowState.active || this.autoWorkflowState.skipCountdown || this.autoWorkflowState.skipCurrentStory) break;
+        if (batchItem) {
+          this.updateBatchItemStatus(batchItem, "running", `⏱️ Step 2/4: Review (${rem}s)`);
+        }
         this.updateAutoWorkflowBanner(
           2,
           `${prefix}Step 2/4 Ready! Advancing to Step 3 (Studio Render) in ${rem}s... (Click ⏸ Pause to edit or ⏭ Render Now)`,
@@ -6277,9 +6369,7 @@ ${isAutoScenes
 
     // Step 3: Trigger Full Studio Render
     if (batchItem) {
-      batchItem.stepText = "⚡ Step 3/4: Studio Render";
-      this.saveBatchQueueToStorage();
-      this.renderBatchQueueList();
+      this.updateBatchItemStatus(batchItem, "running", "🎬 Step 3/4: Studio Render...");
     }
     this.updateAutoWorkflowBanner(
       3,
@@ -6301,7 +6391,7 @@ ${isAutoScenes
         return parsed.map(item => ({
           ...item,
           status: item.status === "running" ? "queued" : (item.status || "queued"),
-          stepText: item.status === "running" ? "⏳ Queued" : (item.stepText || "⏳ Queued")
+          stepText: item.status === "running" ? "⏳ Queued (Step 1→4)" : (item.stepText || "⏳ Queued (Step 1→4)")
         }));
       }
     } catch (e) {
@@ -6317,21 +6407,112 @@ ${isAutoScenes
     this.updateBatchQueueCounters();
   }
 
+  updateBatchItemStatus(item, status, stepText, extra = {}) {
+    if (!item) return;
+    item.status = status;
+    if (stepText) item.stepText = stepText;
+    Object.assign(item, extra || {});
+
+    const match = (this.batchQueue || []).find(
+      q => (item.id && q.id === item.id) || (item.projectId && q.projectId === item.projectId)
+    );
+    if (match && match !== item) {
+      match.status = status;
+      if (stepText) match.stepText = stepText;
+      Object.assign(match, extra || {});
+    }
+
+    this.saveBatchQueueToStorage();
+    this.renderBatchQueueList();
+    this.renderAutoWfBatchStrip();
+  }
+
+  async syncBatchQueueWithProjects(projectList = null) {
+    if (!this.batchQueue || !this.batchQueue.length) return;
+    try {
+      let list = projectList;
+      if (!Array.isArray(list)) {
+        const resp = await fetch("/api/projects");
+        if (!resp.ok) return;
+        list = await resp.json();
+      }
+      if (!Array.isArray(list)) return;
+
+      let changed = false;
+      this.batchQueue.forEach((item) => {
+        const matchedProj = list.find(p => {
+          if (item.projectId && p.id === item.projectId) return true;
+          const pIdea = (p.idea || "").trim();
+          const iIdea = (item.idea || "").trim();
+          if (pIdea && iIdea && (pIdea === iIdea || pIdea.includes(iIdea) || iIdea.includes(pIdea))) return true;
+          if (item.title && p.title && item.title.trim().toLowerCase() === p.title.trim().toLowerCase()) return true;
+          return false;
+        });
+        if (!matchedProj) return;
+
+        if (!item.projectId) {
+          item.projectId = matchedProj.id;
+          changed = true;
+        }
+        if (!item.title && matchedProj.title) {
+          item.title = matchedProj.title;
+          changed = true;
+        }
+        if (matchedProj.status === "completed" || matchedProj.video_path) {
+          if (item.status !== "completed" || item.stepText !== "✅ Step 4: Completed") {
+            item.status = "completed";
+            item.stepText = "✅ Step 4: Completed";
+            item.videoPath = matchedProj.video_path || item.videoPath || null;
+            changed = true;
+          }
+        } else if (matchedProj.status === "rendering") {
+          const pct = matchedProj.progress || 35;
+          const nextStep = `🎬 Step 3/4: Render ${pct}%`;
+          if (item.status !== "running" || item.stepText !== nextStep) {
+            item.status = "running";
+            item.stepText = nextStep;
+            changed = true;
+          }
+        }
+      });
+
+      if (changed) {
+        this.saveBatchQueueToStorage();
+        this.renderBatchQueueList();
+        this.renderAutoWfBatchStrip();
+      }
+    } catch (e) {
+      // ignore sync errors
+    }
+  }
+
   updateBatchQueueCounters() {
     const total = (this.batchQueue || []).length;
     const completed = (this.batchQueue || []).filter(i => i.status === "completed").length;
+    const running = (this.batchQueue || []).filter(i => i.status === "running").length;
     const pending = (this.batchQueue || []).filter(i => i.status === "queued" || i.status === "running").length;
 
     if (this.badgeTabBatchCount) this.badgeTabBatchCount.textContent = String(total);
     if (this.badgeQuickBatchCount) this.badgeQuickBatchCount.textContent = String(total);
     if (this.badgeBatchQueueSummary) {
-      this.badgeBatchQueueSummary.textContent = `📋 Queue: ${total} stor${total === 1 ? 'y' : 'ies'} (${pending} pending • ${completed} completed)`;
+      const runTag = running > 0 ? ` • ⚡ ${running} running` : "";
+      this.badgeBatchQueueSummary.textContent = `📋 Queue: ${total} stor${total === 1 ? 'y' : 'ies'} (${pending} pending${runTag} • ${completed} completed)`;
     }
+    const toRun = pending > 0 ? pending : total;
     if (this.textBtnRunBatchQueue) {
-      const toRun = pending > 0 ? pending : total;
       this.textBtnRunBatchQueue.textContent = toRun > 0
         ? `📚 Run Batch Queue 1-by-1 (${toRun} Stor${toRun === 1 ? 'y' : 'ies'} • Step 1→4)`
         : `📚 Run Batch Queue 1-by-1 (Step 1→4)`;
+    }
+    if (this.btnBatchHeaderRunAll) {
+      this.btnBatchHeaderRunAll.style.display = total > 0 ? "inline-flex" : "none";
+      const isBatchActive = Boolean(this.autoWorkflowState?.active && this.autoWorkflowState?.batchMode);
+      this.btnBatchHeaderRunAll.disabled = isBatchActive;
+      this.btnBatchHeaderRunAll.innerHTML = isBatchActive
+        ? `⚡ Producing Queue 1-by-1...`
+        : (pending > 0
+          ? `▶️ Produce Queue 1-by-1 (${pending} Pending • Step 1→4)`
+          : `🔄 Re-Run All Queue (${total} • Step 1→4)`);
     }
     if (this.btnBatchDownloadAllMp4) {
       this.btnBatchDownloadAllMp4.style.display = completed > 0 ? "inline-flex" : "none";
@@ -6813,9 +6994,10 @@ ${isAutoScenes
     this.autoWfBatchStrip.innerHTML = this.batchQueue.map((item, idx) => {
       const icon = item.status === "completed" ? "✅" : item.status === "running" ? "⚡" : item.status === "error" ? "⚠️" : "⏳";
       const label = item.title || (`Story #${idx + 1}`);
+      const stepLabel = item.stepText || (item.status === "completed" ? "✅ Done" : "⏳ Queued");
       return `
-        <div class="auto-wf-batch-chip ${item.status || 'queued'}" data-idx="${idx}" title="${this.escapeHtml(item.idea)}">
-          <span>${icon} #${idx + 1}: ${this.escapeHtml(label.slice(0, 24))}</span>
+        <div class="auto-wf-batch-chip ${item.status || 'queued'}" data-idx="${idx}" title="${this.escapeHtml(item.idea)} (${this.escapeHtml(stepLabel)})">
+          <span>${icon} #${idx + 1}: ${this.escapeHtml(label.slice(0, 22))} <em style="opacity:0.85; font-style:normal; font-size:10px; margin-left:4px;">• ${this.escapeHtml(stepLabel)}</em></span>
           ${item.projectId && item.status === "completed" ? `<a href="/api/download/${encodeURIComponent(item.projectId)}" download class="batch-chip-dl" title="Download MP4">⬇️</a>` : ""}
         </div>
       `;
@@ -6847,55 +7029,90 @@ ${isAutoScenes
       return;
     }
 
-    let itemsToRun = [];
+    // If user clicked Run on a specific story item, mark it queued and prioritize it first, then continue 1-by-1 through the rest of the queue
     if (singleItemId) {
-      itemsToRun = this.batchQueue.filter(i => i.id === singleItemId);
-    } else {
-      itemsToRun = this.batchQueue.filter(i => i.status !== "completed");
-      if (itemsToRun.length === 0) {
-        // All were completed previously — reset all to queued so user can re-run the batch
-        this.batchQueue.forEach(i => {
-          i.status = "queued";
-          i.stepText = "⏳ Queued (Step 1→4)";
-        });
-        itemsToRun = [...this.batchQueue];
+      const targetIdx = this.batchQueue.findIndex(i => i.id === singleItemId);
+      if (targetIdx !== -1) {
+        const targetItem = this.batchQueue[targetIdx];
+        targetItem.status = "queued";
+        targetItem.stepText = "⏳ Queued (Step 1→4)";
+        if (targetIdx > 0 && !(this.autoWorkflowState.active && this.autoWorkflowState.batchMode)) {
+          this.batchQueue.splice(targetIdx, 1);
+          this.batchQueue.unshift(targetItem);
+        }
       }
     }
 
-    if (!itemsToRun.length) return;
+    // If a batch workflow is already actively running, just update counters/UI so the active loop picks up all queued items
+    if (this.autoWorkflowState.active && this.autoWorkflowState.batchMode) {
+      this.autoWorkflowState.paused = false;
+      this.autoWorkflowState.batchTotal = this.batchQueue.length;
+      this.saveBatchQueueToStorage();
+      this.renderBatchQueueList();
+      this.renderAutoWfBatchStrip();
+      this.showToast("📚 Queued stories added to active 1-by-1 Batch Production!");
+      return;
+    }
+
+    // Ensure non-completed items (error/skipped) are reset to queued so they get produced
+    let queuedItems = this.batchQueue.filter(i => i.status !== "completed");
+    if (queuedItems.length === 0) {
+      // All were completed previously — reset all to queued so user can re-run the batch
+      this.batchQueue.forEach(i => {
+        i.status = "queued";
+        i.stepText = "⏳ Queued (Step 1→4)";
+      });
+      queuedItems = [...this.batchQueue];
+    } else {
+      queuedItems.forEach(i => {
+        if (i.status !== "running") {
+          i.status = "queued";
+          i.stepText = "⏳ Queued (Step 1→4)";
+        }
+      });
+    }
+
+    if (!queuedItems.length) return;
 
     this.autoWorkflowState.active = true;
     this.autoWorkflowState.paused = false;
     this.autoWorkflowState.skipCountdown = false;
     this.autoWorkflowState.batchMode = true;
     this.autoWorkflowState.batchIndex = 1;
-    this.autoWorkflowState.batchTotal = itemsToRun.length;
+    this.autoWorkflowState.batchTotal = this.batchQueue.length;
     this.autoWorkflowState.skipCurrentStory = false;
+    this.autoWorkflowState.activeBatchItem = null;
     this.startAutoWorkflowTimer();
 
     if (this.btnRunBatchQueueStep1To4) this.btnRunBatchQueueStep1To4.disabled = true;
     if (this.btnAutoWorkflowStep1To4) this.btnAutoWorkflowStep1To4.disabled = true;
+    this.saveBatchQueueToStorage();
+    this.renderBatchQueueList();
+    this.renderAutoWfBatchStrip();
 
     let completedInRun = 0;
+    let processedCount = 0;
 
     try {
-      for (let bIdx = 0; bIdx < itemsToRun.length; bIdx++) {
-        if (!this.autoWorkflowState.active) break;
+      while (this.autoWorkflowState.active) {
+        const nextIdx = this.batchQueue.findIndex(i => i.status === "queued");
+        if (nextIdx === -1) break;
 
-        const item = itemsToRun[bIdx];
-        this.autoWorkflowState.batchIndex = bIdx + 1;
+        const item = this.batchQueue[nextIdx];
+        processedCount++;
+        const queuePos = nextIdx + 1;
+        this.autoWorkflowState.batchIndex = queuePos;
+        this.autoWorkflowState.batchTotal = this.batchQueue.length;
         this.autoWorkflowState.skipCountdown = false;
         this.autoWorkflowState.skipCurrentStory = false;
+        this.autoWorkflowState.activeBatchItem = item;
 
-        item.status = "running";
-        item.stepText = "⚡ Step 1/4: Generating Storyboard...";
-        this.saveBatchQueueToStorage();
-        this.renderBatchQueueList();
+        this.updateBatchItemStatus(item, "running", "⚡ Step 1/4: Writing Storyboard...");
 
-        const storyLabel = item.title || `Story #${bIdx + 1}`;
+        const storyLabel = item.title || `Story #${queuePos}`;
         this.updateAutoWorkflowBanner(
           1,
-          `[Story ${bIdx + 1}/${itemsToRun.length}: "${storyLabel}"] Step 1/4: Generating AI Screenplay & Character Voices...`,
+          `[Story ${queuePos}/${this.batchQueue.length}: "${storyLabel}"] Step 1/4: Generating AI Screenplay & Character Voices...`,
           "running"
         );
 
@@ -6908,20 +7125,18 @@ ${isAutoScenes
 
         const step1Ok = await this.handleGenerateStoryboard(true);
         if (!step1Ok || !this.currentProject || this.autoWorkflowState.skipCurrentStory) {
-          item.status = this.autoWorkflowState.skipCurrentStory ? "skipped" : "error";
-          item.stepText = this.autoWorkflowState.skipCurrentStory ? "⏭ Skipped" : "⚠️ Step 1 Error";
-          this.saveBatchQueueToStorage();
-          this.renderBatchQueueList();
-          this.renderAutoWfBatchStrip();
+          this.updateBatchItemStatus(
+            item,
+            this.autoWorkflowState.skipCurrentStory ? "skipped" : "error",
+            this.autoWorkflowState.skipCurrentStory ? "⏭ Skipped" : "⚠️ Step 1 Error"
+          );
           continue;
         }
 
-        item.projectId = this.currentProject.id;
-        if (this.currentProject.title && !item.title) {
-          item.title = this.currentProject.title;
-        }
-        this.saveBatchQueueToStorage();
-        this.renderBatchQueueList();
+        this.updateBatchItemStatus(item, "running", "⚡ Step 2/4: Storyboard Ready", {
+          projectId: this.currentProject.id,
+          title: item.title || this.currentProject.title || ""
+        });
 
         // Run Step 2 (Refine + Paint) -> Step 3 (Studio Render) -> Wait for Step 4 (Cinema Premiere)
         const renderResult = await this.runAutoWorkflowFromStep2To4(true, true, item);
@@ -6930,33 +7145,34 @@ ${isAutoScenes
 
         if (renderResult && renderResult.ok) {
           completedInRun++;
-          item.status = "completed";
-          item.stepText = "✅ Step 4: Completed";
-          item.videoPath = this.currentProject?.video_path || null;
-          this.saveBatchQueueToStorage();
-          this.renderBatchQueueList();
+          this.updateBatchItemStatus(item, "completed", "✅ Step 4: Completed", {
+            projectId: this.currentProject?.id || item.projectId,
+            videoPath: this.currentProject?.video_path || null
+          });
           this.updateAutoWorkflowBanner(
             4,
-            `✅ Story ${bIdx + 1}/${itemsToRun.length} ("${item.title || storyLabel}") Finished Step 1 → 4!`,
+            `✅ Story ${queuePos}/${this.batchQueue.length} ("${item.title || storyLabel}") Finished Step 1 → 4!`,
             "running"
           );
         } else {
-          item.status = this.autoWorkflowState.skipCurrentStory ? "skipped" : "error";
-          item.stepText = this.autoWorkflowState.skipCurrentStory ? "⏭ Skipped" : "⚠️ Render Error";
-          this.saveBatchQueueToStorage();
-          this.renderBatchQueueList();
+          this.updateBatchItemStatus(
+            item,
+            this.autoWorkflowState.skipCurrentStory ? "skipped" : "error",
+            this.autoWorkflowState.skipCurrentStory ? "⏭ Skipped" : "⚠️ Render Error"
+          );
         }
 
-        // If there are more stories in the queue, show a 4s transition countdown before starting the next story
-        if (bIdx < itemsToRun.length - 1 && this.autoWorkflowState.active) {
-          const nextItem = itemsToRun[bIdx + 1];
-          const nextLabel = nextItem.title || `Story #${bIdx + 2}`;
+        // Check if more queued stories remain and show a 4s transition countdown before starting the next story
+        const nextPending = this.batchQueue.find(i => i.status === "queued");
+        if (nextPending && this.autoWorkflowState.active) {
+          const nextPos = this.batchQueue.indexOf(nextPending) + 1;
+          const nextLabel = nextPending.title || `Story #${nextPos}`;
           for (let c = 4; c >= 1; c--) {
             if (!this.autoWorkflowState.active) break;
             await this.waitIfAutoWorkflowPaused();
             this.updateAutoWorkflowBanner(
               4,
-              `✅ Story ${bIdx + 1}/${itemsToRun.length} Complete! Starting Story ${bIdx + 2}/${itemsToRun.length} ("${nextLabel}") in ${c}s...`,
+              `✅ Story ${queuePos}/${this.batchQueue.length} Complete! Starting Story ${nextPos}/${this.batchQueue.length} ("${nextLabel}") in ${c}s...`,
               "running"
             );
             await new Promise(r => setTimeout(r, 1000));
@@ -6971,7 +7187,7 @@ ${isAutoScenes
         const durStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
         this.updateAutoWorkflowBanner(
           4,
-          `🏆 Batch Queue Complete in ${durStr}! Produced ${completedInRun}/${itemsToRun.length} Films (Step 1 → 4 One-by-One)!`,
+          `🏆 Batch Queue Complete in ${durStr}! Produced ${completedInRun}/${processedCount} Films (Step 1 → 4 One-by-One)!`,
           "completed"
         );
         if (this.autoWorkflowState.timerId) {
@@ -6980,12 +7196,16 @@ ${isAutoScenes
         }
         this.autoWorkflowState.active = false;
         this.autoWorkflowState.paused = false;
-        this.showToast(`🎉 Batch Queue Finished! ${completedInRun}/${itemsToRun.length} films produced from Step 1 to Step 4!`);
+        this.autoWorkflowState.activeBatchItem = null;
+        this.showToast(`🎉 Batch Queue Finished! ${completedInRun}/${processedCount} films produced from Step 1 to Step 4!`);
       }
     } finally {
+      this.autoWorkflowState.activeBatchItem = null;
       if (this.btnRunBatchQueueStep1To4) this.btnRunBatchQueueStep1To4.disabled = false;
       if (this.btnAutoWorkflowStep1To4) this.btnAutoWorkflowStep1To4.disabled = false;
+      this.updateBatchQueueCounters();
       this.renderBatchQueueList();
+      this.renderAutoWfBatchStrip();
     }
   }
 
@@ -7253,6 +7473,7 @@ ${isAutoScenes
       const list = await resp.json();
       if (this.stage1ProjectsList) this.renderProjectsCards(list, this.stage1ProjectsList);
       if (this.savedProjectsList) this.renderProjectsCards(list, this.savedProjectsList);
+      await this.syncBatchQueueWithProjects(list);
     } catch (e) {
       console.warn("Error refreshing project lists:", e);
     }
@@ -7340,9 +7561,18 @@ ${isAutoScenes
         this.renderActiveTasksModal(tasks);
       }
 
-      // Track all active task IDs
+      // Track all active task IDs and sync with Batch Queue items
       tasks.forEach(t => {
-        if (t.id) this.trackedRenderIds.add(t.id);
+        if (t.id) {
+          this.trackedRenderIds.add(t.id);
+          const bMatch = (this.batchQueue || []).find(
+            q => q.projectId === t.id || (q.title && t.title && q.title.trim().toLowerCase() === t.title.trim().toLowerCase())
+          );
+          if (bMatch) {
+            const pct = t.progress || 35;
+            this.updateBatchItemStatus(bMatch, "running", `🎬 Step 3/4: Render ${pct}%`, { projectId: t.id });
+          }
+        }
       });
 
       // Update Stage 3 in real-time if current film is rendering
@@ -7367,10 +7597,24 @@ ${isAutoScenes
             if (pResp.ok) {
               const pData = await pResp.json();
               if (pData.status === "completed") {
+                const bMatch = (this.batchQueue || []).find(
+                  q => q.projectId === tid || (q.title && pData.title && q.title.trim().toLowerCase() === pData.title.trim().toLowerCase())
+                );
+                if (bMatch) {
+                  this.updateBatchItemStatus(bMatch, "completed", "✅ Step 4: Completed", {
+                    projectId: tid,
+                    videoPath: pData.video_path || null
+                  });
+                }
                 this.showCompletionToast(pData);
                 if (this.currentProject && this.currentProject.id === tid && this.currentStage === 3) {
                   this.currentProject = pData;
-                  this.showCinemaPremiere();
+                  this.showCinemaPremiere(!this.autoWorkflowState?.batchMode);
+                  if (this._renderCompleteResolver) {
+                    const fn = this._renderCompleteResolver;
+                    this._renderCompleteResolver = null;
+                    fn({ ok: true, project: pData });
+                  }
                 }
                 this.refreshAllProjectLists();
               }

@@ -412,18 +412,32 @@
                     <textarea id="textareaBatchIdeas" rows="4" class="styled-textarea compact-textarea" placeholder="Enter multiple ideas (one per line, numbered 1. 2. 3., or separated by ---):&#10;1. Chiến Thuật Bình Xăng :: Ông Tư và Bà Tư ngồi quán cà phê bàn chuyện tiết kiệm tiền đổ đầy bình xăng.&#10;2. Chú Mèo Sao Thổ :: Một chú mèo nhỏ tinh nghịch lẻn lên tàu vũ trụ khám phá vành đai Sao Thổ lấp lánh.&#10;3. Trí Khôn Của Ta Đây :: Câu chuyện dân gian Bác Nông Dân, Con Trâu và Con Cọp trên cánh đồng lúa vàng."></textarea>
                     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
                       <span id="batchDetectHint" class="hint-text">💡 Tip: Supports stories separated by <code>---</code>, numbered <code>1. 2. 3.</code>, or <code>Title :: Story idea</code></span>
-                      <button id="btnBatchAddIdeas" type="button" class="glass-btn primary-glow-btn compact-btn" style="padding:5px 12px; font-size:11.5px;">
-                        <span>➕ Add to Queue</span>
-                      </button>
+                      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <label class="auto-wf-check-label" style="font-size:11px; margin:0; cursor:pointer;" title="Automatically start producing queued films from Step 1 to Step 4 one-by-one as soon as stories are added">
+                          <input type="checkbox" id="chkBatchAutoStart" checked>
+                          <span>🤖 Auto-Produce on Add (Step 1→4)</span>
+                        </label>
+                        <button id="btnBatchAddIdeas" type="button" class="glass-btn secondary-btn compact-btn" style="padding:5px 10px; font-size:11.5px;">
+                          <span>➕ Add to Queue</span>
+                        </button>
+                        <button id="btnBatchAddAndRun" type="button" class="glass-btn primary-glow-btn compact-btn" style="padding:5px 12px; font-size:11.5px;">
+                          <span>🚀 Add & Produce 1-by-1 (Step 1→4)</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   <!-- Active Queue Items List -->
                   <div class="batch-queue-list-header">
                     <span id="badgeBatchQueueSummary" class="batch-queue-summary-text">📋 Queue: 0 stories (0 pending • 0 completed)</span>
-                    <button id="btnBatchDownloadAllMp4" type="button" class="glass-btn secondary-btn mini-btn" style="display:none;" title="Download all completed MP4 films from this batch">
-                      ⬇️ Download All Completed MP4s
-                    </button>
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                      <button id="btnBatchHeaderRunAll" type="button" class="glass-btn primary-glow-btn mini-btn" style="display:none; padding:4px 10px; font-size:11px;" title="Automatically produce all queued stories one-by-one from Step 1 to Step 4">
+                        ▶️ Produce Queue 1-by-1 (Step 1→4)
+                      </button>
+                      <button id="btnBatchDownloadAllMp4" type="button" class="glass-btn secondary-btn mini-btn" style="display:none;" title="Download all completed MP4 films from this batch">
+                        ⬇️ Download All Completed MP4s
+                      </button>
+                    </div>
                   </div>
                   <div id="batchQueueListContainer" class="batch-queue-list">
                     <!-- Rendered dynamically via app.js -->
