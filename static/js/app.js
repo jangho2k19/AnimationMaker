@@ -5899,7 +5899,10 @@ ${isAutoScenes
 
     if (this.currentProject.video_path) {
       const cleanProjVid = this.currentProject.video_path.replace(/\\/g, "/");
+      this.cinemaVideoPlayer.autoplay = false;
+      this.cinemaVideoPlayer.pause();
       this.cinemaVideoPlayer.src = `/media/${encodeURI(cleanProjVid)}?t=${Date.now()}`;
+      this.cinemaVideoPlayer.load();
       this.btnDownloadMovie.href = `/api/download/${this.currentProject.id}`;
     }
 
@@ -6000,16 +6003,10 @@ ${isAutoScenes
       this.autoWorkflowState.active = false;
       this.autoWorkflowState.paused = false;
 
-      if (this.cinemaVideoPlayer && this.currentProject?.video_path) {
-        this.cinemaVideoPlayer.play().catch(() => {});
-      }
       if (this.chkAutoDownloadMp4?.checked && this.currentProject?.id) {
         this.triggerProjectMp4Download(this.currentProject.id, this.currentProject.title);
       }
     } else if (this.autoWorkflowState?.active && this.autoWorkflowState?.batchMode) {
-      if (this.cinemaVideoPlayer && this.currentProject?.video_path) {
-        this.cinemaVideoPlayer.play().catch(() => {});
-      }
       if (this.chkAutoDownloadMp4?.checked && this.currentProject?.id) {
         this.triggerProjectMp4Download(this.currentProject.id, this.currentProject.title);
       }
