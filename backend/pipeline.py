@@ -512,15 +512,8 @@ class AnimationPipeline:
         audio_path = p_dir / f"scene_{scene_idx + 1}.mp3"
         srt_path = p_dir / f"scene_{scene_idx + 1}.srt"
 
-        # Determine target max duration for voiceover (e.g. 7.8s for Google Flow / Veo 8s video or agent-decided duration)
-        raw_acting_cand = p_dir / f"scene_{scene_idx + 1}_acting.mp4"
-        scene_dur = float(scene.get("duration") or 8.0)
-        max_dur = max(3.0, round(scene_dur - 0.2, 2))
-        if raw_acting_cand.exists():
-            v_eng = VideoEngine()
-            act_dur = v_eng.get_media_duration(str(raw_acting_cand))
-            if act_dur > 0:
-                max_dur = max(3.0, round(act_dur - 0.2, 2))
+        # Keep natural normal narration speed (do not compress audio to an arbitrary max_duration)
+        max_dur = None
 
         scene_dial_only = scene.get("dialogue_only")
         if scene_dial_only is None:
@@ -876,13 +869,8 @@ class AnimationPipeline:
                                 narrator_name="Narrator"
                             )
                             scene["dialogues"] = sc_dialogues
-                    raw_acting_cand = project_dir / f"scene_{idx + 1}_acting.mp4"
-                    scene_dur = float(scene.get("duration") or 8.0)
-                    scene_max_dur = max(3.0, round(scene_dur - 0.2, 2))
-                    if raw_acting_cand.exists():
-                        act_dur = engine.get_media_duration(str(raw_acting_cand))
-                        if act_dur > 0:
-                            scene_max_dur = max(3.0, round(act_dur - 0.2, 2))
+                    # Keep natural normal narration speed (video clip dynamically adapts to audio duration)
+                    scene_max_dur = None
 
                     try:
                         res = await self.voice_agent.synthesize(

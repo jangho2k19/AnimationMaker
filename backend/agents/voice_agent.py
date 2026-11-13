@@ -138,15 +138,15 @@ class VoiceAgent:
         # In FFmpeg: asetrate=24000*pitch_ratio shifts pitch AND speed by pitch_ratio;
         # then atempo=speed_ratio/pitch_ratio restores/sets exact final speaking tempo!
         profiles = {
-            "-story":       {"pitch": 0.965, "speed": 0.93, "eq": "bass=g=2.5:f=140"},
-            "-energetic":   {"pitch": 1.075, "speed": 1.06, "eq": "treble=g=2.0:f=3500"},
-            "-heroic":      {"pitch": 0.905, "speed": 0.95, "eq": "bass=g=4.0:f=120"},
-            "-sweet":       {"pitch": 1.045, "speed": 0.97, "eq": "treble=g=2.5:f=4000"},
-            "-drama":       {"pitch": 0.945, "speed": 0.92, "eq": "bass=g=3.0:f=130"},
+            "-story":       {"pitch": 0.965, "speed": 0.96, "eq": "bass=g=2.5:f=140"},
+            "-energetic":   {"pitch": 1.055, "speed": 1.00, "eq": "treble=g=2.0:f=3500"},
+            "-heroic":      {"pitch": 0.915, "speed": 0.96, "eq": "bass=g=4.0:f=120"},
+            "-sweet":       {"pitch": 1.040, "speed": 0.98, "eq": "treble=g=2.5:f=4000"},
+            "-drama":       {"pitch": 0.945, "speed": 0.96, "eq": "bass=g=3.0:f=130"},
             "-documentary": {"pitch": 0.950, "speed": 0.98, "eq": "bass=g=2.0:f=150,treble=g=1.5:f=3500"},
-            "-commercial":  {"pitch": 1.020, "speed": 1.12, "eq": "treble=g=2.5:f=3200"},
-            "-elder":       {"pitch": 0.885, "speed": 0.89, "eq": "bass=g=3.5:f=130"},
-            "-fast":        {"pitch": 1.010, "speed": 1.16, "eq": "treble=g=1.5:f=3500"},
+            "-commercial":  {"pitch": 1.015, "speed": 1.00, "eq": "treble=g=2.5:f=3200"},
+            "-elder":       {"pitch": 0.895, "speed": 0.93, "eq": "bass=g=3.5:f=130"},
+            "-fast":        {"pitch": 1.010, "speed": 1.05, "eq": "treble=g=1.5:f=3500"},
         }
         prof = profiles.get(persona_suffix)
         if not prof:
@@ -334,7 +334,7 @@ class VoiceAgent:
             try:
                 resp = client.models.generate_content(
                     model=m_id,
-                    contents=f"Read this animation scene narration clearly, engagingly, and expressively without extra commentary:\n\n{text}",
+                    contents=f"Read this animation scene narration clearly, naturally, and at a steady normal speaking speed (never rushed) without extra commentary:\n\n{text}",
                     config=types.GenerateContentConfig(
                         response_modalities=["AUDIO"],
                         speech_config=types.SpeechConfig(
@@ -582,27 +582,6 @@ class VoiceAgent:
 
             duration = self.get_audio_duration(output_audio_path)
 
-            # Max duration compression if exceeding acting video clip length
-            if max_duration and max_duration > 1.0 and duration > max_duration:
-                target_dur = max(1.0, max_duration - 0.2)
-                speedup_ratio = round(duration / target_dur, 3)
-                if 1.02 <= speedup_ratio <= 1.50:
-                    compressed_path = output_audio_path + ".compressed.mp3"
-                    tempo_cmd = [
-                        FFMPEG_PATH, "-y",
-                        "-i", str(output_audio_path),
-                        "-filter:a", f"atempo={speedup_ratio:.3f}",
-                        "-b:a", "192k",
-                        str(compressed_path)
-                    ]
-                    p_tempo = subprocess.run(tempo_cmd, capture_output=True, text=True)
-                    if p_tempo.returncode == 0 and os.path.exists(compressed_path):
-                        shutil.move(compressed_path, output_audio_path)
-                        duration = self.get_audio_duration(output_audio_path)
-                        for c in all_cues:
-                            c["start"] = round(c["start"] / speedup_ratio, 2)
-                            c["end"] = round(c["end"] / speedup_ratio, 2)
-
             # Write combined SRT
             if output_srt_path:
                 output_srt_path = str(output_srt_path)
@@ -790,32 +769,6 @@ class VoiceAgent:
             self._apply_voice_persona_dsp(output_audio_path, persona_suffix, boundaries)
 
         duration = self.get_audio_duration(output_audio_path)
-
-        # Enforce maximum duration for acting video (e.g. 7.8s max for 8s Google Flow video)
-        # to ensure spoken narration is equal to or shorter than the video clip.
-        if max_duration and max_duration > 1.0 and duration > max_duration:
-            target_dur = max(1.0, max_duration - 0.2)
-            speedup_ratio = round(duration / target_dur, 3)
-            # Safe speedup range (1.02x up to 1.50x) preserves natural voice timbre
-            if 1.02 <= speedup_ratio <= 1.50:
-                compressed_path = output_audio_path + ".compressed.mp3"
-                tempo_cmd = [
-                    FFMPEG_PATH, "-y",
-                    "-i", str(output_audio_path),
-                    "-filter:a", f"atempo={speedup_ratio:.3f}",
-                    "-b:a", "192k",
-                    str(compressed_path)
-                ]
-                proc = subprocess.run(tempo_cmd, capture_output=True, text=True)
-                if proc.returncode == 0 and os.path.exists(compressed_path) and os.path.getsize(compressed_path) > 0:
-                    shutil.move(compressed_path, output_audio_path)
-                    old_dur = duration
-                    duration = self.get_audio_duration(output_audio_path)
-                    print(f"Compressed narration from {old_dur:.2f}s to {duration:.2f}s (atempo={speedup_ratio:.2f}) to fit within {max_duration:.1f}s video clip.")
-                    if boundaries:
-                        for b in boundaries:
-                            b["start"] = round(b["start"] / speedup_ratio, 2)
-                            b["end"] = round(b["end"] / speedup_ratio, 2)
 
         # Generate SRT if path is provided
         if output_srt_path:

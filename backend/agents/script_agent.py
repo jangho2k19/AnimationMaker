@@ -1772,12 +1772,12 @@ Return ONLY raw JSON matching this structure:
         male_energetic_pool = ["vi-VN-NamMinhNeural-energetic", "gemini-Puck", "vi-VN-NamMinhNeural"]
         male_heroic_pool = ["vi-VN-NamMinhNeural-heroic", "gemini-Fenrir", "gemini-Charon", "vi-VN-NamMinhNeural-documentary"]
         male_elder_pool = ["vi-VN-NamMinhNeural-elder", "vi-VN-NamMinhNeural-story", "gemini-Orus"]
-        male_standard_pool = ["vi-VN-NamMinhNeural", "gemini-Enceladus", "vi-VN-NamMinhNeural-commercial"]
+        male_standard_pool = ["vi-VN-NamMinhNeural", "vi-VN-NamMinhNeural-documentary", "gemini-Enceladus"]
 
         female_energetic_pool = ["vi-VN-HoaiMyNeural-energetic", "gemini-Zephyr", "gemini-Leda"]
         female_sweet_pool = ["vi-VN-HoaiMyNeural-sweet", "gemini-Callirrhoe", "gemini-Kore"]
         female_elder_pool = ["vi-VN-HoaiMyNeural-elder", "vi-VN-HoaiMyNeural-story"]
-        female_drama_pool = ["vi-VN-HoaiMyNeural-drama", "gemini-Aoede", "vi-VN-HoaiMyNeural-commercial"]
+        female_drama_pool = ["vi-VN-HoaiMyNeural-drama", "gemini-Aoede", "vi-VN-HoaiMyNeural-story"]
         female_standard_pool = ["vi-VN-HoaiMyNeural", "gtts-vi"]
 
         # English pools
