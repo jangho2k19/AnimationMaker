@@ -302,11 +302,9 @@ async def detect_gemini_models(
     # 2. Curated API models
     curated_api = [
         {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "category": "api", "badge": "✨ Recommended (~2s)", "description": "Next-gen flagship model with balanced speed and creative intelligence."},
-        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "category": "api", "badge": "⚡ Ultra Fast (~1.5s)", "description": "Versatile high-speed model with sub-second generation."},
-        {"id": "gemini-2.0-flash-lite", "name": "Gemini 2.0 Flash-Lite", "category": "api", "badge": "💨 Sub-Second", "description": "Extremely lightweight model optimized for low latency."},
+        {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash-Lite", "category": "api", "badge": "💨 Sub-Second", "description": "Extremely lightweight model optimized for low latency."},
         {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "category": "api", "badge": "🧠 Deep Reasoning (~30s)", "description": "State-of-the-art multimodal reasoning for intricate short film screenplays."},
-        {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "category": "api", "badge": "⚡ Standard Flash", "description": "High performance standard Gemini 1.5 model."},
-        {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "category": "api", "badge": "📚 Long Context", "description": "Powerhouse with 2M token context window."}
+        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "category": "api", "badge": "⚡ Latest Flash", "description": "Newest everyday fast model (availability depends on your API key)."}
     ]
 
     live_detected = []

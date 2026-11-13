@@ -56,6 +56,11 @@ if __name__ == "__main__":
                 custom_port = int(sys.argv[idx + 2])
             except ValueError:
                 pass
+        elif arg.startswith("--port="):
+            try:
+                custom_port = int(arg.split("=", 1)[1])
+            except ValueError:
+                pass
         elif arg.isdigit():
             custom_port = int(arg)
 
@@ -72,10 +77,26 @@ if __name__ == "__main__":
         print(f"ℹ️ (Port {custom_port} was occupied, automatically switched to {port})")
     print("="*65 + "\n")
 
-    # Open browser automatically after server boots
-    Timer(1.2, open_browser, args=[port]).start()
+    # Open browser automatically after server boots (skip with --no-browser or NO_BROWSER=1)
+    no_browser = "--no-browser" in sys.argv or os.environ.get("NO_BROWSER", "").strip() in ("1", "true", "yes")
+    if not no_browser:
+        Timer(1.2, open_browser, args=[port]).start()
 
     # Bind to localhost by default so projects/credentials are not exposed to the LAN.
     # Set HOST=0.0.0.0 to intentionally allow access from other devices.
     host = os.environ.get("HOST", "127.0.0.1")
-    uvicorn.run("backend.app:app", host=host, port=port, reload=True)
+
+    # Auto-reload only watches backend source code, so editing scratch scripts or writing
+    # project files never restarts the server mid-render. Disable with --no-reload or RELOAD=0.
+    use_reload = "--no-reload" not in sys.argv and os.environ.get("RELOAD", "1").strip() not in ("0", "false", "no")
+    if use_reload:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        uvicorn.run(
+            "backend.app:app",
+            host=host,
+            port=port,
+            reload=True,
+            reload_dirs=[os.path.join(script_dir, "backend")],
+        )
+    else:
+        uvicorn.run("backend.app:app", host=host, port=port, reload=False)

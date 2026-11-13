@@ -332,20 +332,23 @@ class VoiceAgent:
 
         for m_id in models_to_try:
             try:
-                resp = client.models.generate_content(
-                    model=m_id,
-                    contents=f"Read this animation scene narration clearly, naturally, and at a steady normal speaking speed (never rushed) without extra commentary:\n\n{text}",
-                    config=types.GenerateContentConfig(
-                        response_modalities=["AUDIO"],
-                        speech_config=types.SpeechConfig(
-                            voice_config=types.VoiceConfig(
-                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                    voice_name=voice_clean
+                def _tts_call(model_id=m_id):
+                    return client.models.generate_content(
+                        model=model_id,
+                        contents=f"Read this animation scene narration clearly, naturally, and at a steady normal speaking speed (never rushed) without extra commentary:\n\n{text}",
+                        config=types.GenerateContentConfig(
+                            response_modalities=["AUDIO"],
+                            speech_config=types.SpeechConfig(
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name=voice_clean
+                                    )
                                 )
                             )
                         )
                     )
-                )
+                # Run blocking SDK call off the event loop so the web server stays responsive
+                resp = await asyncio.to_thread(_tts_call)
                 if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
                     for part in resp.candidates[0].content.parts:
                         if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
@@ -560,11 +563,21 @@ class VoiceAgent:
                 # Pacing between Edge-TTS requests
                 await asyncio.sleep(0.4)
 
-            # Concatenate with FFmpeg (normalize sample rate & channels across all parts and gaps)
+            # Concatenate with FFmpeg (normalize sample rate & channels across all parts and gaps).
+            # Speech parts are loudness-normalized so characters voiced by different engines
+            # (Edge-TTS, Gemini, gTTS) play at a consistent volume.
             inputs = []
             for tf in temp_files:
                 inputs.extend(["-i", str(tf)])
-            norm_clauses = [f"[{i}:a]aformat=sample_rates=24000:channel_layouts=mono[a{i}]" for i in range(len(temp_files))]
+            norm_clauses = []
+            for i, tf in enumerate(temp_files):
+                if tf == sil_file:
+                    norm_clauses.append(f"[{i}:a]aformat=sample_rates=24000:channel_layouts=mono[a{i}]")
+                else:
+                    norm_clauses.append(
+                        f"[{i}:a]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=24000,"
+                        f"aformat=sample_rates=24000:channel_layouts=mono[a{i}]"
+                    )
             filter_inputs = "".join(f"[a{i}]" for i in range(len(temp_files)))
             filter_complex = ";".join(norm_clauses) + f";{filter_inputs}concat=n={len(temp_files)}:v=0:a=1[aout]"
 
@@ -679,7 +692,7 @@ class VoiceAgent:
 
         if selected_voice in ("gtts-vi", "gtts-vi-fast"):
             try:
-                self._synthesize_with_gtts(clean_text, output_audio_path, "vi")
+                await asyncio.to_thread(self._synthesize_with_gtts, clean_text, output_audio_path, "vi")
                 if selected_voice == "gtts-vi-fast":
                     persona_suffix = "-fast"
                 success = True
@@ -752,7 +765,7 @@ class VoiceAgent:
 
             if not success:
                 try:
-                    self._synthesize_with_gtts(clean_text, output_audio_path, lang_code)
+                    await asyncio.to_thread(self._synthesize_with_gtts, clean_text, output_audio_path, lang_code)
                     selected_voice = f"gtts-{lang_code}"
                     success = True
                     is_fallback = True

@@ -157,7 +157,7 @@ AI_PROVIDERS = {
     "gemini": {
         "name": "Google Gemini (Official API Key)",
         "default_model": "gemini-2.5-flash",
-        "models": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+        "models": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-3.8-flash"],
         "icon": "✨",
         "key_env": "GEMINI_API_KEY",
         "placeholder": "AIzaSy..."
@@ -165,7 +165,7 @@ AI_PROVIDERS = {
     "gemini_cookie": {
         "name": "Gemini Pro Web (Cookie / No API Quota)",
         "default_model": "default",
-        "models": ["default", "gemini-2.5-pro", "gemini-2.0-flash"],
+        "models": ["default", "gemini-2.5-pro", "gemini-2.5-flash"],
         "icon": "🍪",
         "key_env": "GEMINI_COOKIE",
         "placeholder": "Paste __Secure-1PSID or full Cookie string..."
@@ -180,8 +180,8 @@ AI_PROVIDERS = {
     },
     "claude": {
         "name": "Anthropic Claude",
-        "default_model": "claude-3-5-sonnet-20241022",
-        "models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        "default_model": "claude-sonnet-4-5",
+        "models": ["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-5"],
         "icon": "🟣",
         "key_env": "ANTHROPIC_API_KEY",
         "placeholder": "sk-ant-..."
