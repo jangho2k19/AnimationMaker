@@ -68,10 +68,10 @@ ART_STYLES = {
         "icon": "🏙️"
     },
     "comic": {
-        "name": "Graphic Novel / Comic Art",
-        "description": "Bold ink contours, dynamic halftone shading, expressive comic panels",
-        "prompt_suffix": ", modern graphic novel illustration, bold inked outlines, vibrant colors, dynamic cinematic framing, into the spiderverse comic book style, highly detailed",
-        "icon": "💥"
+        "name": "Comic Book (Dialogue in Image)",
+        "description": "Bold ink contours, halftone shading & comic speech bubbles with dialogue text in images",
+        "prompt_suffix": ", modern comic book graphic novel panel illustration, bold inked outlines, vibrant halftone pop-art colors, dynamic comic framing with upper headroom for speech balloons, into the spiderverse comic book style, expressive comic characters, masterpiece graphic novel art",
+        "icon": "💬"
     },
     "stick_figure": {
         "name": "Stick Figure Animation",
@@ -86,6 +86,12 @@ ART_STYLES = {
         "icon": "📸"
     }
 }
+
+
+def is_comic_style(style_key: str) -> bool:
+    """Returns True if the selected art style is Comic Book / Dialogue-in-Image mode."""
+    return (style_key or "").strip().lower() in ("comic", "comic_dialogue", "comic_book")
+
 
 # Combinable Camera-on-Speaker (Dialogue Film) suffix that works with ANY Visual Animation Style
 SPEAKER_FOCUS_PROMPT_SUFFIX = (

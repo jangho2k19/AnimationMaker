@@ -9,7 +9,7 @@ import hashlib
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional
 
-from backend.config import PROJECTS_DIR, ART_STYLES, VOICES, VIDEO_DIMENSIONS
+from backend.config import PROJECTS_DIR, ART_STYLES, VOICES, VIDEO_DIMENSIONS, is_comic_style
 from backend.agents.script_agent import ScriptAgent
 from backend.agents.voice_agent import VoiceAgent
 from backend.services.image_service import ImageService
@@ -469,7 +469,10 @@ class AnimationPipeline:
             reference_image_path=ref_img_path,
             api_key=project.get("api_key"),
             provider=project.get("ai_provider"),
-            camera_on_speaker=is_spk_cam
+            camera_on_speaker=is_spk_cam,
+            dialogues=scene.get("dialogues"),
+            narration=scene.get("narration", ""),
+            dialogue_only=bool(scene.get("dialogue_only", False))
         )
 
         # Re-fetch latest project state to avoid race condition overwrite with concurrent scene renders
@@ -775,7 +778,10 @@ class AnimationPipeline:
                     reference_image_path=ref_img_path,
                     api_key=project.get("api_key"),
                     provider=project.get("ai_provider"),
-                    camera_on_speaker=is_spk_cam
+                    camera_on_speaker=is_spk_cam,
+                    dialogues=scene.get("dialogues"),
+                    narration=scene.get("narration", ""),
+                    dialogue_only=bool(scene.get("dialogue_only", False))
                 )
             scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             self.save_project(project)
@@ -1102,3 +1108,68 @@ class AnimationPipeline:
         project["scenes"] = scenes
         self.save_project(project)
         return project
+
+    def refresh_project_comic_images(self, project_id: str, scene_indices: Optional[list] = None) -> Dict[str, Any]:
+        """
+        Re-applies (or restores) comic speech bubble overlays on existing painted scene images
+        whenever scene dialogues/narration or project art_style change.
+        """
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        p_dir = safe_project_dir(project_id)
+        if not p_dir:
+            return project
+
+        comic_active = is_comic_style(project.get("art_style", "ghibli"))
+        scenes = project.get("scenes", [])
+        target_set = set(scene_indices) if scene_indices is not None else set(range(len(scenes)))
+
+        for idx, sc in enumerate(scenes):
+            if idx not in target_set:
+                continue
+            img_file = p_dir / f"scene_{idx + 1}.jpg"
+            if not img_file.exists():
+                continue
+            try:
+                if comic_active:
+                    self.image_service.apply_comic_overlay_to_file(
+                        str(img_file),
+                        dialogues=sc.get("dialogues"),
+                        narration=sc.get("narration", ""),
+                        prompt=sc.get("visual_prompt", ""),
+                        title=sc.get("title", f"Scene {idx + 1}"),
+                        scene_idx=idx,
+                        dialogue_only=bool(sc.get("dialogue_only", False))
+                    )
+                else:
+                    self.image_service.restore_base_image_file(str(img_file))
+            except Exception as e_ov:
+                print(f"[pipeline] Notice updating comic overlay for scene {idx + 1}: {e_ov}")
+        return project
+
+    def set_project_art_style(self, project_id: str, new_style: str) -> Dict[str, Any]:
+        """Updates project art style, synchronizes scene visual prompts (including comic speech bubbles), and updates existing scene images."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        new_style = (new_style or "ghibli").strip()
+        project["art_style"] = new_style
+        voice_id = (project.get("voice") or "en-US").lower()
+        lang = "vi" if (voice_id.startswith("vi") or project.get("language") == "vi") else "en"
+        scenes = project.get("scenes", [])
+        if scenes:
+            ScriptAgent.sync_story_dialogues_to_scenes(
+                scenes=scenes,
+                idea=project.get("idea", ""),
+                art_style=new_style,
+                language=lang,
+                target="image",
+                characters=project.get("characters"),
+                camera_on_speaker=bool(project.get("camera_on_speaker", False))
+            )
+            project["scenes"] = scenes
+        self.save_project(project)
+        self.refresh_project_comic_images(project_id)
+        return self.get_project(project_id) or project
+

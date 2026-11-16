@@ -575,6 +575,18 @@ class ScriptAgent:
      * In `acting_prompt`, explicitly state the camera focus on the speaking character (e.g. "Medium close-up focused directly on [Speaker Name] as they speak. The camera executes a smooth intimate push-in toward [Speaker Name]'s face at eye level... 3-6s: Camera holds focus on [Speaker Name] speaking with expressive facial micro-expressions and natural lip-sync mouth movement. [Speaker Name] says in an expressive voice: \\"...\\" (no subtitles).").
      * Set `camera_motion` to `"speaker_focus"` for all scenes where a character is speaking."""
 
+        is_comic_mode = str(art_style or "").strip().lower() in ("comic", "comic_dialogue", "comic_book")
+        visual_prompt_rule = (
+            f"        * COMIC BOOK SPEECH BUBBLES & DIALOGUE IN IMAGE: Because Art Style is `{art_style}`, include graphic-novel panel framing with upper headroom and explicit comic speech bubble(s) containing the character's spoken dialogue text (e.g. `Comic speech bubble from [Character Name]: \"[Spoken line]\"`). Do NOT include 0-3s timestamps or camera motion instructions."
+            if is_comic_mode else
+            "        * STRICT PROHIBITION: Do NOT include 0-3s timestamps, camera motion instructions, negative prompts, or spoken dialogue quotes."
+        )
+        visual_prompt_schema_hint = (
+            f"Detailed comic book panel description: character visual details and outfit, environment, bold ink contours & halftone shading in {art_style} style, plus Comic speech bubble from [Speaker]: \\\"[Dialogue]\\\""
+            if is_comic_mode else
+            f"Detailed static illustration description: frozen composition, character visual details and outfit, environment, color palette, lighting in {art_style} art style. (NO timing, NO camera moves, NO dialogue quotes)"
+        )
+
         return f"""You are a master animation director at Pixar, Studio Ghibli, and premier cinematic AI studios (Google Flow / Google Veo 3 / Imagen 3).
 Transform the provided input into a breathtaking, emotionally resonant animated short film storyboard tailored for ACTING VIDEO GENERATION (8-second scenes, Google Flow / Veo 3 I2V).
 
@@ -600,7 +612,7 @@ CINEMATIC DIRECTIVES:
      a) `visual_prompt` (STILL IMAGE PROMPT for Midjourney / Google Imagen 3):
         * A detailed, rich visual description of the single frozen frame in {art_style} art style.
         * Focus on: scene composition, character visual appearance & outfit, environment background, color palette, lighting atmosphere, artistic textures.
-        * STRICT PROHIBITION: Do NOT include 0-3s timestamps, camera motion instructions, negative prompts, or spoken dialogue quotes.
+{visual_prompt_rule}
      b) `acting_prompt` (PROFESSIONAL CINEMATIC VIDEO PROMPT for Google Flow / Veo 3 / Kling / Sora):
         * Write as natural, director-grade cinematic prose (90-140 words) in ENGLISH only regardless of project narration language.
         * Structure:
@@ -648,7 +660,7 @@ Return ONLY raw JSON matching this structure:
       "title": "Scene 1 Title",
       "duration": 8,
       "archetype": "Establishing Shot",
-      "visual_prompt": "Detailed static illustration description: frozen composition, character visual details and outfit, environment, color palette, lighting in {art_style} art style. (NO timing, NO camera moves, NO dialogue quotes)",
+      "visual_prompt": "{visual_prompt_schema_hint}",
       "acting_prompt": "Medium wide shot of [Character] in [Setting]. The camera executes a smooth slow dolly push-in at eye level with fluid stabilization. 0-3s: [Character] steps forward naturally as ambient wind stirs clothing and hair. 3-6s: [Character] pauses to inspect [prop/surroundings], eyes filled with quiet resolve. Character says in a calm voice: \\\"We are close.\\\" (no subtitles). 6-8s: [Character] takes a steady breath as the scene holds composition. Volumetric atmospheric rim lighting with soft 35mm depth of field.\\n\\nAudio: gentle mountain breeze, distant bird calls, no background music.\\nSFX: soft footsteps on stone, cloth rustle.\\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.",
       "narration": "...",
       "dialogues": [
@@ -867,14 +879,15 @@ Return ONLY raw JSON matching this structure:
 
         # 4. Extract or Derive Scene Subject & Context
         def clean_vis(v: str) -> str:
+            c = ScriptAgent.strip_comic_and_dialogue_suffixes(v)
             c = re.sub(
-                r'(?i)^(?:(?:một\s+)?phân cảnh hoạt hình[^,.\n]*[,.\s]*|phong cách\s+[^,.\n]*[,.\s]*|photorealistic cinematic live-action|minimalist stick figure animation|studio ghibli 2d|ghibli|anime|3d pixar|pixar 3d animation style|pixar|disney|comic book|cyberpunk|watercolor|retro 80s|pixel art|realistic)\s*(?:art|style)?[,.\s]*',
+                r'(?i)^(?:(?:một\s+)?phân cảnh hoạt hình[^,.\n]*[,.\s]*|phong cách\s+[^,.\n]*[,.\s]*|photorealistic cinematic live-action|minimalist stick figure animation|studio ghibli 2d|ghibli|anime|3d pixar|pixar 3d animation style|pixar|disney|comic book / graphic novel panel|comic book|cyberpunk|watercolor|retro 80s|pixel art|realistic)\s*(?:art|style)?[,.\s]*',
                 '',
-                v
+                c
             )
             c = re.sub(r'(?i)^(?:góc quay[^,.\n]*[,.\s]*|góc máy[^,.\n]*[,.\s]*)', '', c)
             c = re.sub(
-                r'(?i)\b(?:cinematic composition|warm atmospheric lighting|rich atmospheric lighting|masterpiece (?:illustration|photography)|high fidelity details|intricate environmental details|tỉ lệ \d+:\d+|bố cục điện ảnh|ánh sáng ấm áp|chi tiết phong phú|biểu cảm gương mặt và khẩu hình đối thoại sinh động|ánh mắt giao tiếp tự nhiên|không bong bóng thoại|không chữ)\b[,.\s]*',
+                r'(?i)\b(?:cinematic composition|warm atmospheric lighting|rich atmospheric lighting|masterpiece (?:illustration|photography|comic book illustration)|high fidelity details|intricate environmental details|tỉ lệ \d+:\d+|bố cục điện ảnh|ánh sáng ấm áp|chi tiết phong phú|biểu cảm gương mặt và khẩu hình đối thoại sinh động|ánh mắt giao tiếp tự nhiên|không bong bóng thoại|không chữ)\b[,.\s]*',
                 '',
                 c
             )
@@ -1121,13 +1134,14 @@ Return ONLY raw JSON matching this structure:
         ).strip(' .')
 
         # Clean visual description of style boilerplates and speaker headers
+        clean_vis = ScriptAgent.strip_comic_and_dialogue_suffixes(vis)
         clean_vis = re.sub(
-            r'(?i)^(?:(?:một\s+)?phân cảnh hoạt hình[^,.\n]*[,.\s]*|phong cách\s+[^,.\n]*[,.\s]*|photorealistic cinematic live-action|minimalist stick figure animation|studio ghibli 2d|ghibli|anime|3d pixar|pixar 3d animation style|pixar|disney|comic book|cyberpunk|watercolor|retro 80s|pixel art|realistic)\s*(?:art|style)?[,.\s]*',
+            r'(?i)^(?:(?:một\s+)?phân cảnh hoạt hình[^,.\n]*[,.\s]*|phong cách\s+[^,.\n]*[,.\s]*|photorealistic cinematic live-action|minimalist stick figure animation|studio ghibli 2d|ghibli|anime|3d pixar|pixar 3d animation style|pixar|disney|comic book / graphic novel panel|comic book|cyberpunk|watercolor|retro 80s|pixel art|realistic)\s*(?:art|style)?[,.\s]*',
             '',
-            vis
+            clean_vis
         )
         clean_vis = re.sub(
-            r'(?i)\b(?:cinematic composition|warm atmospheric lighting|rich atmospheric lighting|masterpiece (?:illustration|photography)|high fidelity details|intricate environmental details|tỉ lệ \d+:\d+|bố cục điện ảnh|ánh sáng ấm áp|chi tiết phong phú|biểu cảm gương mặt và khẩu hình đối thoại sinh động|ánh mắt giao tiếp tự nhiên|không bong bóng thoại|không chữ)\b[,.\s]*',
+            r'(?i)\b(?:cinematic composition|warm atmospheric lighting|rich atmospheric lighting|masterpiece (?:illustration|photography|comic book illustration)|high fidelity details|intricate environmental details|tỉ lệ \d+:\d+|bố cục điện ảnh|ánh sáng ấm áp|chi tiết phong phú|biểu cảm gương mặt và khẩu hình đối thoại sinh động|ánh mắt giao tiếp tự nhiên|không bong bóng thoại|không chữ)\b[,.\s]*',
             '',
             clean_vis
         )
@@ -2255,20 +2269,22 @@ Return ONLY raw JSON matching this structure:
                 camera = "speaker_focus"
                 sc["camera_motion"] = "speaker_focus"
 
-            # Update Image Prompt (`visual_prompt`) with expressive dialogue visual cues if scene has dialogue
-            if update_image and primary_clip_quote and vis:
+            # Update Image Prompt (`visual_prompt`) with expressive dialogue visual cues (or comic speech bubbles)
+            is_comic_mode = str(art_style or "").strip().lower() in ("comic", "comic_dialogue", "comic_book")
+            if update_image and vis:
                 # Determine whether `vis` is written in English prose (even if it mentions a Vietnamese character name)
                 vis_is_english = bool(re.search(
-                    r'\b(style|shot|cinematic|composition|lighting|camera|background|detailed|illustration|anime|ghibli|pixar|watercolor|photorealistic|wearing|standing|sitting|medium|wide|close-up|textures)\b',
+                    r'\b(style|shot|cinematic|composition|lighting|camera|background|detailed|illustration|anime|ghibli|pixar|watercolor|photorealistic|wearing|standing|sitting|medium|wide|close-up|textures|comic|panel)\b',
                     vis,
                     re.IGNORECASE
                 ))
                 vis_is_vi = (not vis_is_english) and any(ord(c) > 127 for c in vis)
+                # Strip any old comic bubble suffix or anti-bubble suffix so style switches cleanly
+                vis = ScriptAgent.strip_comic_and_dialogue_suffixes(vis)
                 if vis_is_english:
                     # Clean up any previously mixed Vietnamese camera/expression suffixes on an English visual_prompt
                     vis = re.sub(r'(?i)^Góc máy cận cảnh tập trung trực tiếp vào [^,]+ đang nói chuyện,\s*', '', vis)
-                    vis = re.sub(r'(?i),?\s*biểu cảm gương mặt và khẩu hình đối thoại sinh động,\s*ánh mắt giao tiếp tự nhiên,\s*không bong bóng thoại,\s*không chữ\.?', '', vis).strip()
-                if is_speaker_focus and active_speaker:
+                if is_speaker_focus and active_speaker and primary_clip_quote:
                     if vis_is_vi:
                         spk_prefix = f"Góc máy cận cảnh tập trung trực tiếp vào {active_speaker} đang nói chuyện, "
                         if active_speaker.lower() not in vis[:45].lower() and "góc máy cận cảnh tập trung" not in vis.lower():
@@ -2277,12 +2293,22 @@ Return ONLY raw JSON matching this structure:
                         spk_prefix = f"Medium close-up camera focused directly on {active_speaker} speaking, "
                         if active_speaker.lower() not in vis[:55].lower() and "camera focused directly on" not in vis.lower():
                             vis = spk_prefix + vis
-                if vis_is_vi:
-                    if "biểu cảm đối thoại" not in vis.lower() and "khẩu hình" not in vis.lower():
-                        vis = vis.rstrip(' .') + ", biểu cảm gương mặt và khẩu hình đối thoại sinh động, ánh mắt giao tiếp tự nhiên, không bong bóng thoại, không chữ."
-                else:
-                    if "expressive speaking" not in vis.lower() and "dialogue expression" not in vis.lower():
-                        vis = vis.rstrip(' .') + ", expressive speaking pose and vivid facial dialogue expression, natural conversational gesture, no speech bubbles, no text."
+                if is_comic_mode:
+                    comic_suffix = ScriptAgent.build_comic_speech_bubble_suffix(
+                        dialogues=sc.get("dialogues"),
+                        narration=sc.get("narration", narr),
+                        is_vi=vis_is_vi,
+                        dialogue_only=bool(sc.get("dialogue_only", False))
+                    )
+                    if comic_suffix:
+                        vis = vis.rstrip(' .,') + ", " + comic_suffix
+                elif primary_clip_quote:
+                    if vis_is_vi:
+                        if "biểu cảm đối thoại" not in vis.lower() and "khẩu hình" not in vis.lower():
+                            vis = vis.rstrip(' .') + ", biểu cảm gương mặt và khẩu hình đối thoại sinh động, ánh mắt giao tiếp tự nhiên, không bong bóng thoại, không chữ."
+                    else:
+                        if "expressive speaking" not in vis.lower() and "dialogue expression" not in vis.lower():
+                            vis = vis.rstrip(' .') + ", expressive speaking pose and vivid facial dialogue expression, natural conversational gesture, no speech bubbles, no text."
                 sc["visual_prompt"] = vis
 
             # Update Video Clip Prompt (`acting_prompt`) with the authentic spoken dialogue
@@ -2315,6 +2341,75 @@ Return ONLY raw JSON matching this structure:
                 )
 
         return scenes
+
+    @staticmethod
+    def strip_comic_and_dialogue_suffixes(vis: str) -> str:
+        """Removes previous comic speech bubble tags or anti-speech-bubble tags from visual_prompt."""
+        if not vis:
+            return ""
+        s = vis.strip()
+        s = re.sub(
+            r'(?i),?\s*biểu cảm gương mặt và khẩu hình đối thoại sinh động,\s*ánh mắt giao tiếp tự nhiên,\s*không bong bóng thoại,\s*không chữ\.?',
+            '',
+            s
+        )
+        s = re.sub(
+            r'(?i),?\s*expressive speaking pose and vivid facial dialogue expression,\s*natural conversational gesture,\s*no speech bubbles,\s*no text\.?',
+            '',
+            s
+        )
+        s = re.sub(r'(?i)[,.]?\s*(?:Bong bóng thoại truyện tranh|Hộp dẫn truyện tranh \(Caption\)|Comic speech bubble|Comic narrator caption box)[^.]*\.?$', '', s)
+        s = re.sub(r'(?i),?\s*(?:no speech bubbles|no text|không bong bóng thoại|không chữ)\b\.?', '', s)
+        return s.strip(' .,')
+
+    @staticmethod
+    def build_comic_speech_bubble_suffix(
+        dialogues: List[Dict[str, Any]] = None,
+        narration: str = "",
+        is_vi: bool = False,
+        dialogue_only: bool = False
+    ) -> str:
+        """
+        Formats the scene's spoken character dialogues (or narrator caption) as a comic speech bubble
+        directive for `visual_prompt` when Comic Book (Dialogue in Image) style is active.
+        """
+        segs = list(dialogues or [])
+        if not segs and narration:
+            segs = ScriptAgent.extract_scene_dialogue_segments(narration)
+
+        char_bubbles = []
+        narr_lines = []
+        for seg in segs:
+            if not isinstance(seg, dict):
+                continue
+            spk = (seg.get("speaker") or "Narrator").strip()
+            txt = (seg.get("text") or "").strip().strip('"“”')
+            if not txt:
+                continue
+            if spk.lower() in ("narrator", "người kể chuyện", "none", ""):
+                narr_lines.append(txt)
+            else:
+                label = spk if spk.lower() != "character" else ("Nhân vật" if is_vi else "Character")
+                char_bubbles.append((label, txt))
+
+        if char_bubbles:
+            parts = []
+            for spk_label, line_txt in char_bubbles[:3]:
+                if is_vi:
+                    parts.append(f'Bong bóng thoại truyện tranh của {spk_label}: "{line_txt}"')
+                else:
+                    parts.append(f'Comic speech bubble from {spk_label}: "{line_txt}"')
+            return ", ".join(parts) + "."
+
+        if not dialogue_only and narr_lines:
+            cap = narr_lines[0]
+            words = cap.split()
+            if len(words) > 20:
+                cap = " ".join(words[:20]).rstrip(' ,;:-') + "..."
+            if is_vi:
+                return f'Hộp dẫn truyện tranh (Caption): "{cap}".'
+            return f'Comic narrator caption box: "{cap}".'
+        return ""
 
     @staticmethod
     def ensure_separate_prompts(
@@ -2357,7 +2452,7 @@ Return ONLY raw JSON matching this structure:
             "storybook": ("Classic Storybook Watercolor Fairy Tale", "masterpiece storybook illustration"),
             "anime_cinematic": ("Makoto Shinkai Modern Anime Cinema", "masterpiece cinematic anime still"),
             "cyberpunk": ("Cyberpunk Neon Sci-Fi Anime", "masterpiece cyberpunk illustration"),
-            "comic": ("Modern Graphic Novel / Comic Art", "masterpiece comic book illustration"),
+            "comic": ("Comic Book / Graphic Novel Panel", "masterpiece comic book illustration"),
             "stick_figure": ("Minimalist Stick Figure Animation", "masterpiece stickman animation"),
             "realistic": ("Photorealistic cinematic live-action", "masterpiece photography")
         }
@@ -2413,6 +2508,24 @@ Return ONLY raw JSON matching this structure:
         scene["narration"] = narration
         if not scene.get("dialogues") and narration:
             scene["dialogues"] = ScriptAgent.extract_scene_dialogue_segments(narration)
+
+        if str(art_style or "").strip().lower() in ("comic", "comic_dialogue", "comic_book"):
+            vis_is_english = bool(re.search(
+                r'\b(style|shot|cinematic|composition|lighting|camera|background|detailed|illustration|anime|ghibli|pixar|watercolor|photorealistic|wearing|standing|sitting|medium|wide|close-up|textures|comic|panel)\b',
+                raw_vis,
+                re.IGNORECASE
+            ))
+            vis_is_vi = (not vis_is_english) and any(ord(c) > 127 for c in raw_vis)
+            clean_v = ScriptAgent.strip_comic_and_dialogue_suffixes(raw_vis)
+            comic_sfx = ScriptAgent.build_comic_speech_bubble_suffix(
+                dialogues=scene.get("dialogues"),
+                narration=narration,
+                is_vi=vis_is_vi,
+                dialogue_only=bool(scene.get("dialogue_only", False))
+            )
+            if comic_sfx and comic_sfx.lower() not in clean_v.lower():
+                scene["visual_prompt"] = clean_v.rstrip(' .,') + ", " + comic_sfx
+
         return scene
 
     @staticmethod

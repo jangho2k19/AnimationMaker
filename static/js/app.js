@@ -1639,6 +1639,7 @@ class AniStoryApp {
               this.currentProject.art_style = newStyle;
             }
             this.saveActiveProjectState();
+            this.renderStoryboardView();
             const styleName = this.config?.art_styles?.[newStyle]?.name || newStyle;
             this.showToast(`🎨 Visual Animation Style set to: ${styleName}`);
           }
@@ -2746,12 +2747,16 @@ class AniStoryApp {
       const dialSample = isVi
         ? `Character says in a clear voice: \\"Lời thoại cảnh ${i}\\" (no subtitles)`
         : `Character says in a calm voice: \\"Dialogue line for scene ${i}\\" (no subtitles)`;
+      const isComicStyle = this.selectedStyleKey === "comic";
+      const visBubbleHint = isComicStyle
+        ? `, plus Comic speech bubble from [Character]: \\"[Spoken dialogue line]\\" (NO timing, NO camera moves)`
+        : `. (NO timing, NO camera moves, NO speech bubbles)`;
       scenesSkeleton.push(`    {
       "scene_number": ${i},
       "title": "Scene ${i} Title in ${langStr}",
       "duration": ${targetSceneSec},
       "archetype": "Establishing Shot / Action Beat / Climax",
-      "visual_prompt": "Ultra-detailed static visual image description for an AI artist in ${styleName}: frozen frame composition, character visual anchors (hair, outfit, features), environment, color palette, lighting, ${aspectRatio} cinematic framing. (NO timing, NO camera moves, NO speech bubbles)",
+      "visual_prompt": "Ultra-detailed static visual image description for an AI artist in ${styleName}: frozen frame composition, character visual anchors (hair, outfit, features), environment, color palette, lighting, ${aspectRatio} cinematic framing${visBubbleHint}",
       "acting_prompt": "Medium wide shot of character in setting. ${camSentence} 0-3s: Initial measured movement starting from keyframe pose as ambient wind stirs clothing. 3-6s: Core emotional performance beat / ${dialSample}. 6-8s: The character takes a steady breath as the scene holds composition. Atmospheric volumetric lighting, 35mm depth of field.\\n\\nAudio: natural atmospheric ambient soundscape, gentle ambient breeze, no background music.\\nSFX: subtle realistic footsteps, cloth movement.\\nNegative: subtitles, captions, watermark, text overlay, distorted anatomy, morphing limbs, extra fingers, jittery motion, blurry faces.",
       "narration": "Story-driven voiceover narration in ${langStr} that directly narrates the plot action, character interaction, and key dialogue/punchline of Scene ${i} (~${targetWords} words)",
       "camera_motion": "${motion}"
@@ -2787,7 +2792,7 @@ Every scene MUST have TWO SEPARATE, DISTINCT prompts:
 1. "visual_prompt" (STILL IMAGE PROMPT for Midjourney / Google Imagen 3 / Puter):
    - Detailed visual description of the frozen single frame in ${styleName} art style.
    - Describe character visual features & outfit consistently, environment setting, color palette, lighting atmosphere, and composition.
-   - Do NOT include time ranges (like 0-3s), camera moves, speech text, or negative prompts.
+   - ${this.selectedStyleKey === "comic" ? 'Include graphic-novel speech bubble(s) with the spoken dialogue text (e.g. Comic speech bubble from [Speaker]: "[Dialogue]"). Do NOT include time ranges (like 0-3s) or camera moves.' : 'Do NOT include time ranges (like 0-3s), camera moves, speech text, or negative prompts.'}
 2. "acting_prompt" (PROFESSIONAL CINEMATIC VIDEO PROMPT for Google Flow / Veo 3 / Kling / Sora):
    - Natural director-grade cinematic prose (90-140 words) in ENGLISH only.
    - Dedicated camera sentence (e.g. "The camera executes a smooth slow dolly push-in..."), NEVER "Camera: zoom_in".

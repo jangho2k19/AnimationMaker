@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from PIL import Image
 
-from backend.config import BASE_DIR, OUTPUT_DIR, ART_STYLES, VOICES, CAMERA_MOTIONS, AI_PROVIDERS, IMAGE_MODES, DURATION_PRESETS, VIDEO_DIMENSIONS
+from backend.config import BASE_DIR, OUTPUT_DIR, ART_STYLES, VOICES, CAMERA_MOTIONS, AI_PROVIDERS, IMAGE_MODES, DURATION_PRESETS, VIDEO_DIMENSIONS, is_comic_style
 from backend.pipeline import AnimationPipeline
 from backend.agents.script_agent import ScriptAgent
 
@@ -959,6 +959,8 @@ async def update_scenes(project_id: str, req: UpdateScenesRequest):
 
     project["scenes"] = req.scenes
     pipeline.save_project(project)
+    if is_comic_style(project.get("art_style", "ghibli")):
+        pipeline.refresh_project_comic_images(project_id)
     return project
 
 class SyncDialoguesRequest(BaseModel):
@@ -1022,6 +1024,8 @@ async def sync_project_dialogues(project_id: str, req: SyncDialoguesRequest = Bo
 
     project["scenes"] = scenes
     pipeline.save_project(project)
+    if is_comic_style(project.get("art_style", "ghibli")) and updated_indices:
+        pipeline.refresh_project_comic_images(project_id, scene_indices=updated_indices)
 
     # If requested (or if clip MP4 already exists on disk and re_render_clips is enabled), re-voice & re-render affected scene clips
     if req.re_render_clips and narration_changed_indices:
@@ -1236,6 +1240,8 @@ async def toggle_scene_dialogue_only(project_id: str, scene_idx: int, req: Optio
                 pass
 
     pipeline.save_project(project)
+    if is_comic_style(project.get("art_style", "ghibli")):
+        pipeline.refresh_project_comic_images(project_id, scene_indices=[scene_idx])
     return {
         "status": "ok",
         "scene_idx": scene_idx,
@@ -1285,6 +1291,8 @@ async def toggle_all_scenes_dialogue_only(project_id: str, req: Optional[ToggleD
                     pass
 
     pipeline.save_project(project)
+    if is_comic_style(project.get("art_style", "ghibli")):
+        pipeline.refresh_project_comic_images(project_id)
     return {
         "status": "ok",
         "dialogue_only": new_val,
@@ -1299,9 +1307,8 @@ async def set_project_art_style(project_id: str, req: SetArtStyleRequest):
     new_style = (req.art_style or "ghibli").strip()
     if new_style not in ART_STYLES:
         raise HTTPException(status_code=400, detail=f"Invalid art style '{new_style}'")
-    project["art_style"] = new_style
-    pipeline.save_project(project)
-    return {"status": "ok", "art_style": new_style, "project": project}
+    updated = pipeline.set_project_art_style(project_id, new_style)
+    return {"status": "ok", "art_style": new_style, "project": updated}
 
 @app.post("/api/projects/{project_id}/set-character-voice")
 async def set_project_character_voice(project_id: str, req: SetCharacterVoiceRequest):
@@ -1338,6 +1345,14 @@ async def upload_scene_image(project_id: str, scene_idx: int, file: UploadFile =
     w = project.get("video_width", 1280)
     h = project.get("video_height", 720)
 
+    # Remove any old _base backup before saving the new uploaded/Puter image
+    base_backup = Path(pipeline.image_service.get_base_image_path(str(img_path)))
+    if base_backup.exists():
+        try:
+            os.remove(base_backup)
+        except Exception:
+            pass
+
     # Automatically crop & fit image to project's exact aspect ratio & resolution
     try:
         pil_img = Image.open(io.BytesIO(content))
@@ -1348,6 +1363,16 @@ async def upload_scene_image(project_id: str, scene_idx: int, file: UploadFile =
             f.write(content)
 
     scene = project["scenes"][scene_idx]
+    if is_comic_style(project.get("art_style", "ghibli")):
+        pipeline.image_service.apply_comic_overlay_to_file(
+            str(img_path),
+            dialogues=scene.get("dialogues"),
+            narration=scene.get("narration", ""),
+            prompt=scene.get("visual_prompt", ""),
+            title=scene.get("title", f"Scene {scene_idx + 1}"),
+            scene_idx=scene_idx,
+            dialogue_only=bool(scene.get("dialogue_only", False))
+        )
     scene["image_path"] = str(img_path.relative_to(OUTPUT_DIR)).replace("\\", "/")
     pipeline.save_project(project)
     return project

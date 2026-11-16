@@ -6,7 +6,7 @@ import urllib.parse
 from pathlib import Path
 import httpx
 from PIL import Image, ImageDraw, ImageFont
-from backend.config import ART_STYLES, SPEAKER_FOCUS_PROMPT_SUFFIX
+from backend.config import ART_STYLES, SPEAKER_FOCUS_PROMPT_SUFFIX, is_comic_style
 
 class ImageService:
     def __init__(self, default_style: str = "ghibli", api_key: str = None, provider: str = "gemini"):
@@ -34,6 +34,7 @@ class ImageService:
         p = re.sub(r'["“][^"”]{2,}["”]', '', p)
         p = re.sub(r"['‘][^'’]{2,}['’]", '', p)
         # Remove dialogue markers and speech bubble requests
+        p = re.sub(r'(?i)[,.]?\s*(?:Bong bóng thoại truyện tranh|Hộp dẫn truyện tranh \(Caption\)|Comic speech bubble|Comic narrator caption box)[^.]*\.?', '', p)
         p = re.sub(r'(?i)\b(?:speech bubble|dialogue bubble|thought bubble|speech balloon|comic bubble|text bubble)\b', '', p)
         p = re.sub(r'(?i)\b(?:nói rằng|cất tiếng nói|nói với|bảo rằng|lời nói|says|saying)\b[:\s]*', '', p)
         # Preserve full detailed visual prompts (up to 2000 chars) so character actions, animals (e.g. golden-brown cow),
@@ -73,6 +74,8 @@ class ImageService:
             effective_style = "realistic"
         elif any(k in lower_base for k in ("stick figure", "stickman", "stick figures", "stick-figure", "người que")):
             effective_style = "stick_figure"
+        elif is_comic_style(effective_style) or any(k in lower_base for k in ("comic book", "graphic novel panel")):
+            effective_style = "comic"
 
         style_info = ART_STYLES.get(effective_style, ART_STYLES["ghibli"])
         suffix = style_info.get("prompt_suffix", "")
@@ -163,6 +166,401 @@ class ImageService:
         """Backward compatibility alias for 16:9 fitting."""
         return self.fit_image_to_aspect_ratio(img, target_w, target_h)
 
+    @staticmethod
+    def get_base_image_path(output_path: str) -> str:
+        """Returns the path for the un-bubbled base image corresponding to a scene image file."""
+        p = Path(str(output_path))
+        return str(p.with_name(f"{p.stem}_base{p.suffix}"))
+
+    @staticmethod
+    def _load_comic_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
+        """Loads a TrueType font supporting full Unicode (Vietnamese & English) with comic/bold styling."""
+        candidates = (
+            [
+                "C:/Windows/Fonts/comicbd.ttf",
+                "C:/Windows/Fonts/segoeuib.ttf",
+                "C:/Windows/Fonts/arialbd.ttf",
+                "C:/Windows/Fonts/tahomabd.ttf",
+                "C:/Windows/Fonts/calibrib.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            ]
+            if bold
+            else [
+                "C:/Windows/Fonts/comic.ttf",
+                "C:/Windows/Fonts/segoeui.ttf",
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/tahoma.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            ]
+        )
+        for fp in candidates:
+            if os.path.exists(fp):
+                try:
+                    return ImageFont.truetype(fp, size)
+                except Exception:
+                    continue
+        return ImageFont.load_default()
+
+    @staticmethod
+    def _wrap_comic_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_px_w: int) -> list:
+        """Wraps text into lines that fit within `max_px_w` pixels."""
+        words = (text or "").strip().split()
+        if not words:
+            return []
+        lines = []
+        cur = []
+        for w in words:
+            test = " ".join(cur + [w])
+            bbox = draw.textbbox((0, 0), test, font=font)
+            tw = bbox[2] - bbox[0]
+            if tw <= max_px_w or not cur:
+                cur.append(w)
+            else:
+                lines.append(" ".join(cur))
+                cur = [w]
+        if cur:
+            lines.append(" ".join(cur))
+        return lines
+
+    def render_comic_overlay(
+        self,
+        img: Image.Image,
+        dialogues: list = None,
+        narration: str = "",
+        prompt: str = "",
+        title: str = "",
+        scene_idx: int = 0,
+        dialogue_only: bool = False
+    ) -> Image.Image:
+        """
+        Renders graphic-novel panel borders, a top-left comic narrator caption box (if applicable),
+        and crisp comic-book speech balloons with speaker badges and directional pointer tails
+        directly onto the scene image. Uses 2x supersampling for razor-sharp anti-aliased ink lines.
+        """
+        base = img.convert("RGBA")
+        w, h = base.size
+
+        # Extract character dialogues & narrator lines
+        segs = []
+        if dialogues and isinstance(dialogues, list):
+            for d in dialogues:
+                if isinstance(d, dict) and (d.get("text") or "").strip():
+                    segs.append({
+                        "speaker": (d.get("speaker") or "Narrator").strip(),
+                        "text": (d.get("text") or "").strip()
+                    })
+        if not segs and narration:
+            try:
+                from backend.agents.script_agent import ScriptAgent
+                segs = ScriptAgent.extract_scene_dialogue_segments(narration)
+            except Exception:
+                segs = [{"speaker": "Narrator", "text": narration.strip()}]
+
+        # Also check `prompt` for explicit `Comic speech bubble from X: "..."` if `segs` has no character lines
+        char_bubbles = []
+        narr_lines = []
+        for s in segs:
+            spk = (s.get("speaker") or "Narrator").strip()
+            txt = (s.get("text") or "").strip().strip('"“”')
+            if not txt:
+                continue
+            if spk.lower() in ("narrator", "người kể chuyện", "none", ""):
+                narr_lines.append(txt)
+            else:
+                char_bubbles.append((spk, txt))
+
+        if not char_bubbles and prompt:
+            for m in re.finditer(
+                r'(?:Comic speech bubble from|Bong bóng thoại truyện tranh của)\s+([^:]+):\s*["“]([^"”]+)["”]',
+                prompt,
+                re.IGNORECASE
+            ):
+                char_bubbles.append((m.group(1).strip(), m.group(2).strip()))
+
+        # 2x supersampled overlay canvas for anti-aliased comic ink lines and speech balloons
+        scale = 2
+        W, H = w * scale, h * scale
+        overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+
+        # 1. Classic Comic Panel Outer Frame (white comic gutter + bold black ink border)
+        gutter = max(8, int(min(W, H) * 0.008))
+        ink_w = max(4, int(min(W, H) * 0.004))
+        draw.rectangle([0, 0, W - 1, H - 1], outline=(255, 255, 255, 255), width=gutter)
+        draw.rectangle(
+            [gutter, gutter, W - 1 - gutter, H - 1 - gutter],
+            outline=(15, 23, 42, 255),
+            width=ink_w
+        )
+
+        margin_x = gutter + ink_w + int(W * 0.025)
+        margin_y = gutter + ink_w + int(H * 0.028)
+        cursor_top_left_y = margin_y
+
+        # 2. Optional Top-Left Golden Comic Narrative Caption Box
+        # Show when there are no character speech bubbles, or when there is 1 character bubble and a concise narrator setup
+        show_caption = (not dialogue_only) and bool(narr_lines) and (len(char_bubbles) == 0 or len(char_bubbles) == 1)
+        if show_caption:
+            cap_text = narr_lines[0].strip()
+            cap_words = cap_text.split()
+            max_cap_words = 28 if len(char_bubbles) == 0 else 16
+            if len(cap_words) > max_cap_words:
+                cap_text = " ".join(cap_words[:max_cap_words]).rstrip(" ,;:-") + "..."
+            cap_font_size = max(24, int(min(W, H) * (0.026 if len(char_bubbles) == 0 else 0.022)))
+            cap_font = self._load_comic_font(cap_font_size, bold=True)
+            max_cap_box_w = int(W * (0.62 if len(char_bubbles) == 0 else 0.46))
+            pad_x = int(cap_font_size * 0.75)
+            pad_y = int(cap_font_size * 0.55)
+            cap_lines = self._wrap_comic_text(draw, cap_text, cap_font, max_cap_box_w - pad_x * 2)
+            if cap_lines:
+                line_h = int(cap_font_size * 1.32)
+                measured_w = max(
+                    (draw.textbbox((0, 0), ln, font=cap_font)[2] - draw.textbbox((0, 0), ln, font=cap_font)[0])
+                    for ln in cap_lines
+                )
+                box_w = min(max_cap_box_w, measured_w + pad_x * 2)
+                box_h = len(cap_lines) * line_h + pad_y * 2
+                bx0, by0 = margin_x, cursor_top_left_y
+                bx1, by1 = bx0 + box_w, by0 + box_h
+                sh_off = max(6, int(ink_w * 1.4))
+
+                # Hard comic drop shadow
+                draw.rectangle([bx0 + sh_off, by0 + sh_off, bx1 + sh_off, by1 + sh_off], fill=(15, 23, 42, 195))
+                # Classic golden-yellow comic caption box with bold black ink frame
+                draw.rectangle([bx0, by0, bx1, by1], fill=(254, 240, 138, 246), outline=(15, 23, 42, 255), width=ink_w)
+                # Subtle inner highlight border
+                draw.rectangle([bx0 + ink_w + 2, by0 + ink_w + 2, bx1 - ink_w - 2, by1 - ink_w - 2], outline=(217, 119, 6, 120), width=2)
+
+                ty = by0 + pad_y
+                for ln in cap_lines:
+                    draw.text((bx0 + pad_x, ty), ln, font=cap_font, fill=(15, 23, 42, 255))
+                    ty += line_h
+                cursor_top_left_y = by1 + int(H * 0.022)
+
+        # 3. Character Comic Speech Bubbles (up to 3 turns in natural comic reading order)
+        speaker_palette = [
+            (220, 38, 38),   # Hero Red
+            (37, 99, 235),   # Comic Blue
+            (5, 150, 105),   # Emerald Green
+            (124, 58, 237),  # Graphic Purple
+            (217, 119, 6),   # Amber Gold
+        ]
+        speaker_color_map = {}
+
+        bubbles_to_draw = char_bubbles[:3]
+        num_b = len(bubbles_to_draw)
+        for b_idx, (spk_raw, b_text) in enumerate(bubbles_to_draw):
+            b_words = b_text.split()
+            if len(b_words) > 30:
+                b_text = " ".join(b_words[:30]).rstrip(" ,;:-") + "..."
+
+            # Scale font cleanly to text length and panel size
+            if len(b_words) <= 8:
+                f_ratio = 0.030
+            elif len(b_words) <= 18:
+                f_ratio = 0.026
+            else:
+                f_ratio = 0.023
+            if num_b >= 3:
+                f_ratio *= 0.88
+
+            font_size = max(24, int(min(W, H) * f_ratio))
+            body_font = self._load_comic_font(font_size, bold=True)
+            tag_font_size = max(18, int(font_size * 0.72))
+            tag_font = self._load_comic_font(tag_font_size, bold=True)
+
+            max_b_w = int(W * (0.50 if num_b == 1 else 0.44))
+            pad_x = int(font_size * 0.90)
+            pad_y = int(font_size * 0.72)
+            lines = self._wrap_comic_text(draw, b_text, body_font, max_b_w - pad_x * 2)
+            if not lines:
+                continue
+
+            line_h = int(font_size * 1.34)
+            text_w = max(
+                (draw.textbbox((0, 0), ln, font=body_font)[2] - draw.textbbox((0, 0), ln, font=body_font)[0])
+                for ln in lines
+            )
+            spk_display = spk_raw.strip()
+            show_spk_tag = spk_display.lower() not in ("", "character", "nhân vật", "narrator", "người kể chuyện")
+            tag_w = 0
+            tag_h = 0
+            if show_spk_tag:
+                spk_upper = spk_display.upper()
+                tb = draw.textbbox((0, 0), spk_upper, font=tag_font)
+                tag_w = (tb[2] - tb[0]) + int(tag_font_size * 1.3)
+                tag_h = int(tag_font_size * 1.55)
+
+            bubble_w = max(text_w + pad_x * 2, tag_w + pad_x * 2, int(W * 0.18))
+            bubble_w = min(bubble_w, max_b_w)
+            bubble_h = len(lines) * line_h + pad_y * 2 + (int(tag_h * 0.35) if show_spk_tag else 0)
+
+            # Determine non-overlapping comic panel position & tail direction
+            if b_idx == 0:
+                bx0 = margin_x
+                by0 = cursor_top_left_y + (int(tag_h * 0.55) if show_spk_tag else 0)
+                tail_dir = "down_right"
+            elif b_idx == 1:
+                bx0 = W - margin_x - bubble_w
+                by0 = margin_y + int(H * 0.06) + (int(tag_h * 0.55) if show_spk_tag else 0)
+                # Ensure vertical separation if horizontally overlapping with Bubble 1
+                if bx0 < margin_x + bubble_w + int(W * 0.03):
+                    by0 = max(by0, cursor_top_left_y + bubble_h + int(H * 0.05))
+                tail_dir = "down_left"
+            else:
+                bx0 = margin_x + int(W * 0.02)
+                by0 = H - margin_y - bubble_h - int(H * 0.045)
+                tail_dir = "up_right"
+
+            bx1 = bx0 + bubble_w
+            by1 = by0 + bubble_h
+            radius = max(22, int(min(bubble_w, bubble_h) * 0.28))
+            sh_off = max(7, int(ink_w * 1.5))
+
+            # Build pointer tail triangle coordinates
+            tail_h = max(26, int(font_size * 1.15))
+            tail_half_w = max(16, int(font_size * 0.65))
+            if tail_dir == "down_right":
+                base_cx = bx0 + int(bubble_w * 0.32)
+                tail_poly = [
+                    (base_cx - tail_half_w, by1 - ink_w),
+                    (base_cx + tail_half_w, by1 - ink_w),
+                    (base_cx + int(tail_half_w * 1.35), by1 + tail_h)
+                ]
+            elif tail_dir == "down_left":
+                base_cx = bx0 + int(bubble_w * 0.68)
+                tail_poly = [
+                    (base_cx - tail_half_w, by1 - ink_w),
+                    (base_cx + tail_half_w, by1 - ink_w),
+                    (base_cx - int(tail_half_w * 1.35), by1 + tail_h)
+                ]
+            else:  # up_right
+                base_cx = bx0 + int(bubble_w * 0.30)
+                tail_poly = [
+                    (base_cx - tail_half_w, by0 + ink_w),
+                    (base_cx + tail_half_w, by0 + ink_w),
+                    (base_cx + int(tail_half_w * 1.25), by0 - tail_h)
+                ]
+
+            shadow_tail = [(px + sh_off, py + sh_off) for (px, py) in tail_poly]
+
+            # Layer A: Drop shadow (rounded balloon + tail)
+            draw.rounded_rectangle(
+                [bx0 + sh_off, by0 + sh_off, bx1 + sh_off, by1 + sh_off],
+                radius=radius,
+                fill=(15, 23, 42, 185)
+            )
+            draw.polygon(shadow_tail, fill=(15, 23, 42, 185))
+
+            # Layer B: Bold black ink outer contour (balloon + tail)
+            draw.polygon(tail_poly, fill=(255, 255, 255, 252), outline=(15, 23, 42, 255), width=ink_w)
+            draw.rounded_rectangle(
+                [bx0, by0, bx1, by1],
+                radius=radius,
+                fill=(255, 255, 255, 252),
+                outline=(15, 23, 42, 255),
+                width=ink_w
+            )
+            # Re-fill interior of tail + seam so balloon and tail merge seamlessly without an inner border line
+            inner_seam_poly = [
+                (tail_poly[0][0] + ink_w // 2, tail_poly[0][1]),
+                (tail_poly[1][0] - ink_w // 2, tail_poly[1][1]),
+                tail_poly[2]
+            ]
+            draw.polygon(inner_seam_poly, fill=(255, 255, 255, 252))
+
+            # Layer C: Speaker Name Pill Badge on top rim of speech balloon
+            text_start_y = by0 + pad_y
+            if show_spk_tag:
+                spk_key = spk_display.lower()
+                if spk_key not in speaker_color_map:
+                    speaker_color_map[spk_key] = speaker_palette[len(speaker_color_map) % len(speaker_palette)]
+                badge_rgb = speaker_color_map[spk_key]
+                tx0 = bx0 + int(radius * 0.65)
+                ty0 = by0 - int(tag_h * 0.52)
+                tx1 = tx0 + tag_w
+                ty1 = ty0 + tag_h
+                tag_rad = max(10, tag_h // 2)
+                draw.rounded_rectangle(
+                    [tx0, ty0, tx1, ty1],
+                    radius=tag_rad,
+                    fill=(*badge_rgb, 255),
+                    outline=(15, 23, 42, 255),
+                    width=max(3, ink_w - 1)
+                )
+                spk_upper = spk_display.upper()
+                tb = draw.textbbox((0, 0), spk_upper, font=tag_font)
+                tw_s = tb[2] - tb[0]
+                th_s = tb[3] - tb[1]
+                draw.text(
+                    (tx0 + (tag_w - tw_s) // 2, ty0 + (tag_h - th_s) // 2 - tb[1]),
+                    spk_upper,
+                    font=tag_font,
+                    fill=(255, 255, 255, 255)
+                )
+                text_start_y += int(tag_h * 0.25)
+
+            # Layer D: Dialogue Text inside speech balloon
+            curr_y = text_start_y
+            for ln in lines:
+                lb = draw.textbbox((0, 0), ln, font=body_font)
+                lw = lb[2] - lb[0]
+                lx = bx0 + (bubble_w - lw) // 2
+                draw.text((lx, curr_y), ln, font=body_font, fill=(15, 23, 42, 255))
+                curr_y += line_h
+
+            if b_idx == 0:
+                cursor_top_left_y = by1 + tail_h + int(H * 0.02)
+
+        # Downscale 2x supersampled overlay onto base image with LANCZOS filter
+        smooth_overlay = overlay.resize((w, h), Image.Resampling.LANCZOS)
+        composited = Image.alpha_composite(base, smooth_overlay)
+        return composited.convert("RGB")
+
+    def apply_comic_overlay_to_file(
+        self,
+        image_path: str,
+        dialogues: list = None,
+        narration: str = "",
+        prompt: str = "",
+        title: str = "",
+        scene_idx: int = 0,
+        dialogue_only: bool = False
+    ) -> str:
+        """
+        Ensures a clean `_base.jpg` copy of `image_path` is preserved, then renders
+        the comic panel border & dialogue speech bubbles onto `image_path`.
+        """
+        image_path = str(image_path)
+        if not os.path.exists(image_path):
+            return image_path
+        base_path = self.get_base_image_path(image_path)
+        import shutil
+        if not os.path.exists(base_path):
+            shutil.copy2(image_path, base_path)
+        with Image.open(base_path) as raw_img:
+            comic_img = self.render_comic_overlay(
+                raw_img,
+                dialogues=dialogues,
+                narration=narration,
+                prompt=prompt,
+                title=title,
+                scene_idx=scene_idx,
+                dialogue_only=dialogue_only
+            )
+            comic_img.save(image_path, "JPEG", quality=95)
+        return image_path
+
+    def restore_base_image_file(self, image_path: str) -> bool:
+        """Restores the un-bubbled `_base.jpg` image when switching away from Comic style."""
+        image_path = str(image_path)
+        base_path = self.get_base_image_path(image_path)
+        if os.path.exists(base_path):
+            import shutil
+            shutil.copy2(base_path, image_path)
+            return True
+        return False
+
     async def generate_scene_image(
         self,
         prompt: str,
@@ -178,7 +576,10 @@ class ImageService:
         reference_image_path: str = None,
         api_key: str = None,
         provider: str = None,
-        camera_on_speaker: bool = False
+        camera_on_speaker: bool = False,
+        dialogues: list = None,
+        narration: str = "",
+        dialogue_only: bool = False
     ) -> str:
         """
         Scene visual generation pipeline:
@@ -186,11 +587,42 @@ class ImageService:
         2. Neural.love AI Art Engine (if image_mode is neural_love)
         3. OpenAI DALL-E 3 (if image_mode or provider is OpenAI)
         4. Storyboard-Only Canvas (if image_mode is manual)
+        When `style_key` is Comic Book mode, preserves the un-bubbled artwork as `scene_N_base.jpg`
+        and composites crisp graphic-novel speech bubbles & dialogue text onto `output_path`.
         """
         eff_api_key = api_key or self.api_key
         eff_provider = provider or self.provider
         output_path = str(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        comic_mode = is_comic_style(style_key)
+
+        # If a reference image is provided and a clean un-bubbled `_base` version exists, prefer it for character consistency
+        if reference_image_path:
+            ref_base = self.get_base_image_path(reference_image_path)
+            if os.path.exists(ref_base):
+                reference_image_path = ref_base
+
+        # Remove stale base image before painting a brand-new illustration so `apply_comic_overlay_to_file` backs up the new art
+        base_backup_path = self.get_base_image_path(output_path)
+        if os.path.exists(base_backup_path):
+            try:
+                os.remove(base_backup_path)
+            except Exception:
+                pass
+
+        def _finalize(saved_path: str) -> str:
+            if comic_mode and os.path.exists(saved_path):
+                self.apply_comic_overlay_to_file(
+                    saved_path,
+                    dialogues=dialogues,
+                    narration=narration,
+                    prompt=prompt,
+                    title=title,
+                    scene_idx=scene_idx,
+                    dialogue_only=dialogue_only
+                )
+            return saved_path
+
         full_prompt = self.craft_full_prompt(
             prompt,
             style_key=style_key,
@@ -222,7 +654,7 @@ class ImageService:
         if image_mode in ("manual", "storyboard_only", "placeholder"):
             self.generate_procedural_fallback(title=title, prompt=prompt, output_path=output_path, style_key=style_key, scene_idx=scene_idx, width=width, height=height)
             print(f"Scene {scene_idx + 1} visual rendered using Storyboard-Only canvas (zero AI calls).")
-            return output_path
+            return _finalize(output_path)
 
         # ============================================================
         # 1. NEURAL.LOVE AI ART MODE
@@ -237,7 +669,7 @@ class ImageService:
             )
             if nl_success:
                 print(f"Generated scene {scene_idx + 1} using Neural.love AI Art Engine!")
-                return output_path
+                return _finalize(output_path)
             raise RuntimeError("Neural.love image generation failed. Please check your API key and credit balance.")
 
         # ============================================================
@@ -269,7 +701,7 @@ class ImageService:
                             fitted = self.fit_image_to_aspect_ratio(img, width, height)
                             fitted.save(output_path, "JPEG", quality=92)
                             print(f"Generated scene using OpenAI DALL-E 3 ({dalle_size})!")
-                            return output_path
+                            return _finalize(output_path)
                     else:
                         raise RuntimeError(f"OpenAI DALL-E error {resp.status_code}: {resp.text}")
             except Exception as e:
@@ -319,7 +751,7 @@ class ImageService:
                                 fitted = self.fit_image_to_aspect_ratio(img, width, height)
                                 fitted.save(output_path, "JPEG", quality=95)
                                 print(f"Generated scene {scene_idx + 1} using Google Gemini Imagen 3 API ({img_model})!")
-                                return output_path
+                                return _finalize(output_path)
                         except Exception as e_model:
                             gemini_error = str(e_model)
                 except Exception as e:
@@ -372,7 +804,7 @@ class ImageService:
                         except Exception:
                             pass
                         print(f"Generated scene {scene_idx + 1} using Gemini Pro Web Session Imagen 3 with character consistency!")
-                        return output_path
+                        return _finalize(output_path)
                     else:
                         gemini_error = "Gemini returned response without image content. Try again or verify session cookies."
                 except Exception as e:
