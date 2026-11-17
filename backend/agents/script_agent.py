@@ -1050,7 +1050,7 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
 
         is_comic_mode = str(art_style or "").strip().lower() in ("comic", "comic_dialogue", "comic_book")
         visual_prompt_rule = (
-            f"        * COMIC BOOK SPEECH BUBBLES & DIALOGUE IN IMAGE: Because Art Style is `{art_style}`, include graphic-novel panel framing with upper headroom and explicit comic speech bubble(s) containing the character's spoken dialogue text (e.g. `Comic speech bubble from [Character Name]: \"[Spoken line]\"`). Do NOT include 0-3s timestamps or camera motion instructions."
+            f"        * COMIC BOOK SPEECH BUBBLES & DIALOGUE IN IMAGE: Because Art Style is `{art_style}`, include graphic-novel panel framing with upper headroom. If a character speaks in the scene, include `Comic speech bubble from [Character Name]: \"[Spoken line]\"` (NEVER write `Comic speech bubble from Narrator` — if the scene only has narrator voiceover, use `Comic narrator caption box: \"[Caption]\"`). Do NOT include 0-3s timestamps or camera motion instructions."
             if is_comic_mode else
             "        * STRICT PROHIBITION: Do NOT include 0-3s timestamps, camera motion instructions, negative prompts, or spoken dialogue quotes."
         )
@@ -1983,9 +1983,15 @@ Return ONLY raw JSON matching this structure:
                     combined_ctx,
                     re.IGNORECASE
                 ))
-                ends_with_colon = prefix_ctx.strip().endswith(':')
-                # Only treat as spoken/thought dialogue if introduced by a speech/thought verb, colon, or exclamation/question
-                if has_speech_verb or ends_with_colon or q_clean.endswith(('?', '!')):
+                tail_clause = re.split(r'[.!?]\s+', prefix_ctx.strip())[-1]
+                is_signboard_or_title = bool(re.search(
+                    r'\b(?:tấm\s+biển|biển\s+hiệu|bảng\s+hiệu|dòng\s+chữ|khắc\s+chữ|ghi\s+chữ|viết\s+chữ|treo\s+biển|hiện\s+lên|mang\s+tên|ngoại\s+hiệu|signboard|sign\s+reads|inscription|banner)\b',
+                    tail_clause,
+                    re.IGNORECASE
+                )) and not has_speech_verb
+                ends_with_colon = prefix_ctx.strip().endswith(':') and not is_signboard_or_title
+                # Only treat as spoken/thought dialogue if introduced by a speech/thought verb, colon, or exclamation/question (and not a signboard/title)
+                if not is_signboard_or_title and (has_speech_verb or ends_with_colon or q_clean.endswith(('?', '!'))):
                     inferred_spk = ScriptAgent.infer_speaker_from_context(combined_ctx)
                     clean_intro = prefix_ctx.strip(' :,-')
                     if '.' in clean_intro:
@@ -2150,19 +2156,23 @@ Return ONLY raw JSON matching this structure:
             quote = match.group(2).strip()
             after_quote = clean_narr[match.end():].lstrip()
 
-            # Check whether this quote is actual character speech/thought vs an inline quoted idiom/title
-            # (e.g. '"Đẽo cày giữa đường" đã trở thành thành ngữ...' or 'dễ bị dao động, "gió chiều nào che chiều ấy", không có lập trường')
-            has_speech_intro = bool(
-                prefix.endswith(':')
-                or re.search(
-                    r'\b(?:thưa|nói|hỏi|đáp|kêu|bảo|chê|quát|la|cười|mắng|than|nghĩ|thầm|báo mộng|lắp bắp|thốt|gọi|said|asked|replied|shouted|exclaimed|whispered|thought)\b',
-                    prefix,
-                    re.IGNORECASE
-                )
-            )
+            # Check whether this quote is actual character speech/thought vs an inline quoted idiom/title/signboard
+            # (e.g. 'Ngoài cửa treo tấm biển: "Uống ba chén không nên qua đồi"' or '"Đẽo cày giữa đường" đã trở thành thành ngữ...')
+            has_speech_verb_in_prefix = bool(re.search(
+                r'\b(?:thưa|nói|hỏi|đáp|kêu|bảo|chê|quát|la|cười|mắng|than|nghĩ|thầm|báo mộng|lắp bắp|thốt|gọi|said|asked|replied|shouted|exclaimed|whispered|thought)\b',
+                prefix,
+                re.IGNORECASE
+            ))
+            tail_prefix_clause = re.split(r'[.!?]\s+', prefix.strip())[-1]
+            is_signboard_quote = bool(re.search(
+                r'\b(?:tấm\s+biển|biển\s+hiệu|bảng\s+hiệu|dòng\s+chữ|khắc\s+chữ|ghi\s+chữ|viết\s+chữ|treo\s+biển|hiện\s+lên|mang\s+tên|ngoại\s+hiệu|signboard|sign\s+reads|inscription|banner)\b',
+                tail_prefix_clause,
+                re.IGNORECASE
+            )) and not has_speech_verb_in_prefix
+            has_speech_intro = bool((prefix.endswith(':') and not is_signboard_quote) or has_speech_verb_in_prefix)
             followed_by_lowercase_continuation = bool(after_quote and re.match(r'^[,;]?[ \t]*[a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]', after_quote))
-            if not has_speech_intro and followed_by_lowercase_continuation and not quote.endswith(('?', '!')):
-                # Keep inline idiom/title inside the narrator's text
+            if is_signboard_quote or (not has_speech_intro and followed_by_lowercase_continuation and not quote.endswith(('?', '!'))):
+                # Keep inline idiom/title/signboard inside the narrator's text
                 pending_narrator_prefix = f'{prefix} "{quote}"'.strip()
                 last_end = match.end()
                 continue
@@ -2830,6 +2840,10 @@ Return ONLY raw JSON matching this structure:
         s = re.sub(
             r'(?i),?\s*expressive speaking pose and vivid facial dialogue expression,\s*natural conversational gesture,\s*no speech bubbles,\s*no text\.?',
             '',
+            s
+        )
+        s = re.sub(
+            r'(?i)[,.]?\s*(?:Bong bóng thoại truyện tranh[^,.\n]*:\s*["“\'][^"”\']*["”\']|Hộp dẫn truyện tranh \(Caption\):\s*["“\'][^"”\']*["”\']|Comic speech bubble from [^:]+:\s*["“\'][^"”\']*["”\']|Comic narrator caption box:\s*["“\'][^"”\']*["”\'])\.?','',
             s
         )
         s = re.sub(r'(?i)[,.]?\s*(?:Bong bóng thoại truyện tranh|Hộp dẫn truyện tranh \(Caption\)|Comic speech bubble|Comic narrator caption box)[^.]*\.?$', '', s)

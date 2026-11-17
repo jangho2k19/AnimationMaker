@@ -174,10 +174,14 @@ class ImageService:
 
     @staticmethod
     def _load_comic_font(size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
-        """Loads a TrueType font supporting full Unicode (Vietnamese & English) with comic/bold styling."""
+        """
+        Loads a TrueType font with 100% complete Vietnamese Unicode glyph coverage
+        (including precomposed horn vowels ơ/ư and underdot vowels ạ/ộ/ệ/ợ/ự).
+        Note: Windows `comicbd.ttf` / `comic.ttf` is intentionally excluded because it lacks
+        Vietnamese horn/underdot glyphs and renders them as missing-glyph boxes (▯).
+        """
         candidates = (
             [
-                "C:/Windows/Fonts/comicbd.ttf",
                 "C:/Windows/Fonts/segoeuib.ttf",
                 "C:/Windows/Fonts/arialbd.ttf",
                 "C:/Windows/Fonts/tahomabd.ttf",
@@ -186,10 +190,10 @@ class ImageService:
             ]
             if bold
             else [
-                "C:/Windows/Fonts/comic.ttf",
                 "C:/Windows/Fonts/segoeui.ttf",
                 "C:/Windows/Fonts/arial.ttf",
                 "C:/Windows/Fonts/tahoma.ttf",
+                "C:/Windows/Fonts/calibri.ttf",
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             ]
         )
@@ -237,8 +241,14 @@ class ImageService:
         and crisp comic-book speech balloons with speaker badges and directional pointer tails
         directly onto the scene image. Uses 2x supersampling for razor-sharp anti-aliased ink lines.
         """
+        import unicodedata
         base = img.convert("RGBA")
         w, h = base.size
+
+        def _norm_vn(s: str) -> str:
+            return unicodedata.normalize("NFC", (s or "").strip())
+
+        narrator_aliases = {"narrator", "người kể chuyện", "vo", "voiceover", "lời dẫn", "thuyết minh", "none", ""}
 
         # Extract character dialogues & narrator lines
         segs = []
@@ -246,26 +256,26 @@ class ImageService:
             for d in dialogues:
                 if isinstance(d, dict) and (d.get("text") or "").strip():
                     segs.append({
-                        "speaker": (d.get("speaker") or "Narrator").strip(),
-                        "text": (d.get("text") or "").strip()
+                        "speaker": _norm_vn(d.get("speaker") or "Narrator"),
+                        "text": _norm_vn(d.get("text") or "")
                     })
         if not segs and narration:
             try:
                 from backend.agents.script_agent import ScriptAgent
-                segs = ScriptAgent.extract_scene_dialogue_segments(narration)
+                segs = ScriptAgent.extract_scene_dialogue_segments(_norm_vn(narration))
             except Exception:
-                segs = [{"speaker": "Narrator", "text": narration.strip()}]
+                segs = [{"speaker": "Narrator", "text": _norm_vn(narration)}]
 
-        # Also check `prompt` for explicit `Comic speech bubble from X: "..."` if `segs` has no character lines
         char_bubbles = []
         narr_lines = []
         for s in segs:
-            spk = (s.get("speaker") or "Narrator").strip()
-            txt = (s.get("text") or "").strip().strip('"“”')
+            spk = _norm_vn(s.get("speaker") or "Narrator")
+            txt = _norm_vn(s.get("text") or "").strip('"“”')
             if not txt:
                 continue
-            if spk.lower() in ("narrator", "người kể chuyện", "none", ""):
-                narr_lines.append(txt)
+            if spk.lower() in narrator_aliases:
+                if txt not in narr_lines:
+                    narr_lines.append(txt)
             else:
                 char_bubbles.append((spk, txt))
 
@@ -275,11 +285,20 @@ class ImageService:
                 prompt,
                 re.IGNORECASE
             ):
-                char_bubbles.append((m.group(1).strip(), m.group(2).strip()))
+                cand_spk = _norm_vn(m.group(1))
+                cand_txt = _norm_vn(m.group(2)).strip('"“”')
+                if not cand_txt:
+                    continue
+                if cand_spk.lower() in narrator_aliases:
+                    if cand_txt not in narr_lines:
+                        narr_lines.append(cand_txt)
+                else:
+                    char_bubbles.append((cand_spk, cand_txt))
 
         # 2x supersampled overlay canvas for anti-aliased comic ink lines and speech balloons
         scale = 2
         W, H = w * scale, h * scale
+        is_portrait = H > W
         overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
 
@@ -293,34 +312,44 @@ class ImageService:
             width=ink_w
         )
 
-        margin_x = gutter + ink_w + int(W * 0.025)
-        margin_y = gutter + ink_w + int(H * 0.028)
+        # Place caption boxes and speech balloons in the upper panel headroom (above character faces)
+        margin_x = gutter + ink_w + int(W * (0.035 if is_portrait else 0.030))
+        margin_y = gutter + ink_w + int(H * (0.018 if is_portrait else 0.024))
+        usable_w = max(200, W - margin_x * 2)
         cursor_top_left_y = margin_y
 
-        # 2. Optional Top-Left Golden Comic Narrative Caption Box
+        # 2. Optional Top Golden Comic Narrative Caption Box
         # Show when there are no character speech bubbles, or when there is 1 character bubble and a concise narrator setup
         show_caption = (not dialogue_only) and bool(narr_lines) and (len(char_bubbles) == 0 or len(char_bubbles) == 1)
         if show_caption:
-            cap_text = narr_lines[0].strip()
+            cap_text = _norm_vn(" ".join(narr_lines))
             cap_words = cap_text.split()
-            max_cap_words = 28 if len(char_bubbles) == 0 else 16
+            max_cap_words = 50 if len(char_bubbles) == 0 else 18
             if len(cap_words) > max_cap_words:
-                cap_text = " ".join(cap_words[:max_cap_words]).rstrip(" ,;:-") + "..."
-            cap_font_size = max(24, int(min(W, H) * (0.026 if len(char_bubbles) == 0 else 0.022)))
+                candidate_cut = " ".join(cap_words[:max_cap_words])
+                # Prefer cutting at sentence or clause boundary so phrases never end with "nổi danh là..."
+                m_punct = re.search(r'^(.+[.!?;,])\s+\S+$', candidate_cut)
+                if m_punct and len(m_punct.group(1).split()) >= int(max_cap_words * 0.6):
+                    cap_text = m_punct.group(1).rstrip(" ,;:-") + ("..." if not m_punct.group(1).endswith((".", "!", "?")) else "")
+                else:
+                    cap_text = candidate_cut.rstrip(" ,;:-") + "..."
+            cap_font_size = max(20, int(min(W, H) * (0.023 if len(char_bubbles) == 0 else 0.020)))
             cap_font = self._load_comic_font(cap_font_size, bold=True)
-            max_cap_box_w = int(W * (0.62 if len(char_bubbles) == 0 else 0.46))
-            pad_x = int(cap_font_size * 0.75)
-            pad_y = int(cap_font_size * 0.55)
+            max_cap_box_w = min(usable_w, int(W * (0.90 if is_portrait else (0.76 if len(char_bubbles) == 0 else 0.54))))
+            pad_x = int(cap_font_size * 0.72)
+            pad_y = int(cap_font_size * 0.48)
             cap_lines = self._wrap_comic_text(draw, cap_text, cap_font, max_cap_box_w - pad_x * 2)
             if cap_lines:
-                line_h = int(cap_font_size * 1.32)
+                line_h = int(cap_font_size * 1.34)
                 measured_w = max(
                     (draw.textbbox((0, 0), ln, font=cap_font)[2] - draw.textbbox((0, 0), ln, font=cap_font)[0])
                     for ln in cap_lines
                 )
                 box_w = min(max_cap_box_w, measured_w + pad_x * 2)
                 box_h = len(cap_lines) * line_h + pad_y * 2
-                bx0, by0 = margin_x, cursor_top_left_y
+                # Center horizontally in portrait 9:16 mode or when no speech bubbles exist
+                bx0 = (W - box_w) // 2 if (is_portrait or len(char_bubbles) == 0) else margin_x
+                by0 = cursor_top_left_y
                 bx1, by1 = bx0 + box_w, by0 + box_h
                 sh_off = max(6, int(ink_w * 1.4))
 
@@ -335,7 +364,7 @@ class ImageService:
                 for ln in cap_lines:
                     draw.text((bx0 + pad_x, ty), ln, font=cap_font, fill=(15, 23, 42, 255))
                     ty += line_h
-                cursor_top_left_y = by1 + int(H * 0.022)
+                cursor_top_left_y = by1 + int(H * 0.025)
 
         # 3. Character Comic Speech Bubbles (up to 3 turns in natural comic reading order)
         speaker_palette = [
@@ -350,28 +379,29 @@ class ImageService:
         bubbles_to_draw = char_bubbles[:3]
         num_b = len(bubbles_to_draw)
         for b_idx, (spk_raw, b_text) in enumerate(bubbles_to_draw):
+            b_text = _norm_vn(b_text)
             b_words = b_text.split()
-            if len(b_words) > 30:
-                b_text = " ".join(b_words[:30]).rstrip(" ,;:-") + "..."
+            if len(b_words) > 28:
+                b_text = " ".join(b_words[:28]).rstrip(" ,;:-") + "..."
 
             # Scale font cleanly to text length and panel size
             if len(b_words) <= 8:
-                f_ratio = 0.030
+                f_ratio = 0.028
             elif len(b_words) <= 18:
-                f_ratio = 0.026
+                f_ratio = 0.024
             else:
-                f_ratio = 0.023
+                f_ratio = 0.021
             if num_b >= 3:
                 f_ratio *= 0.88
 
-            font_size = max(24, int(min(W, H) * f_ratio))
+            font_size = max(22, int(min(W, H) * f_ratio))
             body_font = self._load_comic_font(font_size, bold=True)
-            tag_font_size = max(18, int(font_size * 0.72))
+            tag_font_size = max(17, int(font_size * 0.72))
             tag_font = self._load_comic_font(tag_font_size, bold=True)
 
-            max_b_w = int(W * (0.50 if num_b == 1 else 0.44))
-            pad_x = int(font_size * 0.90)
-            pad_y = int(font_size * 0.72)
+            max_b_w = min(usable_w, int(W * (0.78 if is_portrait else (0.52 if num_b == 1 else 0.44))))
+            pad_x = int(font_size * 0.88)
+            pad_y = int(font_size * 0.70)
             lines = self._wrap_comic_text(draw, b_text, body_font, max_b_w - pad_x * 2)
             if not lines:
                 continue
@@ -381,7 +411,7 @@ class ImageService:
                 (draw.textbbox((0, 0), ln, font=body_font)[2] - draw.textbbox((0, 0), ln, font=body_font)[0])
                 for ln in lines
             )
-            spk_display = spk_raw.strip()
+            spk_display = _norm_vn(spk_raw)
             show_spk_tag = spk_display.lower() not in ("", "character", "nhân vật", "narrator", "người kể chuyện")
             tag_w = 0
             tag_h = 0
@@ -395,9 +425,9 @@ class ImageService:
             bubble_w = min(bubble_w, max_b_w)
             bubble_h = len(lines) * line_h + pad_y * 2 + (int(tag_h * 0.35) if show_spk_tag else 0)
 
-            # Determine non-overlapping comic panel position & tail direction
+            # Determine non-overlapping comic panel position & tail direction within safe margins
             if b_idx == 0:
-                bx0 = margin_x
+                bx0 = (W - bubble_w) // 2 if (is_portrait and num_b == 1) else margin_x
                 by0 = cursor_top_left_y + (int(tag_h * 0.55) if show_spk_tag else 0)
                 tail_dir = "down_right"
             elif b_idx == 1:
@@ -405,10 +435,10 @@ class ImageService:
                 by0 = margin_y + int(H * 0.06) + (int(tag_h * 0.55) if show_spk_tag else 0)
                 # Ensure vertical separation if horizontally overlapping with Bubble 1
                 if bx0 < margin_x + bubble_w + int(W * 0.03):
-                    by0 = max(by0, cursor_top_left_y + bubble_h + int(H * 0.05))
+                    by0 = max(by0, cursor_top_left_y + int(H * 0.03))
                 tail_dir = "down_left"
             else:
-                bx0 = margin_x + int(W * 0.02)
+                bx0 = margin_x
                 by0 = H - margin_y - bubble_h - int(H * 0.045)
                 tail_dir = "up_right"
 

@@ -32,23 +32,23 @@ class VideoEngine:
             return f"zoompan=z='if(lte(zoom,1.0),1.04,min(zoom+0.0012,1.24))':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2.5-(ih/zoom/2.5)':s={w}x{h}:fps={self.fps}"
 
         elif motion == "zoom_in":
-            # Gradually zooms in from 1.0 to 1.20 centered
-            return f"zoompan=z='min(zoom+0.0010,1.20)':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={self.fps}"
+            # Gradually zooms in from 1.0 to 1.14 preserving upper headroom and speech balloons
+            return f"zoompan=z='min(zoom+0.0007,1.14)':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/3-(ih/zoom/3)':s={w}x{h}:fps={self.fps}"
 
         elif motion == "zoom_out":
-            # Starts zoomed at 1.20 and recedes to 1.02
-            return f"zoompan=z='if(lte(zoom,1.0),1.20,max(1.002,zoom-0.0010))':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={self.fps}"
+            # Starts zoomed at 1.14 and recedes to 1.01
+            return f"zoompan=z='if(lte(zoom,1.0),1.14,max(1.002,zoom-0.0007))':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/3-(ih/zoom/3)':s={w}x{h}:fps={self.fps}"
 
         elif motion == "pan_left":
-            # Zooms to 1.15 and drifts right to left
-            return f"zoompan=z='1.15':x='if(lte(on,-1),(iw-iw/zoom)/2,max(0,x-1.0))':y='ih/2-(ih/zoom/2)':d={total_frames}:s={w}x{h}:fps={self.fps}"
+            # Gentle zoom 1.08 and smooth drift from right to left while keeping upper headroom visible
+            return f"zoompan=z='1.08':x='if(lte(on,1),(iw-iw/zoom),max(0,x-0.6))':y='ih/4-(ih/zoom/4)':d={total_frames}:s={w}x{h}:fps={self.fps}"
 
         elif motion == "pan_right":
-            # Zooms to 1.15 and drifts left to right
-            return f"zoompan=z='1.15':x='if(lte(on,-1),0,min(iw-iw/zoom,x+1.0))':y='ih/2-(ih/zoom/2)':d={total_frames}:s={w}x{h}:fps={self.fps}"
+            # Gentle zoom 1.08 and smooth drift from left to right while keeping upper headroom visible
+            return f"zoompan=z='1.08':x='if(lte(on,1),0,min(iw-iw/zoom,x+0.6))':y='ih/4-(ih/zoom/4)':d={total_frames}:s={w}x{h}:fps={self.fps}"
 
         else:  # subtle_drift or default
-            return f"zoompan=z='min(zoom+0.0006,1.10)':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={self.fps}"
+            return f"zoompan=z='min(zoom+0.0005,1.08)':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/3-(ih/zoom/3)':s={w}x{h}:fps={self.fps}"
 
     def _has_audio_stream(self, file_path: str) -> bool:
         """Checks if a media file contains an audio stream."""
