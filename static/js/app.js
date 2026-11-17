@@ -59,7 +59,9 @@ class AniStoryApp {
     this.batchQueue = this.loadBatchQueueFromStorage();
 
     this.initElements();
+    this.enableImageCaptions = localStorage.getItem("anistory_cfg_enable_image_captions") !== "false";
     this.updateSpeakerCamUI(this.cameraOnSpeaker);
+    this.updateImageCaptionsUI(this.enableImageCaptions);
     this.updateVoiceoverUI(this.enableVoiceover);
     this.updateMultivoiceUI(this.enableMultivoice);
     this.updateAutoPaintUI(localStorage.getItem("anistory_autopaint") === "true");
@@ -230,6 +232,10 @@ class AniStoryApp {
     this.btnCloseDeepAnalysis = document.getElementById("btnCloseDeepAnalysis");
     this.deepAnalysisCharactersBox = document.getElementById("deepAnalysisCharactersBox");
     this.deepAnalysisBeatsList = document.getElementById("deepAnalysisBeatsList");
+    this.btnToggleImageCaptionsStage1 = document.getElementById("btnToggleImageCaptionsStage1");
+    this.textImageCaptionsStage1 = document.getElementById("textImageCaptionsStage1");
+    this.btnToggleImageCaptionsStage2 = document.getElementById("btnToggleImageCaptionsStage2");
+    this.textImageCaptionsStage2 = document.getElementById("textImageCaptionsStage2");
     this.btnGenerateStoryboard = document.getElementById("btnGenerateStoryboard");
 
     // Storyboard stage elements
@@ -1571,6 +1577,58 @@ class AniStoryApp {
 
     if (this.btnToggleAllScenesDialogueOnly) {
       this.btnToggleAllScenesDialogueOnly.addEventListener("click", () => this.toggleAllScenesDialogueOnly());
+    }
+
+    // Toggle Caption in Images (Comic Narrator Box) in Stage 1
+    if (this.btnToggleImageCaptionsStage1) {
+      this.btnToggleImageCaptionsStage1.addEventListener("click", () => {
+        this.enableImageCaptions = !this.enableImageCaptions;
+        localStorage.setItem("anistory_cfg_enable_image_captions", this.enableImageCaptions ? "true" : "false");
+        this.updateImageCaptionsUI(this.enableImageCaptions);
+        this.showToast(
+          this.enableImageCaptions
+            ? "🖼️ Caption in Images: ON — Narrator caption box will be drawn on Comic Book panels!"
+            : "🖼️ Caption in Images: OFF — Only character dialogue bubbles will be drawn on Comic Book panels!"
+        );
+      });
+    }
+
+    // Toggle Caption in Images (Comic Narrator Box) in Stage 2
+    if (this.btnToggleImageCaptionsStage2) {
+      this.btnToggleImageCaptionsStage2.addEventListener("click", async () => {
+        if (!this.currentProject) return;
+        const oldState = this.currentProject.enable_image_captions !== false;
+        const newState = !oldState;
+        this.updateImageCaptionsUI(newState);
+        try {
+          const resp = await fetch(`/api/projects/${this.currentProject.id}/toggle-image-captions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enable: newState })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.project) {
+              this.currentProject = data.project;
+            }
+            this.currentProject.enable_image_captions = data.enable_image_captions;
+            this.enableImageCaptions = data.enable_image_captions;
+            localStorage.setItem("anistory_cfg_enable_image_captions", this.enableImageCaptions ? "true" : "false");
+            this.saveActiveProjectState();
+            this.updateImageCaptionsUI(this.currentProject.enable_image_captions !== false);
+            this.renderStoryboardView();
+            this.showToast(
+              data.enable_image_captions
+                ? "🖼️ Caption in Images: ON — Yellow narrator caption boxes enabled on Comic panels!"
+                : "🖼️ Caption in Images: OFF — Yellow narrator caption boxes removed from Comic panels!"
+            );
+          }
+        } catch (e) {
+          console.error(e);
+          this.updateImageCaptionsUI(oldState);
+          this.showToast("Failed to toggle Caption in Images: " + e.message, true);
+        }
+      });
     }
 
     // Toggle Camera on Speaker (Dialogue Film) in Stage 1
@@ -3423,6 +3481,21 @@ ${isAutoScenes
     this.showToast(`✓ Applied Blueprint: ${a.director_skill_name || "Director Skill"} (${a.recommended_scenes || 4} scenes)!`);
   }
 
+  updateImageCaptionsUI(enabled) {
+    if (this.textImageCaptionsStage1) {
+      this.textImageCaptionsStage1.textContent = `Caption in Images: ${enabled ? "ON" : "OFF"}`;
+    }
+    if (this.btnToggleImageCaptionsStage1) {
+      this.btnToggleImageCaptionsStage1.style.opacity = enabled ? "1" : "0.65";
+    }
+    if (this.textImageCaptionsStage2) {
+      this.textImageCaptionsStage2.textContent = `Caption in Images: ${enabled ? "ON" : "OFF"}`;
+    }
+    if (this.btnToggleImageCaptionsStage2) {
+      this.btnToggleImageCaptionsStage2.style.opacity = enabled ? "1" : "0.65";
+    }
+  }
+
   renderStyles(styles) {
     this.styleOptionsGrid.innerHTML = "";
     let savedStyle = localStorage.getItem("anistory_cfg_art_style") || this.selectedStyleKey || "ghibli";
@@ -3712,7 +3785,8 @@ ${isAutoScenes
         enable_subtitles: this.enableSubtitles !== false,
         enable_multivoice: this.enableMultivoice !== false,
         camera_on_speaker: this.cameraOnSpeaker !== false,
-        director_skill: this.selectDirectorSkill ? this.selectDirectorSkill.value : "auto"
+        director_skill: this.selectDirectorSkill ? this.selectDirectorSkill.value : "auto",
+        enable_image_captions: this.enableImageCaptions !== false
       };
       if (this.selectDirectorSkill) {
         localStorage.setItem("anistory_cfg_director_skill", this.selectDirectorSkill.value);
@@ -4120,6 +4194,7 @@ ${isAutoScenes
     const voiceoverActive = this.currentProject.enable_voiceover !== false;
     const speakerCamActive = Boolean(this.currentProject.camera_on_speaker || this.currentProject.art_style === "dialogue_cinema");
     this.updateSubtitlesUI(this.currentProject.enable_subtitles !== false);
+    this.updateImageCaptionsUI(this.currentProject.enable_image_captions !== false);
     this.updateVoiceoverUI(voiceoverActive);
     this.updateMultivoiceUI(multivoiceActive);
     this.updateSpeakerCamUI(speakerCamActive);

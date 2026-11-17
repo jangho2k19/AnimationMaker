@@ -630,9 +630,14 @@
                 <div class="config-column style-column">
                   <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
                     <label class="input-label small-label" style="margin-bottom:0;">🎨 Visual Animation Style</label>
-                    <button id="btnToggleSpeakerCamStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="padding:4px 10px; font-size:11px; cursor:pointer;" title="Focus camera directly on characters when they are talking/speaking (Shot-Reverse-Shot) — works with ANY Visual Animation Style!">
-                      <span id="iconSpeakerCamStage1">🗣️</span> <span id="textSpeakerCamStage1">Camera on Speaker: ON</span>
-                    </button>
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                      <button id="btnToggleImageCaptionsStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="padding:4px 10px; font-size:11px; cursor:pointer;" title="Turn ON or OFF the yellow Narrator Caption Box in Comic Book images">
+                        <span id="iconImageCaptionsStage1">🖼️</span> <span id="textImageCaptionsStage1">Caption in Images: ON</span>
+                      </button>
+                      <button id="btnToggleSpeakerCamStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="padding:4px 10px; font-size:11px; cursor:pointer;" title="Focus camera directly on characters when they are talking/speaking (Shot-Reverse-Shot) — works with ANY Visual Animation Style!">
+                        <span id="iconSpeakerCamStage1">🗣️</span> <span id="textSpeakerCamStage1">Camera on Speaker: ON</span>
+                      </button>
+                    </div>
                   </div>
                   <div id="speakerCamBannerStage1" style="margin-bottom:8px; padding:6px 10px; border-radius:8px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.28); font-size:11px; color:#6ee7b7; display:flex; align-items:center; justify-content:space-between; gap:8px;">
                     <span>🗣️ <strong>Dialogue Film (Camera on Speaker)</strong> active — pick any Visual Style below!</span>
@@ -929,6 +934,9 @@
               </div>
               <button id="btnToggleSubtitlesStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle burnt-in subtitles ON or OFF">
                 <span id="iconSubtitlesStage2">💬</span> <span id="textSubtitlesStage2">Captions: ON</span>
+              </button>
+              <button id="btnToggleImageCaptionsStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Turn ON or OFF the yellow Narrator Caption Box in Comic Book images (Dialogue bubbles stay active)">
+                <span id="iconImageCaptionsStage2">🖼️</span> <span id="textImageCaptionsStage2">Caption in Images: ON</span>
               </button>
               <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle between Storyboard Only, Server API, and In-Browser Puter.js paint">
                 <span id="iconImageModeStage2">🌐</span> <span id="textImageModeStage2">Paint: Server API</span>

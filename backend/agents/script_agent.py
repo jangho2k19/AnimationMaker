@@ -2224,6 +2224,19 @@ Return ONLY raw JSON matching this structure:
                 segments.append({"speaker": narrator_name, "text": combined_rem})
 
         if not segments:
+            # Check for dash-prefixed dialogue lines (e.g. "– Thượng sĩ giết cọp giết cách nào?")
+            dash_parts = [p.strip() for p in re.split(r'(?:^|\s)[–\-—]\s+', clean_narr) if p.strip()]
+            if (clean_narr.startswith(("–", "-", "—")) or len(dash_parts) >= 2):
+                dash_segs = []
+                for idx_d, dp in enumerate(dash_parts):
+                    if idx_d == 0 and not clean_narr.startswith(("–", "-", "—")):
+                        dash_segs.append({"speaker": narrator_name, "text": dp.rstrip(" :")})
+                    else:
+                        spk_d = chars[idx_d % len(chars)] if chars else "Character"
+                        dash_segs.append({"speaker": spk_d, "text": dp.strip(' "“”')})
+                if any(s["speaker"] != narrator_name for s in dash_segs):
+                    return dash_segs
+
             # Check for unquoted Speaker: Dialogue lines (e.g. "Ông Tư: Bà nó ơi!" or "[Bà Tư]: Đây nè ông!")
             colon_lines = [ln.strip() for ln in clean_narr.splitlines() if ln.strip()]
             parsed_colon_segs = []

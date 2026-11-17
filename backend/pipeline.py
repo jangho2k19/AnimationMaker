@@ -104,7 +104,8 @@ class AnimationPipeline:
         product_info: Optional[Dict[str, Any]] = None,
         enable_multivoice: bool = True,
         camera_on_speaker: bool = False,
-        director_skill: str = "auto"
+        director_skill: str = "auto",
+        enable_image_captions: bool = True
     ) -> Dict[str, Any]:
         """Initialize a new project record with folder name matching the title."""
         if art_style == "dialogue_cinema":
@@ -163,6 +164,7 @@ class AnimationPipeline:
             "image_mode": image_mode,
             "enable_subtitles": enable_subtitles,
             "enable_voiceover": enable_voiceover,
+            "enable_image_captions": bool(enable_image_captions),
             "title": (title or "").strip(),
             "logline": "",
             "characters": "",
@@ -491,7 +493,8 @@ class AnimationPipeline:
             camera_on_speaker=is_spk_cam,
             dialogues=scene.get("dialogues"),
             narration=scene.get("narration", ""),
-            dialogue_only=bool(scene.get("dialogue_only", False))
+            dialogue_only=bool(scene.get("dialogue_only", False)),
+            enable_image_captions=bool(project.get("enable_image_captions", True))
         )
 
         # Re-fetch latest project state to avoid race condition overwrite with concurrent scene renders
@@ -1159,7 +1162,8 @@ class AnimationPipeline:
                         prompt=sc.get("visual_prompt", ""),
                         title=sc.get("title", f"Scene {idx + 1}"),
                         scene_idx=idx,
-                        dialogue_only=bool(sc.get("dialogue_only", False))
+                        dialogue_only=bool(sc.get("dialogue_only", False)),
+                        enable_image_captions=bool(project.get("enable_image_captions", True))
                     )
                 else:
                     self.image_service.restore_base_image_file(str(img_file))
@@ -1191,4 +1195,17 @@ class AnimationPipeline:
         self.save_project(project)
         self.refresh_project_comic_images(project_id)
         return self.get_project(project_id) or project
+
+    def toggle_image_captions(self, project_id: str, enable: Optional[bool] = None) -> Dict[str, Any]:
+        """Toggles Caption in Images (the yellow narrator caption box on Comic Book panels) ON or OFF."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        curr = bool(project.get("enable_image_captions", True))
+        new_val = (not curr) if enable is None else bool(enable)
+        project["enable_image_captions"] = new_val
+        self.save_project(project)
+        self.refresh_project_comic_images(project_id)
+        return self.get_project(project_id) or project
+
 

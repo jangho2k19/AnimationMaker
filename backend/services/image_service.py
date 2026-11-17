@@ -35,7 +35,8 @@ class ImageService:
         p = re.sub(r"['‘][^'’]{2,}['’]", '', p)
         # Remove dialogue markers and speech bubble requests
         p = re.sub(r'(?i)[,.]?\s*(?:Bong bóng thoại truyện tranh|Hộp dẫn truyện tranh \(Caption\)|Comic speech bubble|Comic narrator caption box)[^.]*\.?', '', p)
-        p = re.sub(r'(?i)\b(?:speech bubble|dialogue bubble|thought bubble|speech balloon|comic bubble|text bubble)\b', '', p)
+        p = re.sub(r'(?i),?\s*upper headroom for speech balloons?\b', '', p)
+        p = re.sub(r'(?i)\b(?:speech|dialogue|thought|comic|text)\s+(?:bubbles?|balloons?)\b', '', p)
         p = re.sub(r'(?i)\b(?:nói rằng|cất tiếng nói|nói với|bảo rằng|lời nói|says|saying)\b[:\s]*', '', p)
         # Preserve full detailed visual prompts (up to 2000 chars) so character actions, animals (e.g. golden-brown cow),
         # and key props (e.g. bamboo sleeping cot) are never cut off mid-sentence!
@@ -226,6 +227,115 @@ class ImageService:
             lines.append(" ".join(cur))
         return lines
 
+    @staticmethod
+    def _clean_ai_blank_top_balloon(base_img: Image.Image) -> Image.Image:
+        """
+        If an AI image generator accidentally drew an empty white speech balloon at the top edge
+        of the base image, seamlessly inpaints it by stretching and feather-blending the natural
+        background strip immediately below the balloon.
+        """
+        try:
+            import numpy as np
+            from PIL import ImageFilter
+            rgb_img = base_img.convert("RGB")
+            arr = np.array(rgb_img, dtype=np.uint8)
+            h, w, _ = arr.shape
+            top_h = int(h * 0.24)
+            top_region = arr[:top_h, :, :]
+            luma_top = 0.299 * top_region[:, :, 0] + 0.587 * top_region[:, :, 1] + 0.114 * top_region[:, :, 2]
+            white_mask = (top_region[:, :, 0] > 240) & (top_region[:, :, 1] > 240) & (top_region[:, :, 2] > 240)
+            if np.mean(white_mask[:int(h * 0.12), :]) < 0.50:
+                return base_img
+
+            # Verify it is genuinely an AI-drawn blank speech balloon (which has a dark ink border beneath the white fill),
+            # NOT a natural white sky (like scene_4).
+            non_w = luma_top < 240
+            first_y = np.argmax(non_w, axis=0)
+            cols = np.arange(w)
+            fy_probe = np.clip(first_y + 1, 0, top_h - 1)
+            is_ink_border = (first_y > int(h * 0.05)) & (first_y < int(h * 0.22)) & (luma_top[fy_probe, cols] < 75)
+            if np.mean(is_ink_border) < 0.45:
+                return base_img
+
+            # Build an exact mask covering only the white balloon + its black outline per column (zero horizontal cutoff)
+            yy = np.arange(top_h)[:, None]
+            balloon_and_ink = (yy <= (first_y[None, :] + 10)) & (first_y[None, :] > int(h * 0.04))
+            mask_pil = Image.fromarray((balloon_and_ink.astype(np.uint8) * 255), mode="L")
+            mask_pil = mask_pil.filter(ImageFilter.MaxFilter(9))
+            mask_pil = mask_pil.filter(ImageFilter.GaussianBlur(radius=5))
+            alpha = (np.array(mask_pil, dtype=np.float32)[:, :, None] / 255.0).clip(0.0, 1.0)
+
+            # Sample clean sky/background pixels just below the balloon border for each column
+            sample_y = np.clip(first_y + 16, 0, h - 1)
+            col_samples = arr[sample_y, cols, :].astype(np.float32)
+            col_luma = 0.299 * col_samples[:, 0] + 0.587 * col_samples[:, 1] + 0.114 * col_samples[:, 2]
+            valid_cols = col_luma > 150
+            if np.any(valid_cols):
+                median_sky = np.median(col_samples[valid_cols], axis=0)
+                col_samples[~valid_cols] = median_sky
+            else:
+                col_samples[:] = np.array([224.0, 218.0, 208.0], dtype=np.float32)
+
+            sky_row_img = Image.fromarray(col_samples[None, :, :].clip(0, 255).astype(np.uint8), mode="RGB")
+            sky_strip = sky_row_img.resize((w, top_h), Image.Resampling.BICUBIC).filter(ImageFilter.GaussianBlur(radius=16))
+            sky_arr = np.array(sky_strip, dtype=np.float32)
+
+            blended = (top_region.astype(np.float32) * (1.0 - alpha) + sky_arr * alpha).clip(0, 255).astype(np.uint8)
+            arr[:top_h, :, :] = blended
+            return Image.fromarray(arr, mode="RGB")
+        except Exception:
+            return base_img
+
+    @staticmethod
+    def _locate_character_heads(base_img: Image.Image) -> list:
+        """
+        Detects character face/head regions `(face_x, face_y, top_head_y)` in normalized `[0..1]`
+        coordinates so speech bubbles can be placed right next to or above the speaking character
+        WITHOUT covering any character's face.
+        """
+        try:
+            import numpy as np
+            small = base_img.convert("RGB").resize((96, 128), Image.Resampling.BILINEAR)
+            arr = np.array(small, dtype=np.int16)
+            r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+
+            # Warm skin-tone mask typical of comic/anime faces
+            skin = (
+                (r > 135) & (r < 248) &
+                (g > 85) & (b > 55) &
+                ((r - g) >= 10) & ((g - b) >= -5) &
+                ((r - b) >= 28) & ((r - b) <= 130)
+            )
+            y0, y1 = int(128 * 0.14), int(128 * 0.56)
+            x0, x1 = int(96 * 0.08), int(96 * 0.92)
+            sub = skin[y0:y1, x0:x1]
+
+            if np.sum(sub) < 12:
+                return [(0.55, 0.28, 0.20), (0.35, 0.34, 0.25)]
+
+            mid_x = (x1 - x0) // 2
+            anchors = []
+            for hx0, hx1 in [(0, mid_x), (mid_x, x1 - x0)]:
+                h_sub = sub[:, hx0:hx1]
+                cnt = int(np.sum(h_sub))
+                if cnt >= 10:
+                    ys, xs = np.where(h_sub)
+                    # Top of forehead is ~8th percentile of skin y; hair extends ~0.05 above forehead
+                    forehead_y = (y0 + float(np.percentile(ys, 8))) / 128.0
+                    face_y = (y0 + float(np.percentile(ys, 22))) / 128.0
+                    top_head_y = max(0.10, forehead_y - 0.055)
+                    # Find x of the upper face rows (not arms/hands lower down)
+                    upper_mask = ys <= np.percentile(ys, 35)
+                    face_x = (x0 + hx0 + float(np.median(xs[upper_mask]))) / 96.0
+                    anchors.append((cnt, face_x, face_y, top_head_y))
+
+            if anchors:
+                anchors.sort(key=lambda item: (item[2] - item[0] * 0.0004))
+                return [(ax, ay, ty) for (_, ax, ay, ty) in anchors]
+        except Exception:
+            pass
+        return [(0.55, 0.28, 0.20), (0.35, 0.34, 0.25)]
+
     def render_comic_overlay(
         self,
         img: Image.Image,
@@ -234,15 +344,18 @@ class ImageService:
         prompt: str = "",
         title: str = "",
         scene_idx: int = 0,
-        dialogue_only: bool = False
+        dialogue_only: bool = False,
+        enable_image_captions: bool = True
     ) -> Image.Image:
         """
-        Renders graphic-novel panel borders, a top-left comic narrator caption box (if applicable),
-        and crisp comic-book speech balloons with speaker badges and directional pointer tails
-        directly onto the scene image. Uses 2x supersampling for razor-sharp anti-aliased ink lines.
+        Renders graphic-novel panel borders, an optional top comic narrator caption box
+        (controlled by `enable_image_captions`), and large, legible comic-book speech balloons
+        positioned right near the speaking character with directional pointer tails.
         """
         import unicodedata
-        base = img.convert("RGBA")
+        cleaned_rgb = self._clean_ai_blank_top_balloon(img)
+        head_anchors = self._locate_character_heads(cleaned_rgb)
+        base = cleaned_rgb.convert("RGBA")
         w, h = base.size
 
         def _norm_vn(s: str) -> str:
@@ -271,6 +384,10 @@ class ImageService:
         for s in segs:
             spk = _norm_vn(s.get("speaker") or "Narrator")
             txt = _norm_vn(s.get("text") or "").strip('"“”')
+            # If a narrator line actually starts with a dialogue dash (– or -), treat it as character dialogue
+            if spk.lower() in narrator_aliases and re.match(r'^[–\-—]\s*\S', txt):
+                txt = re.sub(r'^[–\-—]\s*', '', txt).strip()
+                spk = "Character"
             if not txt:
                 continue
             if spk.lower() in narrator_aliases:
@@ -295,6 +412,20 @@ class ImageService:
                 else:
                     char_bubbles.append((cand_spk, cand_txt))
 
+        # Infer actual character name from `prompt` or `title` when speaker is generic "Character"
+        if char_bubbles and prompt:
+            resolved_bubbles = []
+            for spk, txt in char_bubbles:
+                if spk.lower() in ("character", "nhân vật"):
+                    m_focus = re.search(
+                        r'(?:focus(?:ing|ed)?\s+(?:directly\s+)?on|Close-Up\s+Shot\s+of|Shot\s+of)\s+([A-ZÀ-Ỹ][A-Za-zÀ-ỹ]+(?:\s+[A-ZÀ-Ỹ][A-Za-zÀ-ỹ]+)?)',
+                        prompt
+                    )
+                    if m_focus and m_focus.group(1).lower() not in ("the", "character", "medium", "wide", "extreme"):
+                        spk = _norm_vn(m_focus.group(1))
+                resolved_bubbles.append((spk, txt))
+            char_bubbles = resolved_bubbles
+
         # 2x supersampled overlay canvas for anti-aliased comic ink lines and speech balloons
         scale = 2
         W, H = w * scale, h * scale
@@ -312,32 +443,29 @@ class ImageService:
             width=ink_w
         )
 
-        # Place caption boxes and speech balloons in the upper panel headroom (above character faces)
         margin_x = gutter + ink_w + int(W * (0.035 if is_portrait else 0.030))
         margin_y = gutter + ink_w + int(H * (0.018 if is_portrait else 0.024))
         usable_w = max(200, W - margin_x * 2)
-        cursor_top_left_y = margin_y
+        cursor_top_y = margin_y
 
-        # 2. Optional Top Golden Comic Narrative Caption Box
-        # Show when there are no character speech bubbles, or when there is 1 character bubble and a concise narrator setup
-        show_caption = (not dialogue_only) and bool(narr_lines) and (len(char_bubbles) == 0 or len(char_bubbles) == 1)
+        # 2. Optional Top Golden Comic Narrative Caption Box (controlled by `enable_image_captions`)
+        show_caption = bool(enable_image_captions) and (not dialogue_only) and bool(narr_lines) and (len(char_bubbles) == 0 or len(char_bubbles) == 1)
         if show_caption:
             cap_text = _norm_vn(" ".join(narr_lines))
             cap_words = cap_text.split()
             max_cap_words = 50 if len(char_bubbles) == 0 else 18
             if len(cap_words) > max_cap_words:
                 candidate_cut = " ".join(cap_words[:max_cap_words])
-                # Prefer cutting at sentence or clause boundary so phrases never end with "nổi danh là..."
                 m_punct = re.search(r'^(.+[.!?;,])\s+\S+$', candidate_cut)
                 if m_punct and len(m_punct.group(1).split()) >= int(max_cap_words * 0.6):
                     cap_text = m_punct.group(1).rstrip(" ,;:-") + ("..." if not m_punct.group(1).endswith((".", "!", "?")) else "")
                 else:
                     cap_text = candidate_cut.rstrip(" ,;:-") + "..."
-            cap_font_size = max(20, int(min(W, H) * (0.023 if len(char_bubbles) == 0 else 0.020)))
+            cap_font_size = max(24, int(min(W, H) * (0.027 if len(char_bubbles) == 0 else 0.024)))
             cap_font = self._load_comic_font(cap_font_size, bold=True)
-            max_cap_box_w = min(usable_w, int(W * (0.90 if is_portrait else (0.76 if len(char_bubbles) == 0 else 0.54))))
+            max_cap_box_w = min(usable_w, int(W * (0.90 if is_portrait else (0.78 if len(char_bubbles) == 0 else 0.58))))
             pad_x = int(cap_font_size * 0.72)
-            pad_y = int(cap_font_size * 0.48)
+            pad_y = int(cap_font_size * 0.50)
             cap_lines = self._wrap_comic_text(draw, cap_text, cap_font, max_cap_box_w - pad_x * 2)
             if cap_lines:
                 line_h = int(cap_font_size * 1.34)
@@ -347,9 +475,8 @@ class ImageService:
                 )
                 box_w = min(max_cap_box_w, measured_w + pad_x * 2)
                 box_h = len(cap_lines) * line_h + pad_y * 2
-                # Center horizontally in portrait 9:16 mode or when no speech bubbles exist
                 bx0 = (W - box_w) // 2 if (is_portrait or len(char_bubbles) == 0) else margin_x
-                by0 = cursor_top_left_y
+                by0 = cursor_top_y
                 bx1, by1 = bx0 + box_w, by0 + box_h
                 sh_off = max(6, int(ink_w * 1.4))
 
@@ -357,16 +484,15 @@ class ImageService:
                 draw.rectangle([bx0 + sh_off, by0 + sh_off, bx1 + sh_off, by1 + sh_off], fill=(15, 23, 42, 195))
                 # Classic golden-yellow comic caption box with bold black ink frame
                 draw.rectangle([bx0, by0, bx1, by1], fill=(254, 240, 138, 246), outline=(15, 23, 42, 255), width=ink_w)
-                # Subtle inner highlight border
                 draw.rectangle([bx0 + ink_w + 2, by0 + ink_w + 2, bx1 - ink_w - 2, by1 - ink_w - 2], outline=(217, 119, 6, 120), width=2)
 
                 ty = by0 + pad_y
                 for ln in cap_lines:
                     draw.text((bx0 + pad_x, ty), ln, font=cap_font, fill=(15, 23, 42, 255))
                     ty += line_h
-                cursor_top_left_y = by1 + int(H * 0.025)
+                cursor_top_y = by1 + int(H * 0.020)
 
-        # 3. Character Comic Speech Bubbles (up to 3 turns in natural comic reading order)
+        # 3. Character Comic Speech Bubbles — Large Legible Dialogue Text Positioned Near the Speaking Character
         speaker_palette = [
             (220, 38, 38),   # Hero Red
             (37, 99, 235),   # Comic Blue
@@ -378,35 +504,39 @@ class ImageService:
 
         bubbles_to_draw = char_bubbles[:3]
         num_b = len(bubbles_to_draw)
-        for b_idx, (spk_raw, b_text) in enumerate(bubbles_to_draw):
-            b_text = _norm_vn(b_text)
-            b_words = b_text.split()
-            if len(b_words) > 28:
-                b_text = " ".join(b_words[:28]).rstrip(" ,;:-") + "..."
+        prev_bubble_bottom = cursor_top_y
 
-            # Scale font cleanly to text length and panel size
-            if len(b_words) <= 8:
-                f_ratio = 0.028
-            elif len(b_words) <= 18:
-                f_ratio = 0.024
+        for b_idx, (spk_raw, b_text) in enumerate(bubbles_to_draw):
+            b_text = _norm_vn(b_text).lstrip("–-— ").strip()
+            b_words = b_text.split()
+            if len(b_words) > 30:
+                b_text = " ".join(b_words[:30]).rstrip(" ,;:-") + "..."
+
+            # Larger, bold comic dialogue typography
+            if len(b_words) <= 6:
+                f_ratio = 0.045
+            elif len(b_words) <= 12:
+                f_ratio = 0.040
+            elif len(b_words) <= 20:
+                f_ratio = 0.035
             else:
-                f_ratio = 0.021
+                f_ratio = 0.030
             if num_b >= 3:
                 f_ratio *= 0.88
 
-            font_size = max(22, int(min(W, H) * f_ratio))
+            font_size = max(32, int(min(W, H) * f_ratio))
             body_font = self._load_comic_font(font_size, bold=True)
-            tag_font_size = max(17, int(font_size * 0.72))
+            tag_font_size = max(22, int(font_size * 0.68))
             tag_font = self._load_comic_font(tag_font_size, bold=True)
 
-            max_b_w = min(usable_w, int(W * (0.78 if is_portrait else (0.52 if num_b == 1 else 0.44))))
-            pad_x = int(font_size * 0.88)
-            pad_y = int(font_size * 0.70)
+            max_b_w = min(usable_w, int(W * (0.84 if is_portrait else (0.58 if num_b == 1 else 0.48))))
+            pad_x = int(font_size * 0.78)
+            pad_y = int(font_size * 0.62)
             lines = self._wrap_comic_text(draw, b_text, body_font, max_b_w - pad_x * 2)
             if not lines:
                 continue
 
-            line_h = int(font_size * 1.34)
+            line_h = int(font_size * 1.32)
             text_w = max(
                 (draw.textbbox((0, 0), ln, font=body_font)[2] - draw.textbbox((0, 0), ln, font=body_font)[0])
                 for ln in lines
@@ -418,58 +548,79 @@ class ImageService:
             if show_spk_tag:
                 spk_upper = spk_display.upper()
                 tb = draw.textbbox((0, 0), spk_upper, font=tag_font)
-                tag_w = (tb[2] - tb[0]) + int(tag_font_size * 1.3)
-                tag_h = int(tag_font_size * 1.55)
+                tag_w = (tb[2] - tb[0]) + int(tag_font_size * 1.25)
+                tag_h = int(tag_font_size * 1.50)
 
-            bubble_w = max(text_w + pad_x * 2, tag_w + pad_x * 2, int(W * 0.18))
+            bubble_w = max(text_w + pad_x * 2, tag_w + pad_x * 2, int(W * 0.22))
             bubble_w = min(bubble_w, max_b_w)
-            bubble_h = len(lines) * line_h + pad_y * 2 + (int(tag_h * 0.35) if show_spk_tag else 0)
+            bubble_h = len(lines) * line_h + pad_y * 2 + (int(tag_h * 0.30) if show_spk_tag else 0)
 
-            # Determine non-overlapping comic panel position & tail direction within safe margins
+            # Locate the speaking character's head `(head_px_x, face_px_y, top_head_px_y)` so the bubble sits right near the speaker WITHOUT covering their face
+            anchor_rel_x, anchor_rel_y, top_head_rel_y = head_anchors[min(b_idx, len(head_anchors) - 1)]
+            head_px_x = int(anchor_rel_x * W)
+            face_px_y = int(anchor_rel_y * H)
+            top_head_px_y = int(top_head_rel_y * H)
+            tail_h = max(36, int(font_size * 1.15))
+            tail_half_w = max(20, int(font_size * 0.58))
+
             if b_idx == 0:
-                bx0 = (W - bubble_w) // 2 if (is_portrait and num_b == 1) else margin_x
-                by0 = cursor_top_left_y + (int(tag_h * 0.55) if show_spk_tag else 0)
-                tail_dir = "down_right"
+                min_by0 = prev_bubble_bottom + (int(tag_h * 0.55) if show_spk_tag else 0)
+                # Case A: Speaker is on the right side (e.g. x > 0.62) and open sky exists to the left of their head
+                if anchor_rel_x > 0.62 and (head_px_x - int(W * 0.12) - bubble_w) >= margin_x:
+                    bx0 = max(margin_x, head_px_x - int(W * 0.13) - bubble_w)
+                    # Place vertically right beside the upper head/forehead (above any second lower character)
+                    second_top_y = int(head_anchors[1][2] * H) if len(head_anchors) > 1 else int(H * 0.34)
+                    ideal_by1 = min(face_px_y + int(H * 0.01), second_top_y - int(H * 0.02))
+                    by0 = max(min_by0, min(ideal_by1 - bubble_h, int(H * 0.20)))
+                    tail_dir = "side_right_toward_head"
+                else:
+                    # Case B: Place directly above the speaking character's head (`by1 <= top_head_px_y`)
+                    ideal_by1 = top_head_px_y - tail_h - int(H * 0.008)
+                    by0 = max(min_by0, min(ideal_by1 - bubble_h, int(H * 0.16)))
+                    ideal_bx0 = head_px_x - int(bubble_w * 0.50)
+                    bx0 = max(margin_x, min(W - margin_x - bubble_w, ideal_bx0))
+                    tail_dir = "down_toward_head"
             elif b_idx == 1:
-                bx0 = W - margin_x - bubble_w
-                by0 = margin_y + int(H * 0.06) + (int(tag_h * 0.55) if show_spk_tag else 0)
-                # Ensure vertical separation if horizontally overlapping with Bubble 1
-                if bx0 < margin_x + bubble_w + int(W * 0.03):
-                    by0 = max(by0, cursor_top_left_y + int(H * 0.03))
-                tail_dir = "down_left"
+                bx0 = W - margin_x - bubble_w if anchor_rel_x >= 0.45 else margin_x
+                by0 = max(prev_bubble_bottom + int(H * 0.022) + (int(tag_h * 0.55) if show_spk_tag else 0), int(H * 0.15))
+                tail_dir = "down_toward_head"
             else:
                 bx0 = margin_x
                 by0 = H - margin_y - bubble_h - int(H * 0.045)
-                tail_dir = "up_right"
+                tail_dir = "up_toward_head"
 
             bx1 = bx0 + bubble_w
             by1 = by0 + bubble_h
-            radius = max(22, int(min(bubble_w, bubble_h) * 0.28))
+            radius = max(24, int(min(bubble_w, bubble_h) * 0.28))
             sh_off = max(7, int(ink_w * 1.5))
 
-            # Build pointer tail triangle coordinates
-            tail_h = max(26, int(font_size * 1.15))
-            tail_half_w = max(16, int(font_size * 0.65))
-            if tail_dir == "down_right":
-                base_cx = bx0 + int(bubble_w * 0.32)
+            # Build pointer tail aimed directly toward the speaking character's head/mouth
+            if tail_dir == "side_right_toward_head":
+                base_cy = max(by0 + radius + tail_half_w, min(by1 - radius - tail_half_w, int(by0 + bubble_h * 0.62)))
+                tip_x = min(head_px_x - int(W * 0.05), bx1 + int(tail_h * 1.25))
+                tip_y = max(by0 + int(bubble_h * 0.45), min(by1 + tail_h, face_px_y))
+                tail_poly = [
+                    (bx1 - ink_w, base_cy - tail_half_w),
+                    (bx1 - ink_w, base_cy + tail_half_w),
+                    (tip_x, tip_y)
+                ]
+            elif tail_dir == "down_toward_head":
+                base_cx = max(bx0 + radius + tail_half_w, min(bx1 - radius - tail_half_w, int(bx0 + (head_px_x - bx0) * 0.65)))
+                tip_x = max(bx0 + 10, min(bx1 + 45, base_cx + int((head_px_x - base_cx) * 0.50)))
+                tip_y = by1 + tail_h
                 tail_poly = [
                     (base_cx - tail_half_w, by1 - ink_w),
                     (base_cx + tail_half_w, by1 - ink_w),
-                    (base_cx + int(tail_half_w * 1.35), by1 + tail_h)
+                    (tip_x, tip_y)
                 ]
-            elif tail_dir == "down_left":
-                base_cx = bx0 + int(bubble_w * 0.68)
-                tail_poly = [
-                    (base_cx - tail_half_w, by1 - ink_w),
-                    (base_cx + tail_half_w, by1 - ink_w),
-                    (base_cx - int(tail_half_w * 1.35), by1 + tail_h)
-                ]
-            else:  # up_right
-                base_cx = bx0 + int(bubble_w * 0.30)
+            else:
+                base_cx = bx0 + int(bubble_w * 0.35)
+                tip_x = base_cx + int(tail_half_w * 1.1)
+                tip_y = by0 - tail_h
                 tail_poly = [
                     (base_cx - tail_half_w, by0 + ink_w),
                     (base_cx + tail_half_w, by0 + ink_w),
-                    (base_cx + int(tail_half_w * 1.25), by0 - tail_h)
+                    (tip_x, tip_y)
                 ]
 
             shadow_tail = [(px + sh_off, py + sh_off) for (px, py) in tail_poly]
@@ -491,12 +642,18 @@ class ImageService:
                 outline=(15, 23, 42, 255),
                 width=ink_w
             )
-            # Re-fill interior of tail + seam so balloon and tail merge seamlessly without an inner border line
-            inner_seam_poly = [
-                (tail_poly[0][0] + ink_w // 2, tail_poly[0][1]),
-                (tail_poly[1][0] - ink_w // 2, tail_poly[1][1]),
-                tail_poly[2]
-            ]
+            if tail_dir == "side_right_toward_head":
+                inner_seam_poly = [
+                    (tail_poly[0][0], tail_poly[0][1] + ink_w // 2),
+                    (tail_poly[1][0], tail_poly[1][1] - ink_w // 2),
+                    tail_poly[2]
+                ]
+            else:
+                inner_seam_poly = [
+                    (tail_poly[0][0] + ink_w // 2, tail_poly[0][1]),
+                    (tail_poly[1][0] - ink_w // 2, tail_poly[1][1]),
+                    tail_poly[2]
+                ]
             draw.polygon(inner_seam_poly, fill=(255, 255, 255, 252))
 
             # Layer C: Speaker Name Pill Badge on top rim of speech balloon
@@ -506,11 +663,11 @@ class ImageService:
                 if spk_key not in speaker_color_map:
                     speaker_color_map[spk_key] = speaker_palette[len(speaker_color_map) % len(speaker_palette)]
                 badge_rgb = speaker_color_map[spk_key]
-                tx0 = bx0 + int(radius * 0.65)
+                tx0 = bx0 + int(radius * 0.60)
                 ty0 = by0 - int(tag_h * 0.52)
                 tx1 = tx0 + tag_w
                 ty1 = ty0 + tag_h
-                tag_rad = max(10, tag_h // 2)
+                tag_rad = max(12, tag_h // 2)
                 draw.rounded_rectangle(
                     [tx0, ty0, tx1, ty1],
                     radius=tag_rad,
@@ -528,9 +685,9 @@ class ImageService:
                     font=tag_font,
                     fill=(255, 255, 255, 255)
                 )
-                text_start_y += int(tag_h * 0.25)
+                text_start_y += int(tag_h * 0.22)
 
-            # Layer D: Dialogue Text inside speech balloon
+            # Layer D: Large Bold Dialogue Text inside speech balloon
             curr_y = text_start_y
             for ln in lines:
                 lb = draw.textbbox((0, 0), ln, font=body_font)
@@ -539,8 +696,7 @@ class ImageService:
                 draw.text((lx, curr_y), ln, font=body_font, fill=(15, 23, 42, 255))
                 curr_y += line_h
 
-            if b_idx == 0:
-                cursor_top_left_y = by1 + tail_h + int(H * 0.02)
+            prev_bubble_bottom = by1 + tail_h
 
         # Downscale 2x supersampled overlay onto base image with LANCZOS filter
         smooth_overlay = overlay.resize((w, h), Image.Resampling.LANCZOS)
@@ -555,7 +711,8 @@ class ImageService:
         prompt: str = "",
         title: str = "",
         scene_idx: int = 0,
-        dialogue_only: bool = False
+        dialogue_only: bool = False,
+        enable_image_captions: bool = True
     ) -> str:
         """
         Ensures a clean `_base.jpg` copy of `image_path` is preserved, then renders
@@ -576,7 +733,8 @@ class ImageService:
                 prompt=prompt,
                 title=title,
                 scene_idx=scene_idx,
-                dialogue_only=dialogue_only
+                dialogue_only=dialogue_only,
+                enable_image_captions=enable_image_captions
             )
             comic_img.save(image_path, "JPEG", quality=95)
         return image_path
@@ -609,7 +767,8 @@ class ImageService:
         camera_on_speaker: bool = False,
         dialogues: list = None,
         narration: str = "",
-        dialogue_only: bool = False
+        dialogue_only: bool = False,
+        enable_image_captions: bool = True
     ) -> str:
         """
         Scene visual generation pipeline:
@@ -649,7 +808,8 @@ class ImageService:
                     prompt=prompt,
                     title=title,
                     scene_idx=scene_idx,
-                    dialogue_only=dialogue_only
+                    dialogue_only=dialogue_only,
+                    enable_image_captions=enable_image_captions
                 )
             return saved_path
 

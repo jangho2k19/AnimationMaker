@@ -70,7 +70,7 @@ ART_STYLES = {
     "comic": {
         "name": "Comic Book (Dialogue in Image)",
         "description": "Bold ink contours, halftone shading & comic speech bubbles with dialogue text in images",
-        "prompt_suffix": ", modern comic book graphic novel panel illustration, bold inked outlines, vibrant halftone pop-art colors, dynamic comic framing with upper headroom for speech balloons, into the spiderverse comic book style, expressive comic characters, masterpiece graphic novel art",
+        "prompt_suffix": ", modern comic book graphic novel panel illustration, bold inked outlines, vibrant halftone pop-art colors, dynamic comic framing with clean spacious upper background, into the spiderverse comic book style, expressive comic characters, masterpiece graphic novel art",
         "icon": "💬"
     },
     "stick_figure": {

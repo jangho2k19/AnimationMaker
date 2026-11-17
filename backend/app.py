@@ -51,6 +51,7 @@ class CreateStoryRequest(BaseModel):
     enable_multivoice: bool = True
     camera_on_speaker: bool = False
     director_skill: str = "auto"
+    enable_image_captions: bool = True
 
 class AnalyzeStoryboardInputRequest(BaseModel):
     mode: str = "story"  # "story" | "paste" | "advertisement"
@@ -85,6 +86,7 @@ class ImportStoryRequest(BaseModel):
     enable_multivoice: bool = True
     camera_on_speaker: bool = False
     director_skill: str = "auto"
+    enable_image_captions: bool = True
 
 class SetCharacterVoiceRequest(BaseModel):
     character_name: str
@@ -94,6 +96,9 @@ class ToggleMultivoiceRequest(BaseModel):
     enable: Optional[bool] = None
 
 class ToggleSpeakerCameraRequest(BaseModel):
+    enable: Optional[bool] = None
+
+class ToggleImageCaptionsRequest(BaseModel):
     enable: Optional[bool] = None
 
 class SetArtStyleRequest(BaseModel):
@@ -602,7 +607,8 @@ async def create_story(req: CreateStoryRequest):
             enable_subtitles=req.enable_subtitles,
             enable_multivoice=req.enable_multivoice,
             camera_on_speaker=req.camera_on_speaker,
-            director_skill=req.director_skill or "auto"
+            director_skill=req.director_skill or "auto",
+            enable_image_captions=req.enable_image_captions
         )
         if is_auto_pacing:
             project["pacing_mode"] = "auto"
@@ -1366,6 +1372,19 @@ async def set_project_art_style(project_id: str, req: SetArtStyleRequest):
     updated = pipeline.set_project_art_style(project_id, new_style)
     return {"status": "ok", "art_style": new_style, "project": updated}
 
+@app.post("/api/projects/{project_id}/toggle-image-captions")
+async def toggle_project_image_captions(project_id: str, req: Optional[ToggleImageCaptionsRequest] = None):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    enable_val = req.enable if req is not None else None
+    updated = pipeline.toggle_image_captions(project_id, enable=enable_val)
+    return {
+        "status": "ok",
+        "enable_image_captions": bool(updated.get("enable_image_captions", True)),
+        "project": updated
+    }
+
 @app.post("/api/projects/{project_id}/set-character-voice")
 async def set_project_character_voice(project_id: str, req: SetCharacterVoiceRequest):
     if not req.character_name or not req.voice_id:
@@ -1427,7 +1446,8 @@ async def upload_scene_image(project_id: str, scene_idx: int, file: UploadFile =
             prompt=scene.get("visual_prompt", ""),
             title=scene.get("title", f"Scene {scene_idx + 1}"),
             scene_idx=scene_idx,
-            dialogue_only=bool(scene.get("dialogue_only", False))
+            dialogue_only=bool(scene.get("dialogue_only", False)),
+            enable_image_captions=bool(project.get("enable_image_captions", True))
         )
     scene["image_path"] = str(img_path.relative_to(OUTPUT_DIR)).replace("\\", "/")
     pipeline.save_project(project)
