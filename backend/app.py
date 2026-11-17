@@ -52,6 +52,8 @@ class CreateStoryRequest(BaseModel):
     camera_on_speaker: bool = False
     director_skill: str = "auto"
     enable_image_captions: bool = True
+    character_profiles: Optional[List[Dict[str, Any]]] = None
+    use_char_refs_in_video: bool = True
 
 class AnalyzeStoryboardInputRequest(BaseModel):
     mode: str = "story"  # "story" | "paste" | "advertisement"
@@ -87,10 +89,46 @@ class ImportStoryRequest(BaseModel):
     camera_on_speaker: bool = False
     director_skill: str = "auto"
     enable_image_captions: bool = True
+    character_profiles: Optional[List[Dict[str, Any]]] = None
+    use_char_refs_in_video: bool = True
 
 class SetCharacterVoiceRequest(BaseModel):
     character_name: str
-    voice_id: str
+    voice_id: str = ""
+
+class UpsertCharacterProfileRequest(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: Optional[str] = ""
+    voice_id: Optional[str] = ""
+    image_path: Optional[str] = None
+    role: Optional[str] = "character"
+
+class GenerateDraftCharacterPortraitRequest(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: Optional[str] = ""
+    art_style: str = "ghibli"
+    image_mode: str = "gemini"
+    ai_provider: Optional[str] = "gemini"
+    api_key: Optional[str] = None
+
+class GenerateCharacterImageRequest(BaseModel):
+    api_key: Optional[str] = None
+    ai_provider: Optional[str] = None
+    image_mode: Optional[str] = None
+
+class GenerateAllCharacterImagesRequest(BaseModel):
+    force_all: bool = False
+    api_key: Optional[str] = None
+    ai_provider: Optional[str] = None
+    image_mode: Optional[str] = None
+
+class SetSceneCharactersRequest(BaseModel):
+    character_ids: List[str]
+
+class ToggleVideoCharRefsRequest(BaseModel):
+    enable: Optional[bool] = None
 
 class ToggleMultivoiceRequest(BaseModel):
     enable: Optional[bool] = None
@@ -608,7 +646,9 @@ async def create_story(req: CreateStoryRequest):
             enable_multivoice=req.enable_multivoice,
             camera_on_speaker=req.camera_on_speaker,
             director_skill=req.director_skill or "auto",
-            enable_image_captions=req.enable_image_captions
+            enable_image_captions=req.enable_image_captions,
+            character_profiles=req.character_profiles,
+            use_char_refs_in_video=req.use_char_refs_in_video
         )
         if is_auto_pacing:
             project["pacing_mode"] = "auto"
@@ -670,19 +710,24 @@ async def import_story(req: ImportStoryRequest):
             enable_subtitles=req.enable_subtitles,
             num_scenes=len(story_data["scenes"]),
             enable_multivoice=req.enable_multivoice,
-            camera_on_speaker=req.camera_on_speaker
+            camera_on_speaker=req.camera_on_speaker,
+            enable_image_captions=req.enable_image_captions,
+            character_profiles=req.character_profiles,
+            use_char_refs_in_video=req.use_char_refs_in_video
         )
         project["title"] = req.title or story_data.get("title", "Imported Animated Story")
         project["logline"] = story_data.get("logline", "")
-        project["characters"] = story_data.get("characters", "")
+        if not project.get("characters") and story_data.get("characters"):
+            project["characters"] = story_data.get("characters", "")
         project["scenes"] = story_data["scenes"]
         project["character_voices"] = ScriptAgent.auto_assign_character_voices(
             characters_str=project.get("characters", ""),
             scenes=project.get("scenes", []),
             language="vi" if any(ord(c) > 127 for c in req.text) else "en",
             narrator_voice=project.get("voice"),
-            existing_voices=None
+            existing_voices=project.get("character_voices")
         )
+        custom_pipeline.sync_character_profiles(project, sync_back_string=True)
         project["status"] = "storyboard_ready"
         project["progress"] = 30
         project["current_step"] = "AI Storyboard imported and ready for review"
@@ -971,9 +1016,12 @@ async def update_scenes(project_id: str, req: UpdateScenesRequest):
                 if old_dir.exists() and not new_dir.exists():
                     os.rename(old_dir, new_dir)
                     for sc in project.get("scenes", []):
-                        for k in ["image_path", "audio_path", "srt_path"]:
+                        for k in ["image_path", "audio_path", "srt_path", "video_path"]:
                             if sc.get(k):
                                 sc[k] = sc[k].replace(f"projects/{project_id}/", f"projects/{new_id}/")
+                    for prof in project.get("character_profiles", []):
+                        if isinstance(prof, dict) and prof.get("image_path"):
+                            prof["image_path"] = prof["image_path"].replace(f"projects/{project_id}/", f"projects/{new_id}/")
                     project["id"] = new_id
                     project_id = new_id
             except Exception as e_rn:
@@ -1387,15 +1435,205 @@ async def toggle_project_image_captions(project_id: str, req: Optional[ToggleIma
 
 @app.post("/api/projects/{project_id}/set-character-voice")
 async def set_project_character_voice(project_id: str, req: SetCharacterVoiceRequest):
-    if not req.character_name or not req.voice_id:
-        raise HTTPException(status_code=400, detail="Both character_name and voice_id are required")
+    if not req.character_name:
+        raise HTTPException(status_code=400, detail="character_name is required")
     try:
-        updated = pipeline.set_character_voice(project_id, req.character_name, req.voice_id)
+        updated = pipeline.set_character_voice(project_id, req.character_name, req.voice_id or "")
         return {"status": "ok", "character_voices": updated.get("character_voices", {}), "project": updated}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ====================================================================
+# CHARACTER STUDIO (IMAGES & OPTIONAL VOICES) ENDPOINTS
+# ====================================================================
+
+@app.post("/api/characters/upload-draft-portrait")
+async def upload_draft_character_portrait(file: UploadFile = File(...)):
+    """Uploads a Stage 1 pre-creation character portrait into character_staging/."""
+    staging_dir = Path(OUTPUT_DIR) / "character_staging"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    content = await read_upload_limited(file, MAX_IMAGE_UPLOAD_BYTES)
+    out_file = staging_dir / f"draft_{uuid.uuid4().hex[:10]}.jpg"
+    try:
+        pil_img = Image.open(io.BytesIO(content))
+        fitted = pipeline.image_service.fit_image_to_aspect_ratio(pil_img, 720, 960)
+        fitted.save(out_file, "JPEG", quality=92)
+    except Exception:
+        with open(out_file, "wb") as f_out:
+            f_out.write(content)
+    rel_path = str(out_file.relative_to(OUTPUT_DIR)).replace("\\", "/")
+    return {"status": "ok", "image_path": rel_path, "media_url": f"/media/{rel_path}"}
+
+@app.post("/api/characters/generate-draft-portrait")
+async def generate_draft_character_portrait(req: GenerateDraftCharacterPortraitRequest):
+    """Generates an AI character reference portrait in Stage 1 before creating the project."""
+    if not (req.name or "").strip():
+        raise HTTPException(status_code=400, detail="Character name is required")
+    staging_dir = Path(OUTPUT_DIR) / "character_staging"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    cid = re.sub(r'[^a-zA-Z0-9_\-]', '_', (req.id or AnimationPipeline._char_slug(req.name)))
+    out_file = staging_dir / f"{cid}_{uuid.uuid4().hex[:6]}.jpg"
+    try:
+        await pipeline.image_service.generate_character_portrait(
+            name=req.name.strip(),
+            description=(req.description or "").strip(),
+            output_path=str(out_file),
+            style_key=req.art_style or "ghibli",
+            width=720,
+            height=960,
+            image_mode=req.image_mode or "gemini",
+            api_key=req.api_key or pipeline.api_key,
+            provider=req.ai_provider or pipeline.ai_provider
+        )
+        rel_path = str(out_file.relative_to(OUTPUT_DIR)).replace("\\", "/")
+        return {"status": "ok", "image_path": rel_path, "media_url": f"/media/{rel_path}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/projects/{project_id}/characters")
+async def list_project_characters(project_id: str):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    profiles = pipeline.sync_character_profiles(project, sync_back_string=False)
+    return {
+        "status": "ok",
+        "character_profiles": profiles,
+        "character_voices": project.get("character_voices", {}),
+        "project": project
+    }
+
+@app.post("/api/projects/{project_id}/characters")
+async def upsert_project_character(project_id: str, req: UpsertCharacterProfileRequest):
+    try:
+        updated = pipeline.upsert_character_profile(project_id, req.model_dump())
+        return {
+            "status": "ok",
+            "character_profiles": updated.get("character_profiles", []),
+            "project": updated
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/projects/{project_id}/characters/{char_id}")
+async def delete_project_character(project_id: str, char_id: str):
+    try:
+        updated = pipeline.delete_character_profile(project_id, char_id)
+        return {
+            "status": "ok",
+            "character_profiles": updated.get("character_profiles", []),
+            "project": updated
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/characters/{char_id}/generate-image")
+async def generate_project_character_image(project_id: str, char_id: str, req: Optional[GenerateCharacterImageRequest] = None):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if req:
+        if req.api_key:
+            project["api_key"] = req.api_key
+        if req.ai_provider:
+            project["ai_provider"] = req.ai_provider
+        if req.image_mode:
+            project["image_mode"] = req.image_mode
+        pipeline.save_project(project)
+    try:
+        updated = await pipeline.generate_character_portrait(project_id, char_id)
+        return {
+            "status": "ok",
+            "character_profiles": updated.get("character_profiles", []),
+            "project": updated
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/characters/generate-all-images")
+async def generate_all_project_character_images(project_id: str, req: Optional[GenerateAllCharacterImagesRequest] = None):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if req:
+        if req.api_key:
+            project["api_key"] = req.api_key
+        if req.ai_provider:
+            project["ai_provider"] = req.ai_provider
+        if req.image_mode:
+            project["image_mode"] = req.image_mode
+        pipeline.save_project(project)
+    try:
+        updated = await pipeline.generate_all_character_portraits(project_id, force_all=bool(req.force_all if req else False))
+        return {
+            "status": "ok",
+            "character_profiles": updated.get("character_profiles", []),
+            "project": updated
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/characters/{char_id}/upload-image")
+async def upload_project_character_image(project_id: str, char_id: str, file: UploadFile = File(...)):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    profiles = pipeline.sync_character_profiles(project, sync_back_string=False)
+    target = next((p for p in profiles if p["id"] == char_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Character '{char_id}' not found")
+
+    p_dir = Path(OUTPUT_DIR) / "projects" / project_id
+    chars_dir = p_dir / "characters"
+    chars_dir.mkdir(parents=True, exist_ok=True)
+    out_path = chars_dir / f"{char_id}.jpg"
+    content = await read_upload_limited(file, MAX_IMAGE_UPLOAD_BYTES)
+    try:
+        pil_img = Image.open(io.BytesIO(content))
+        fitted = pipeline.image_service.fit_image_to_aspect_ratio(pil_img, 720, 960)
+        fitted.save(out_path, "JPEG", quality=92)
+    except Exception:
+        with open(out_path, "wb") as f_out:
+            f_out.write(content)
+
+    target["image_path"] = str(out_path.relative_to(OUTPUT_DIR)).replace("\\", "/")
+    project["character_profiles"] = profiles
+    pipeline.save_project(project)
+    return {
+        "status": "ok",
+        "image_path": target["image_path"],
+        "project": pipeline.get_project(project_id) or project
+    }
+
+@app.post("/api/projects/{project_id}/scenes/{scene_idx}/characters")
+async def set_project_scene_characters(project_id: str, scene_idx: int, req: SetSceneCharactersRequest):
+    try:
+        updated = pipeline.set_scene_characters(project_id, scene_idx, req.character_ids)
+        return {"status": "ok", "scene_idx": scene_idx, "project": updated}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/toggle-video-char-refs")
+async def toggle_project_video_char_refs(project_id: str, req: Optional[ToggleVideoCharRefsRequest] = None):
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    updated = pipeline.toggle_video_char_refs(project_id, enable=req.enable if req else None)
+    return {
+        "status": "ok",
+        "use_char_refs_in_video": bool(updated.get("use_char_refs_in_video", True)),
+        "project": updated
+    }
 
 @app.post("/api/projects/{project_id}/auto-cast-voices")
 async def auto_cast_project_voices(project_id: str):
@@ -1871,15 +2109,23 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
     scene = project["scenes"][scene_idx]
     p_dir = Path(OUTPUT_DIR) / "projects" / project_id
 
-    # Ensure scene image exists first
+    # Resolve matched character portrait reference sheets for this scene
+    char_refs = pipeline.resolve_scene_character_references(project, scene_idx)
+    use_char_refs = bool(project.get("use_char_refs_in_video", True))
+    char_img_paths = [c["path"] for c in char_refs] if (use_char_refs and char_refs) else []
+    char_names = [c["name"] for c in char_refs] if (use_char_refs and char_refs) else []
+
+    # Ensure scene image exists first (generated with character reference images!) unless in manual mode with char portraits ready
     img_path = p_dir / f"scene_{scene_idx + 1}.jpg"
     if not img_path.exists():
-        await pipeline.generate_scene_image(project_id, scene_idx)
-        project = pipeline.get_project(project_id)
-        scene = project["scenes"][scene_idx]
+        img_mode = (project.get("image_mode") or "gemini").lower()
+        if img_mode not in ("manual", "puter") or not char_img_paths:
+            await pipeline.generate_scene_image(project_id, scene_idx)
+            project = pipeline.get_project(project_id)
+            scene = project["scenes"][scene_idx]
 
     acting_out = p_dir / f"scene_{scene_idx + 1}_acting.mp4"
-    # Ensure director-grade professional cinematic prompt for Google Flow / Veo
+    # Ensure director-grade professional cinematic prompt for Google Flow / Veo / Omni R2V
     raw_prompt = scene.get("acting_prompt") or scene.get("visual_prompt") or scene.get("title") or "character action animation"
     prompt = ScriptAgent.professionalize_video_prompt(
         acting_prompt=raw_prompt,
@@ -1888,7 +2134,8 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
         camera_motion=scene.get("camera_motion", "zoom_in"),
         title=scene.get("title", f"Scene {scene_idx + 1}"),
         art_style=project.get("art_style", "ghibli"),
-        is_commercial=bool(scene.get("is_product_photo"))
+        is_commercial=bool(scene.get("is_product_photo")),
+        camera_on_speaker=bool(project.get("camera_on_speaker", False))
     )
     if prompt != scene.get("acting_prompt"):
         scene["acting_prompt"] = prompt
@@ -1904,11 +2151,14 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
 
     try:
         await flowkit.generate_acting_video(
-            image_path=str(img_path),
+            image_path=str(img_path) if img_path.exists() else None,
             prompt=prompt,
             output_video_path=str(acting_out),
             aspect_ratio=flow_aspect,
-            duration_s=8
+            duration_s=8,
+            character_image_paths=char_img_paths,
+            character_names=char_names,
+            video_engine="auto" if char_img_paths else "veo"
         )
     except Exception as e:
         raise HTTPException(502, f"FlowKit Veo generation error: {str(e)}")

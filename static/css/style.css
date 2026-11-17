@@ -4593,6 +4593,233 @@ body {
   flex-wrap: wrap;
 }
 
+/* ====================================================================
+   CHARACTER STUDIO (PORTRAIT IMAGE + OPTIONAL VOICE) STYLES
+   ==================================================================== */
+.stage1-char-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.stage1-char-card,
+.character-studio-card {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 10px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.stage1-char-card:hover,
+.character-studio-card:hover {
+  border-color: rgba(56, 189, 248, 0.42);
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.character-studio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(365px, 1fr));
+  gap: 10px;
+  max-height: 430px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.char-portrait-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 78px;
+  flex-shrink: 0;
+}
+
+.char-portrait-thumb-wrap {
+  position: relative;
+  width: 74px;
+  height: 98px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.char-portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.char-portrait-placeholder {
+  font-size: 26px;
+  opacity: 0.65;
+  user-select: none;
+}
+
+.char-portrait-btns {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+
+.char-mini-btn {
+  flex: 1;
+  padding: 3px 4px !important;
+  font-size: 10.5px !important;
+  height: 23px !important;
+  border-radius: 6px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.char-meta-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.char-meta-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.char-name-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px !important;
+  padding: 3px 8px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  color: #f8fafc !important;
+  background: rgba(30, 41, 59, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 6px !important;
+}
+
+.char-desc-input {
+  width: 100%;
+  height: 28px !important;
+  padding: 3px 8px !important;
+  font-size: 11.5px !important;
+  color: #cbd5e1 !important;
+  background: rgba(15, 23, 42, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 6px !important;
+}
+
+.char-voice-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.char-voice-row .char-voice-select {
+  flex: 1;
+  min-width: 0;
+  height: 28px !important;
+  font-size: 11px !important;
+}
+
+.char-status-chip {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.char-status-chip.ready {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.char-status-chip.missing {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.inline-add-char-form {
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.32);
+}
+
+.inline-add-char-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 2fr 1.3fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .inline-add-char-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Scene Card Character Reference Chips */
+.scene-char-refs-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.52);
+  border: 1px dashed rgba(56, 189, 248, 0.25);
+}
+
+.scene-char-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px 2px 3px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  cursor: pointer;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(30, 41, 59, 0.65);
+  color: #94a3b8;
+  transition: all 0.15s ease;
+}
+
+.scene-char-ref-chip.active {
+  border-color: rgba(16, 185, 129, 0.55);
+  background: rgba(16, 185, 129, 0.18);
+  color: #a7f3d0;
+  font-weight: 600;
+}
+
+.scene-char-ref-chip img {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+
 
 
 

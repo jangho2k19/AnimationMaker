@@ -88,6 +88,259 @@ class AnimationPipeline:
                 return f"{base_name} ({uuid.uuid4().hex[:8]})"
         return candidate
 
+    @staticmethod
+    def _char_slug(name: str) -> str:
+        """Creates a filesystem-safe, Unicode-friendly identifier slug for a character."""
+        import unicodedata
+        norm = unicodedata.normalize("NFKD", (name or "").strip())
+        ascii_only = "".join(c for c in norm if not unicodedata.combining(c))
+        ascii_only = ascii_only.replace("đ", "d").replace("Đ", "D")
+        slug = re.sub(r'[^a-zA-Z0-9]+', '_', ascii_only.lower()).strip('_')
+        return slug or f"char_{uuid.uuid4().hex[:6]}"
+
+    @staticmethod
+    def _parse_character_entries(characters_str: str) -> list:
+        """Parses a `Name: visual description | ...` string into structured dicts."""
+        entries = []
+        if not characters_str or not isinstance(characters_str, str):
+            return entries
+        generic_role_labels = {
+            "protagonist", "nhân vật chính", "companion", "creature", "antagonist",
+            "hero", "heroine", "villain", "sidekick", "mentor", "vai chính", "vai phụ"
+        }
+        ignored = {"narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character", "nhân vật", "none", ""}
+        for chunk in re.split(r'[|\n]+', characters_str):
+            raw = chunk.strip()
+            if not raw:
+                continue
+            name = ""
+            desc = ""
+            if ":" in raw:
+                left, right = raw.split(":", 1)
+                left_s = left.strip()
+                right_s = right.strip()
+                if left_s.lower() in generic_role_labels or re.match(r'^(?:character|nhân vật)\s*\d+$', left_s, re.IGNORECASE):
+                    m_sub = re.match(r'^([^,:\(\)\-]+)(?:[,:\-]\s*(.*))?$', right_s)
+                    if m_sub:
+                        name = m_sub.group(1).strip()
+                        desc = (m_sub.group(2) or "").strip()
+                    else:
+                        name = right_s
+                else:
+                    name = left_s
+                    desc = right_s
+            else:
+                m_plain = re.match(r'^([^,:\(\)\-]+)(?:[,:\-]\s*(.*))?$', raw)
+                if m_plain:
+                    name = m_plain.group(1).strip()
+                    desc = (m_plain.group(2) or "").strip()
+                else:
+                    name = raw
+            name = re.sub(r'^[\[\(]|[\)\]]$', '', name).strip()
+            if not name or name.lower() in ignored or len(name.split()) > 5:
+                continue
+            entries.append({"name": name, "description": desc})
+        return entries
+
+    def sync_character_profiles(self, project: Dict[str, Any], sync_back_string: bool = True) -> list:
+        """
+        Reconciles `project["character_profiles"]` with `characters`, `scenes[].dialogues`,
+        and `character_voices`, preserving any existing images, descriptions, and optional voices.
+        Also auto-recovers character portrait images stored in `projects/<id>/characters/`.
+        """
+        pid = project.get("id")
+        p_dir = safe_project_dir(pid) if pid else None
+        chars_dir = (p_dir / "characters") if p_dir else None
+
+        existing_profiles = project.get("character_profiles")
+        if not isinstance(existing_profiles, list):
+            existing_profiles = []
+
+        by_key = {}
+        ordered_profiles = []
+        used_ids = set()
+
+        def _make_unique_id(base_name: str, preferred_id: str = None) -> str:
+            cand = (preferred_id or f"char_{self._char_slug(base_name)}").strip()
+            cand = re.sub(r'[^a-zA-Z0-9_\-]', '_', cand) or f"char_{uuid.uuid4().hex[:6]}"
+            if cand not in used_ids:
+                used_ids.add(cand)
+                return cand
+            n = 2
+            while f"{cand}_{n}" in used_ids:
+                n += 1
+            uniq = f"{cand}_{n}"
+            used_ids.add(uniq)
+            return uniq
+
+        for prof in existing_profiles:
+            if not isinstance(prof, dict) or not (prof.get("name") or "").strip():
+                continue
+            p_name = prof["name"].strip()
+            if p_name.lower() in ("narrator", "người kể chuyện", "character"):
+                continue
+            cid = _make_unique_id(p_name, prof.get("id"))
+            img_rel = (prof.get("image_path") or "").replace("\\", "/").strip()
+            if img_rel and not (PROJECTS_DIR.parent / img_rel).exists():
+                img_rel = ""
+            if not img_rel and chars_dir and chars_dir.exists():
+                for ext in (".jpg", ".png", ".jpeg", ".webp"):
+                    cand_f = chars_dir / f"{cid}{ext}"
+                    if cand_f.exists():
+                        img_rel = str(cand_f.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                        break
+            item = {
+                "id": cid,
+                "name": p_name,
+                "description": (prof.get("description") or "").strip(),
+                "voice_id": (prof.get("voice_id") if prof.get("voice_id") is not None else ""),
+                "image_path": img_rel,
+                "role": prof.get("role") or "character"
+            }
+            by_key[p_name.lower()] = item
+            ordered_profiles.append(item)
+
+        voices_map = project.get("character_voices") or {}
+
+        # Merge from `characters` description string
+        for parsed in self._parse_character_entries(project.get("characters") or ""):
+            key = parsed["name"].lower()
+            if key in by_key:
+                if parsed["description"] and not by_key[key]["description"]:
+                    by_key[key]["description"] = parsed["description"]
+            else:
+                cid = _make_unique_id(parsed["name"])
+                img_rel = ""
+                if chars_dir and chars_dir.exists():
+                    for ext in (".jpg", ".png", ".jpeg", ".webp"):
+                        cand_f = chars_dir / f"{cid}{ext}"
+                        if cand_f.exists():
+                            img_rel = str(cand_f.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                            break
+                item = {
+                    "id": cid,
+                    "name": parsed["name"],
+                    "description": parsed["description"],
+                    "voice_id": voices_map.get(parsed["name"], ""),
+                    "image_path": img_rel,
+                    "role": "character"
+                }
+                by_key[key] = item
+                ordered_profiles.append(item)
+
+        # Merge speakers from scenes[].dialogues & character_voices keys
+        speaker_names = []
+        for sc in project.get("scenes", []):
+            for d in (sc.get("dialogues") or []):
+                if isinstance(d, dict) and (d.get("speaker") or "").strip():
+                    speaker_names.append(d["speaker"].strip())
+        for k in voices_map.keys():
+            if k and isinstance(k, str):
+                speaker_names.append(k.strip())
+
+        for spk in speaker_names:
+            low = spk.lower()
+            if low in ("narrator", "người kể chuyện", "character", "nhân vật", "none", ""):
+                continue
+            if any(k_low == low or k_low in low or low in k_low for k_low in by_key.keys()):
+                continue
+            if len(spk.split()) > 4:
+                continue
+            cid = _make_unique_id(spk)
+            img_rel = ""
+            if chars_dir and chars_dir.exists():
+                for ext in (".jpg", ".png", ".jpeg", ".webp"):
+                    cand_f = chars_dir / f"{cid}{ext}"
+                    if cand_f.exists():
+                        img_rel = str(cand_f.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                        break
+            item = {
+                "id": cid,
+                "name": spk,
+                "description": "",
+                "voice_id": voices_map.get(spk, ""),
+                "image_path": img_rel,
+                "role": "character"
+            }
+            by_key[low] = item
+            ordered_profiles.append(item)
+
+        # Sync voice_id <-> character_voices
+        if not isinstance(project.get("character_voices"), dict):
+            project["character_voices"] = {"Narrator": project.get("voice") or "en-US-ChristopherNeural"}
+        for item in ordered_profiles:
+            nm = item["name"]
+            if item.get("voice_id") not in (None, ""):
+                project["character_voices"][nm] = item["voice_id"]
+            elif nm in project["character_voices"] and project["character_voices"][nm]:
+                item["voice_id"] = project["character_voices"][nm]
+
+        project["character_profiles"] = ordered_profiles
+        if sync_back_string and ordered_profiles:
+            desc_parts = [
+                f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
+                for p in ordered_profiles
+            ]
+            project["characters"] = " | ".join(desc_parts)
+        return ordered_profiles
+
+    def resolve_scene_character_references(self, project: Dict[str, Any], scene_idx: int) -> list:
+        """
+        Determines which character profile portrait images apply to `scenes[scene_idx]`.
+        Uses explicit `scene.get("character_ids")` if pinned, otherwise matches character names
+        against the scene's prompt, narration, title, and dialogue speakers. Falls back to
+        primary character portraits with images if no specific match is found.
+        """
+        scenes = project.get("scenes", [])
+        if scene_idx < 0 or scene_idx >= len(scenes):
+            return []
+        scene = scenes[scene_idx]
+        profiles = self.sync_character_profiles(project, sync_back_string=False)
+        with_images = [
+            p for p in profiles
+            if p.get("image_path") and (PROJECTS_DIR.parent / p["image_path"]).exists()
+        ]
+        if not with_images:
+            return []
+
+        pinned_ids = scene.get("character_ids")
+        matched = []
+        if isinstance(pinned_ids, list) and len(pinned_ids) > 0:
+            pin_set = set(str(cid) for cid in pinned_ids)
+            matched = [p for p in with_images if p["id"] in pin_set]
+
+        if not matched:
+            haystack = " ".join([
+                str(scene.get("title") or ""),
+                str(scene.get("narration") or ""),
+                str(scene.get("visual_prompt") or ""),
+                str(scene.get("acting_prompt") or ""),
+                " ".join(str(d.get("speaker") or "") for d in (scene.get("dialogues") or []) if isinstance(d, dict))
+            ]).lower()
+            for p in with_images:
+                c_name = p["name"].strip().lower()
+                if c_name and c_name in haystack:
+                    matched.append(p)
+                else:
+                    tokens = [t for t in re.split(r'\s+', c_name) if len(t) >= 3]
+                    if tokens and all(t in haystack for t in tokens):
+                        matched.append(p)
+
+        if not matched:
+            matched = with_images[:3]
+
+        refs = []
+        for p in matched[:4]:
+            full_p = PROJECTS_DIR.parent / p["image_path"]
+            if full_p.exists():
+                refs.append({
+                    "id": p["id"],
+                    "name": p["name"],
+                    "description": p.get("description", ""),
+                    "path": str(full_p)
+                })
+        return refs
+
     def create_project(
         self,
         idea: str,
@@ -105,7 +358,9 @@ class AnimationPipeline:
         enable_multivoice: bool = True,
         camera_on_speaker: bool = False,
         director_skill: str = "auto",
-        enable_image_captions: bool = True
+        enable_image_captions: bool = True,
+        character_profiles: Optional[list] = None,
+        use_char_refs_in_video: bool = True
     ) -> Dict[str, Any]:
         """Initialize a new project record with folder name matching the title."""
         if art_style == "dialogue_cinema":
@@ -165,15 +420,57 @@ class AnimationPipeline:
             "enable_subtitles": enable_subtitles,
             "enable_voiceover": enable_voiceover,
             "enable_image_captions": bool(enable_image_captions),
+            "use_char_refs_in_video": bool(use_char_refs_in_video),
             "title": (title or "").strip(),
             "logline": "",
             "characters": "",
+            "character_profiles": [],
             "scenes": [],
             "status": "created",
             "progress": 0,
             "current_step": "Initialized",
             "video_path": None
         }
+
+        if character_profiles and isinstance(character_profiles, list):
+            chars_dir = project_dir / "characters"
+            chars_dir.mkdir(parents=True, exist_ok=True)
+            norm_profiles = []
+            for raw_cp in character_profiles:
+                if not isinstance(raw_cp, dict) or not (raw_cp.get("name") or "").strip():
+                    continue
+                cp_name = raw_cp["name"].strip()
+                cp_id = (raw_cp.get("id") or f"char_{self._char_slug(cp_name)}").strip()
+                cp_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', cp_id)
+                cp_desc = (raw_cp.get("description") or "").strip()
+                cp_voice = (raw_cp.get("voice_id") or "").strip()
+                img_rel = ""
+                raw_img = (raw_cp.get("image_path") or "").replace("\\", "/").strip()
+                if raw_img:
+                    src_img = PROJECTS_DIR.parent / raw_img
+                    if src_img.exists():
+                        dest_img = chars_dir / f"{cp_id}.jpg"
+                        try:
+                            shutil.copy2(src_img, dest_img)
+                            img_rel = str(dest_img.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                        except Exception:
+                            img_rel = raw_img
+                norm_profiles.append({
+                    "id": cp_id,
+                    "name": cp_name,
+                    "description": cp_desc,
+                    "voice_id": cp_voice,
+                    "image_path": img_rel,
+                    "role": raw_cp.get("role") or "character"
+                })
+                if cp_voice:
+                    project_data["character_voices"][cp_name] = cp_voice
+            project_data["character_profiles"] = norm_profiles
+            if norm_profiles:
+                project_data["characters"] = " | ".join(
+                    f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
+                    for p in norm_profiles
+                )
 
         self.save_project(project_data)
         return project_data
@@ -220,6 +517,13 @@ class AnimationPipeline:
                     if audio_file.exists():
                         sc["audio_path"] = str(audio_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
                         changed = True
+            if "use_char_refs_in_video" not in data:
+                data["use_char_refs_in_video"] = True
+            before_profiles = json.dumps(data.get("character_profiles", []), ensure_ascii=False, sort_keys=True)
+            self.sync_character_profiles(data, sync_back_string=False)
+            after_profiles = json.dumps(data.get("character_profiles", []), ensure_ascii=False, sort_keys=True)
+            if before_profiles != after_profiles:
+                changed = True
             if changed:
                 try:
                     self._atomic_write_json(meta_file, data)
@@ -368,7 +672,8 @@ class AnimationPipeline:
             audience=audience,
             title=project_title,
             camera_on_speaker=bool(project.get("camera_on_speaker", False)),
-            director_skill=project.get("director_skill", "auto")
+            director_skill=project.get("director_skill", "auto"),
+            preset_characters=project.get("character_profiles")
         )
 
         final_title = project_title or story_data.get("title") or "Animated Short Film"
@@ -390,17 +695,24 @@ class AnimationPipeline:
                 chars_val = deep_info.get("characters_blueprint", "")
             except Exception:
                 pass
-        project["characters"] = chars_val
+        if not project.get("characters"):
+            project["characters"] = chars_val
+        elif chars_val and not project.get("character_profiles"):
+            project["characters"] = chars_val
         project["scenes"] = story_data["scenes"]
 
-        # Auto-cast character voices for multi-voice dialogue
+        # Reconcile character profiles (preserving Stage 1 images & optional user-set voices)
+        self.sync_character_profiles(project, sync_back_string=True)
+
+        # Auto-cast character voices for multi-voice dialogue (preserving any Stage 1 explicit voices)
         project["character_voices"] = ScriptAgent.auto_assign_character_voices(
             characters_str=project.get("characters", ""),
             scenes=project.get("scenes", []),
-            language=language,
+            language=effective_lang,
             narrator_voice=project.get("voice"),
             existing_voices=project.get("character_voices")
         )
+        self.sync_character_profiles(project, sync_back_string=True)
         # Record the final scene count (important when Auto mode let the agent decide)
         actual_count = len(project["scenes"])
         if actual_count > 0:
@@ -433,6 +745,9 @@ class AnimationPipeline:
             try:
                 if old_dir.exists() and not new_dir.exists():
                     os.rename(old_dir, new_dir)
+                    for prof in project.get("character_profiles", []):
+                        if isinstance(prof, dict) and prof.get("image_path"):
+                            prof["image_path"] = prof["image_path"].replace(f"projects/{old_id}/", f"projects/{new_id}/")
                     project["id"] = new_id
                     print(f"Renamed project folder from '{old_id}' to title-based folder '{new_id}'")
             except Exception as e_rename:
@@ -442,7 +757,7 @@ class AnimationPipeline:
         return project
 
     async def generate_scene_image(self, project_id: str, scene_idx: int) -> Dict[str, Any]:
-        """Generate image for a specific scene with character consistency from reference scenes."""
+        """Generate image for a specific scene with character consistency from Character Portraits & reference scenes."""
         project = self.get_project(project_id)
         if not project or scene_idx < 0 or scene_idx >= len(project["scenes"]):
             raise ValueError("Invalid project or scene index")
@@ -454,14 +769,17 @@ class AnimationPipeline:
         w = project.get("video_width", 1280)
         h = project.get("video_height", 720)
 
-        # Character consistency: search for reference image from earlier scenes
+        # Resolve matched character portrait reference sheets for this scene
+        char_refs = self.resolve_scene_character_references(project, scene_idx)
+
+        # Also check prior rendered scene image for world/lighting continuity
         ref_img_path = None
         for i in range(scene_idx):
             candidate = p_dir / f"scene_{i + 1}.jpg"
             if candidate.exists():
                 ref_img_path = str(candidate)
                 break
-        if not ref_img_path:
+        if not ref_img_path and not char_refs:
             char_portrait = p_dir / "character_ref.jpg"
             if char_portrait.exists():
                 ref_img_path = str(char_portrait)
@@ -488,6 +806,7 @@ class AnimationPipeline:
             image_mode=project.get("image_mode", "gemini"),
             character_desc=character_desc,
             reference_image_path=ref_img_path,
+            character_references=char_refs,
             api_key=project.get("api_key"),
             provider=project.get("ai_provider"),
             camera_on_speaker=is_spk_cam,
@@ -503,6 +822,8 @@ class AnimationPipeline:
             rel_image_path = str(img_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             if scene_idx < len(fresh_project.get("scenes", [])):
                 fresh_project["scenes"][scene_idx]["image_path"] = rel_image_path
+                if char_refs:
+                    fresh_project["scenes"][scene_idx]["used_character_ids"] = [c["id"] for c in char_refs]
                 self.save_project(fresh_project)
                 return fresh_project
 
@@ -755,7 +1076,7 @@ class AnimationPipeline:
         scenes = project["scenes"]
         total_scenes = len(scenes)
 
-        # 1. Images (generated one by one with character consistency)
+        # 1. Images (generated one by one using Character Reference Portraits + consistency)
         for idx, scene in enumerate(scenes):
             existing_rel = scene.get("image_path")
             existing_full = (PROJECTS_DIR.parent / existing_rel) if existing_rel else None
@@ -764,51 +1085,15 @@ class AnimationPipeline:
 
             img_file = project_dir / f"scene_{idx + 1}.jpg"
             if not img_file.exists():
-                notify(35 + int((idx / total_scenes) * 15), f"Painting scene {idx + 1} of {total_scenes} (preserving character consistency)...")
-                ref_img_path = None
-                for i in range(idx):
-                    cand_rel = scenes[i].get("image_path")
-                    cand_full = (PROJECTS_DIR.parent / cand_rel) if cand_rel else (project_dir / f"scene_{i + 1}.jpg")
-                    if cand_full and cand_full.exists():
-                        ref_img_path = str(cand_full)
-                        break
-                if not ref_img_path:
-                    char_portrait = project_dir / "character_ref.jpg"
-                    if char_portrait.exists():
-                        ref_img_path = str(char_portrait)
-
-                character_desc = (project.get("characters") or "").strip()
-                char_seed = self.stable_seed(project_id + (character_desc or project.get("idea", "")))
-                scene_seed = (char_seed + (idx * 17)) % 999999
-                is_spk_cam = bool(
-                    project.get("camera_on_speaker", False)
-                    or scene.get("camera_motion") == "speaker_focus"
-                    or project.get("art_style") == "dialogue_cinema"
-                )
-
-                await self.image_service.generate_scene_image(
-                    prompt=scene["visual_prompt"],
-                    output_path=str(img_file),
-                    style_key=project["art_style"],
-                    seed=scene_seed,
-                    width=width,
-                    height=height,
-                    scene_idx=idx,
-                    title=scene.get("title", f"Scene {idx + 1}"),
-                    image_mode=project.get("image_mode", "gemini"),
-                    character_desc=character_desc,
-                    reference_image_path=ref_img_path,
-                    api_key=project.get("api_key"),
-                    provider=project.get("ai_provider"),
-                    camera_on_speaker=is_spk_cam,
-                    dialogues=scene.get("dialogues"),
-                    narration=scene.get("narration", ""),
-                    dialogue_only=bool(scene.get("dialogue_only", False))
-                )
-            scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
-            self.save_project(project)
-            if idx < total_scenes - 1:
-                await asyncio.sleep(0.8)
+                notify(35 + int((idx / max(1, total_scenes)) * 15), f"Painting scene {idx + 1} of {total_scenes} using character reference images...")
+                await self.generate_scene_image(project_id, idx)
+                project = self.get_project(project_id) or project
+                scenes = project.get("scenes", scenes)
+                if idx < total_scenes - 1:
+                    await asyncio.sleep(0.8)
+            else:
+                scene["image_path"] = str(img_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                self.save_project(project)
 
         any_scene_dial_only = any(bool(s.get("dialogue_only")) for s in scenes)
         enable_voiceover = bool(
@@ -1021,7 +1306,7 @@ class AnimationPipeline:
         return project
 
     def set_character_voice(self, project_id: str, character_name: str, voice_id: str) -> Dict[str, Any]:
-        """Assigns a specific voice to a character in the project."""
+        """Assigns a specific voice (or optional blank/'none') to a character in the project."""
         project = self.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
@@ -1032,6 +1317,11 @@ class AnimationPipeline:
         project["character_voices"][character_name] = voice_id
         if character_name.lower() in ("narrator", "người kể chuyện"):
             project["voice"] = voice_id
+
+        # Keep character_profiles synced
+        for prof in project.get("character_profiles", []):
+            if isinstance(prof, dict) and (prof.get("name") or "").strip().lower() == character_name.strip().lower():
+                prof["voice_id"] = voice_id
 
         # Mark scenes featuring this character as needing audio update
         for sc in project.get("scenes", []):
@@ -1065,12 +1355,16 @@ class AnimationPipeline:
         if not project:
             raise ValueError("Project not found")
 
+        silent_overrides = {
+            k: v for k, v in (project.get("character_voices") or {}).items()
+            if (v or "").strip().lower() in ("none", "silent", "mute")
+        }
         project["character_voices"] = ScriptAgent.auto_assign_character_voices(
             characters_str=project.get("characters", ""),
             scenes=project.get("scenes", []),
             language=project.get("language", "vi" if any(ord(c) > 127 for c in project.get("idea", "")) else "en"),
             narrator_voice=project.get("voice"),
-            existing_voices=None
+            existing_voices=silent_overrides or None
         )
 
         # Remove generic "Character" fallback key if specific named characters exist
@@ -1078,11 +1372,15 @@ class AnimationPipeline:
         if has_named_chars and "Character" in project["character_voices"]:
             del project["character_voices"]["Character"]
 
+        for prof in project.get("character_profiles", []):
+            if isinstance(prof, dict) and prof.get("name") in project["character_voices"]:
+                prof["voice_id"] = project["character_voices"][prof["name"]]
+
         for sc in project.get("scenes", []):
             sc["voiced_narration"] = ""
 
         self.save_project(project)
-        return project
+        return self.get_project(project_id) or project
 
     def toggle_camera_on_speaker(self, project_id: str, enable: Optional[bool] = None) -> Dict[str, Any]:
         """Toggles Dialogue Film (Camera on Speaker) mode on or off while keeping the chosen Visual Art Style."""
@@ -1206,6 +1504,181 @@ class AnimationPipeline:
         project["enable_image_captions"] = new_val
         self.save_project(project)
         self.refresh_project_comic_images(project_id)
+        return self.get_project(project_id) or project
+
+    def toggle_video_char_refs(self, project_id: str, enable: Optional[bool] = None) -> Dict[str, Any]:
+        """Toggles passing character reference portrait images into AI video generation (FlowKit R2V / Veo)."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        curr = bool(project.get("use_char_refs_in_video", True))
+        new_val = (not curr) if enable is None else bool(enable)
+        project["use_char_refs_in_video"] = new_val
+        self.save_project(project)
+        return self.get_project(project_id) or project
+
+    def upsert_character_profile(self, project_id: str, char_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Creates or updates a character profile (name, description, optional voice, optional image) inside a project."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        profiles = self.sync_character_profiles(project, sync_back_string=False)
+        cid = (char_data.get("id") or "").strip()
+        c_name = (char_data.get("name") or "").strip()
+        if not c_name:
+            raise ValueError("Character name is required")
+        c_desc = (char_data.get("description") or "").strip()
+        c_voice = char_data.get("voice_id")
+        if c_voice is None:
+            c_voice = ""
+        else:
+            c_voice = str(c_voice).strip()
+
+        target = None
+        if cid:
+            target = next((p for p in profiles if p["id"] == cid), None)
+        if not target:
+            target = next((p for p in profiles if p["name"].lower() == c_name.lower()), None)
+
+        old_name = target["name"] if target else None
+        if target:
+            target["name"] = c_name
+            target["description"] = c_desc
+            if "voice_id" in char_data:
+                target["voice_id"] = c_voice
+            if char_data.get("image_path") is not None:
+                target["image_path"] = str(char_data.get("image_path") or "").replace("\\", "/")
+        else:
+            new_cid = cid or f"char_{self._char_slug(c_name)}"
+            existing_ids = {p["id"] for p in profiles}
+            if new_cid in existing_ids:
+                new_cid = f"{new_cid}_{uuid.uuid4().hex[:4]}"
+            img_rel = str(char_data.get("image_path") or "").replace("\\", "/")
+            if img_rel and img_rel.startswith("character_staging/"):
+                p_dir = PROJECTS_DIR / project_id
+                chars_dir = p_dir / "characters"
+                chars_dir.mkdir(parents=True, exist_ok=True)
+                src_p = PROJECTS_DIR.parent / img_rel
+                if src_p.exists():
+                    dest_p = chars_dir / f"{new_cid}.jpg"
+                    shutil.copy2(src_p, dest_p)
+                    img_rel = str(dest_p.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+            target = {
+                "id": new_cid,
+                "name": c_name,
+                "description": c_desc,
+                "voice_id": c_voice,
+                "image_path": img_rel,
+                "role": char_data.get("role") or "character"
+            }
+            profiles.append(target)
+
+        if "character_voices" not in project or not isinstance(project["character_voices"], dict):
+            project["character_voices"] = {"Narrator": project.get("voice") or "en-US-ChristopherNeural"}
+        if old_name and old_name != c_name and old_name in project["character_voices"]:
+            del project["character_voices"][old_name]
+        if target.get("voice_id") not in (None, ""):
+            project["character_voices"][c_name] = target["voice_id"]
+        elif c_name in project["character_voices"] and "voice_id" in char_data and c_voice == "":
+            del project["character_voices"][c_name]
+
+        project["character_profiles"] = profiles
+        project["characters"] = " | ".join(
+            f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
+            for p in profiles
+        )
+        self.save_project(project)
+        return self.get_project(project_id) or project
+
+    def delete_character_profile(self, project_id: str, char_id: str) -> Dict[str, Any]:
+        """Removes a character profile and cleans up its voice/scene pins."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        profiles = self.sync_character_profiles(project, sync_back_string=False)
+        removed = next((p for p in profiles if p["id"] == char_id), None)
+        profiles = [p for p in profiles if p["id"] != char_id]
+        if removed:
+            if isinstance(project.get("character_voices"), dict) and removed["name"] in project["character_voices"]:
+                del project["character_voices"][removed["name"]]
+            for sc in project.get("scenes", []):
+                if isinstance(sc.get("character_ids"), list) and char_id in sc["character_ids"]:
+                    sc["character_ids"] = [x for x in sc["character_ids"] if x != char_id]
+        project["character_profiles"] = profiles
+        project["characters"] = " | ".join(
+            f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
+            for p in profiles
+        )
+        self.save_project(project)
+        return self.get_project(project_id) or project
+
+    async def generate_character_portrait(self, project_id: str, char_id: str) -> Dict[str, Any]:
+        """Generates a clean 3:4 Character Reference Sheet portrait for a character profile."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        profiles = self.sync_character_profiles(project, sync_back_string=False)
+        char = next((p for p in profiles if p["id"] == char_id), None)
+        if not char:
+            raise ValueError(f"Character '{char_id}' not found")
+
+        p_dir = PROJECTS_DIR / project_id
+        chars_dir = p_dir / "characters"
+        chars_dir.mkdir(parents=True, exist_ok=True)
+        out_path = chars_dir / f"{char_id}.jpg"
+
+        existing_ref = None
+        if char.get("image_path"):
+            cand = PROJECTS_DIR.parent / char["image_path"]
+            if cand.exists():
+                existing_ref = str(cand)
+
+        seed = self.stable_seed(f"{project_id}:{char['name']}:{char.get('description', '')}")
+        await self.image_service.generate_character_portrait(
+            name=char["name"],
+            description=char.get("description") or f"{char['name']} character design",
+            output_path=str(out_path),
+            style_key=project.get("art_style", "ghibli"),
+            width=720,
+            height=960,
+            image_mode=project.get("image_mode", "gemini"),
+            reference_image_path=existing_ref,
+            seed=seed,
+            api_key=project.get("api_key"),
+            provider=project.get("ai_provider")
+        )
+
+        if out_path.exists():
+            char["image_path"] = str(out_path.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+            project["character_profiles"] = profiles
+            self.save_project(project)
+        return self.get_project(project_id) or project
+
+    async def generate_all_character_portraits(self, project_id: str, force_all: bool = False) -> Dict[str, Any]:
+        """Generates portrait images sequentially for all characters in the project."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        profiles = self.sync_character_profiles(project, sync_back_string=False)
+        for char in profiles:
+            has_img = bool(char.get("image_path") and (PROJECTS_DIR.parent / char["image_path"]).exists())
+            if force_all or not has_img:
+                await self.generate_character_portrait(project_id, char["id"])
+                await asyncio.sleep(0.5)
+        return self.get_project(project_id) or project
+
+    def set_scene_characters(self, project_id: str, scene_idx: int, character_ids: list) -> Dict[str, Any]:
+        """Pins specific character IDs onto a scene for Scene Image & Video generation."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        scenes = project.get("scenes", [])
+        if scene_idx < 0 or scene_idx >= len(scenes):
+            raise ValueError("Invalid scene index")
+        scenes[scene_idx]["character_ids"] = [str(cid) for cid in (character_ids or []) if cid]
+        self.save_project(project)
         return self.get_project(project_id) or project
 
 

@@ -585,7 +585,8 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
         audience: str = "general",
         title: str = None,
         camera_on_speaker: bool = False,
-        director_skill: str = "auto"
+        director_skill: str = "auto",
+        preset_characters: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Brainstorms and structures an animated short film from a user idea.
@@ -682,7 +683,8 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
             audience,
             title=title,
             camera_on_speaker=camera_on_speaker,
-            director_skill=director_skill
+            director_skill=director_skill,
+            preset_characters=preset_characters
         )
 
         try:
@@ -943,7 +945,8 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
         audience: str = "general",
         title: str = None,
         camera_on_speaker: bool = False,
-        director_skill: str = "auto"
+        director_skill: str = "auto",
+        preset_characters: List[Dict[str, Any]] = None
     ) -> str:
         analysis = self.deep_analyze_story_input(
             idea=idea,
@@ -1060,6 +1063,20 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
             f"Detailed static illustration description: frozen composition, character visual details and outfit, environment, color palette, lighting in {art_style} art style. (NO timing, NO camera moves, NO dialogue quotes)"
         )
 
+        preset_chars_block = ""
+        if preset_characters:
+            pc_lines = []
+            for pc in preset_characters:
+                if isinstance(pc, dict) and (pc.get("name") or "").strip():
+                    pn = pc["name"].strip()
+                    pd = (pc.get("description") or "").strip()
+                    pc_lines.append(f"   - {pn}" + (f": {pd}" if pd else ""))
+            if pc_lines:
+                preset_chars_block = (
+                    "\n- USER-DEFINED CAST ROSTER (MANDATORY — keep exact names & visual tokens in `characters`, `dialogues`, and `visual_prompt`):\n"
+                    + "\n".join(pc_lines)
+                )
+
         return f"""You are a master animation director at Pixar, Studio Ghibli, and premier cinematic AI studios (Google Flow / Google Veo 3 / Imagen 3).
 Transform the provided input into a breathtaking, emotionally resonant animated short film storyboard tailored for ACTING VIDEO GENERATION (8-second scenes, Google Flow / Veo 3 I2V).
 
@@ -1072,7 +1089,7 @@ Parameters:
 - {title_clause}
 - Target Audience: {audience} | Art Style: {art_style} | Narration & Script Language: {lang_display}
 - {pacing_param}
-{adaptation_mandate}
+{adaptation_mandate}{preset_chars_block}
 {analysis["prompt_blueprint"]}
 
 CINEMATIC DIRECTIVES:

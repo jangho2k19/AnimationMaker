@@ -749,106 +749,143 @@ class ImageService:
             return True
         return False
 
-    async def generate_scene_image(
+    def _collect_reference_files_and_instruction(
         self,
-        prompt: str,
-        output_path: str,
-        style_key: str = "ghibli",
-        seed: int = None,
-        width: int = 1280,
-        height: int = 720,
-        scene_idx: int = 0,
-        title: str = "",
-        image_mode: str = "gemini",
-        character_desc: str = None,
+        full_prompt: str,
+        character_references: list = None,
         reference_image_path: str = None,
+        max_refs: int = 4
+    ) -> tuple:
+        """
+        Builds a deduplicated ordered list of valid reference image paths (character portraits
+        first, then optional scene continuity frame) and a clear instruction mapping each
+        attached image to its named character.
+        """
+        req_files = []
+        seen_paths = set()
+        char_map_notes = []
+
+        for ref in (character_references or []):
+            if not isinstance(ref, dict):
+                continue
+            r_path = ref.get("path")
+            if not r_path or not os.path.exists(r_path):
+                continue
+            ref_base = self.get_base_image_path(r_path)
+            resolved = ref_base if os.path.exists(ref_base) else str(r_path)
+            abs_p = str(Path(resolved).resolve())
+            if abs_p in seen_paths:
+                continue
+            seen_paths.add(abs_p)
+            req_files.append(resolved)
+            c_name = (ref.get("name") or "").strip() or f"Character {len(req_files)}"
+            c_desc = (ref.get("description") or "").strip()
+            note = f"Reference Image {len(req_files)} depicts character '{c_name}'"
+            if c_desc:
+                note += f" ({c_desc[:140]})"
+            char_map_notes.append(note)
+            if len(req_files) >= max_refs:
+                break
+
+        has_scene_continuity_ref = False
+        if reference_image_path and len(req_files) < max_refs:
+            ref_base = self.get_base_image_path(reference_image_path)
+            cand_scene_ref = ref_base if os.path.exists(ref_base) else str(reference_image_path)
+            if os.path.exists(cand_scene_ref):
+                abs_s = str(Path(cand_scene_ref).resolve())
+                if abs_s not in seen_paths:
+                    seen_paths.add(abs_s)
+                    req_files.append(cand_scene_ref)
+                    has_scene_continuity_ref = True
+
+        if not req_files:
+            instruction = f"Generate an image of: {full_prompt[:2800]}. Clean illustration without text, no speech bubbles, no words."
+            return None, instruction
+
+        parts = []
+        if char_map_notes:
+            parts.append("CHARACTER REFERENCE SHEETS ATTACHED: " + "; ".join(char_map_notes) + ".")
+        if has_scene_continuity_ref:
+            parts.append(
+                f"Reference Image {len(req_files)} is a prior scene frame for art-style & world lighting continuity ONLY (do NOT copy its pose or composition)."
+            )
+        parts.append(
+            f"Generate a brand-new scene illustration strictly depicting: {full_prompt[:2600]}. "
+            f"Strictly preserve each attached character's exact facial features, hairstyle, proportions, and signature outfit while rendering the new scene pose, action, camera framing, and background. "
+            f"Clean illustration without text, no speech bubbles, no words."
+        )
+        return req_files, " ".join(parts)
+
+    async def _generate_raw_ai_image(
+        self,
+        full_prompt: str,
+        output_path: str,
+        style_key: str,
+        width: int,
+        height: int,
+        image_mode: str = "gemini",
+        req_files: list = None,
+        multimodal_prompt: str = "",
+        seed: int = None,
         api_key: str = None,
         provider: str = None,
-        camera_on_speaker: bool = False,
-        dialogues: list = None,
-        narration: str = "",
-        dialogue_only: bool = False,
-        enable_image_captions: bool = True
+        label: str = "image"
     ) -> str:
         """
-        Scene visual generation pipeline:
-        1. Google Gemini / Imagen 3 (Default — official API key or web session cookie)
-        2. Neural.love AI Art Engine (if image_mode is neural_love)
-        3. OpenAI DALL-E 3 (if image_mode or provider is OpenAI)
-        4. Storyboard-Only Canvas (if image_mode is manual)
-        When `style_key` is Comic Book mode, preserves the un-bubbled artwork as `scene_N_base.jpg`
-        and composites crisp graphic-novel speech bubbles & dialogue text onto `output_path`.
+        Shared low-level image generation dispatcher across FlowKit, Neural.love,
+        OpenAI DALL-E 3, Google Gemini Official API (multimodal refs + Imagen 3 fallback),
+        and Google Gemini Web Cookie (multi-file reference support).
         """
+        import asyncio
         eff_api_key = api_key or self.api_key
         eff_provider = provider or self.provider
-        output_path = str(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        comic_mode = is_comic_style(style_key)
 
-        # If a reference image is provided and a clean un-bubbled `_base` version exists, prefer it for character consistency
-        if reference_image_path:
-            ref_base = self.get_base_image_path(reference_image_path)
-            if os.path.exists(ref_base):
-                reference_image_path = ref_base
-
-        # Remove stale base image before painting a brand-new illustration so `apply_comic_overlay_to_file` backs up the new art
-        base_backup_path = self.get_base_image_path(output_path)
-        if os.path.exists(base_backup_path):
-            try:
-                os.remove(base_backup_path)
-            except Exception:
-                pass
-
-        def _finalize(saved_path: str) -> str:
-            if comic_mode and os.path.exists(saved_path):
-                self.apply_comic_overlay_to_file(
-                    saved_path,
-                    dialogues=dialogues,
-                    narration=narration,
-                    prompt=prompt,
-                    title=title,
-                    scene_idx=scene_idx,
-                    dialogue_only=dialogue_only,
-                    enable_image_captions=enable_image_captions
-                )
-            return saved_path
-
-        full_prompt = self.craft_full_prompt(
-            prompt,
-            style_key=style_key,
-            character_desc=character_desc,
-            camera_on_speaker=camera_on_speaker
-        )
-
-        # Determine best aspect ratios
         curr_ratio = width / float(height)
         if curr_ratio > 1.6:
             imagen_ratio = "16:9"
+            flow_ratio = "IMAGE_ASPECT_RATIO_LANDSCAPE"
             dalle_size = "1792x1024"
         elif curr_ratio < 0.65:
             imagen_ratio = "9:16"
+            flow_ratio = "IMAGE_ASPECT_RATIO_PORTRAIT"
             dalle_size = "1024x1792"
         elif curr_ratio > 1.2:
             imagen_ratio = "4:3"
+            flow_ratio = "IMAGE_ASPECT_RATIO_LANDSCAPE"
             dalle_size = "1024x1024"
         elif curr_ratio < 0.85:
             imagen_ratio = "3:4"
+            flow_ratio = "IMAGE_ASPECT_RATIO_PORTRAIT"
             dalle_size = "1024x1024"
         else:
             imagen_ratio = "1:1"
+            flow_ratio = "IMAGE_ASPECT_RATIO_SQUARE"
             dalle_size = "1024x1024"
 
-        # ============================================================
-        # 0. STORYBOARD ONLY / MANUAL MODE (Zero AI Tokens)
-        # ============================================================
-        if image_mode in ("manual", "storyboard_only", "placeholder"):
-            self.generate_procedural_fallback(title=title, prompt=prompt, output_path=output_path, style_key=style_key, scene_idx=scene_idx, width=width, height=height)
-            print(f"Scene {scene_idx + 1} visual rendered using Storyboard-Only canvas (zero AI calls).")
-            return _finalize(output_path)
+        # 1. Google Flow Bridge (FlowKit) with native character_media_ids
+        if image_mode == "flowkit":
+            from backend.services.flowkit_service import FlowKitService
+            fk = FlowKitService.get_instance()
+            tmp_out = f"{output_path}.flowtmp.jpg"
+            await fk.generate_reference_image(
+                prompt=multimodal_prompt or full_prompt,
+                output_image_path=tmp_out,
+                reference_image_paths=req_files,
+                aspect_ratio=flow_ratio,
+                seed=seed
+            )
+            img = Image.open(tmp_out)
+            fitted = self.fit_image_to_aspect_ratio(img, width, height)
+            fitted.save(output_path, "JPEG", quality=95)
+            try:
+                os.remove(tmp_out)
+            except Exception:
+                pass
+            print(f"Generated {label} using Google Flow Bridge with {len(req_files or [])} reference(s)!")
+            return output_path
 
-        # ============================================================
-        # 1. NEURAL.LOVE AI ART MODE
-        # ============================================================
+        # 2. Neural.love AI Art Mode
         if image_mode == "neural_love":
             nl_success = await self._generate_with_neural_love(
                 prompt=full_prompt,
@@ -858,13 +895,11 @@ class ImageService:
                 style_key=style_key
             )
             if nl_success:
-                print(f"Generated scene {scene_idx + 1} using Neural.love AI Art Engine!")
-                return _finalize(output_path)
+                print(f"Generated {label} using Neural.love AI Art Engine!")
+                return output_path
             raise RuntimeError("Neural.love image generation failed. Please check your API key and credit balance.")
 
-        # ============================================================
-        # 2. OPENAI DALL-E 3 MODE
-        # ============================================================
+        # 3. OpenAI DALL-E 3 Mode
         if image_mode == "openai" or (eff_provider == "openai" and eff_api_key):
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
@@ -890,26 +925,17 @@ class ImageService:
                             img = Image.open(io.BytesIO(img_resp.content))
                             fitted = self.fit_image_to_aspect_ratio(img, width, height)
                             fitted.save(output_path, "JPEG", quality=92)
-                            print(f"Generated scene using OpenAI DALL-E 3 ({dalle_size})!")
-                            return _finalize(output_path)
+                            print(f"Generated {label} using OpenAI DALL-E 3 ({dalle_size})!")
+                            return output_path
                     else:
                         raise RuntimeError(f"OpenAI DALL-E error {resp.status_code}: {resp.text}")
             except Exception as e:
                 raise RuntimeError(f"OpenAI DALL-E 3 generation failed: {e}")
 
-        # ============================================================
-        # 3. PUTER.JS IN-BROWSER MODE
-        # ============================================================
-        if image_mode == "puter":
-            raise RuntimeError("In-Browser Puter image generation runs directly in the browser client. Please use the 'Repaint with Puter' button in the Storyboard.")
-
-        # ============================================================
-        # 4. GOOGLE GEMINI / IMAGEN 3 MODE (Default)
-        # ============================================================
+        # 4. Google Gemini / Imagen 3 Mode (Default)
         if image_mode in ("gemini", "server"):
             gemini_error = None
 
-            # 4a. Official Google AI Studio API Key (starts with AIzaSy... or standard API key)
             is_cookie_key = bool(
                 eff_api_key and (
                     eff_api_key.startswith("g.a")
@@ -918,21 +944,61 @@ class ImageService:
                 )
             )
 
+            # 4a. Official Google AI Studio API Key
             if eff_api_key and not is_cookie_key:
                 try:
                     from google import genai
                     from google.genai import types
                     client = genai.Client(api_key=eff_api_key)
+
+                    # When reference images are attached, try Gemini multimodal image generation first
+                    # so character likeness & outfits from uploaded/generated portraits are preserved!
+                    if req_files:
+                        ref_pil_imgs = []
+                        for rf in req_files:
+                            try:
+                                ref_pil_imgs.append(Image.open(rf).convert("RGB"))
+                            except Exception:
+                                pass
+                        if ref_pil_imgs:
+                            contents_payload = [*ref_pil_imgs, multimodal_prompt or full_prompt[:2600]]
+                            for mm_model in ["gemini-2.5-flash-image", "gemini-2.0-flash-exp-image-generation"]:
+                                try:
+                                    mm_resp = await asyncio.to_thread(
+                                        lambda m=mm_model: client.models.generate_content(
+                                            model=m,
+                                            contents=contents_payload,
+                                            config=types.GenerateContentConfig(
+                                                response_modalities=["IMAGE"],
+                                                image_config=types.ImageConfig(aspect_ratio=imagen_ratio)
+                                            )
+                                        )
+                                    )
+                                    if mm_resp.candidates and mm_resp.candidates[0].content and mm_resp.candidates[0].content.parts:
+                                        for part in mm_resp.candidates[0].content.parts:
+                                            inline = getattr(part, "inline_data", None)
+                                            if inline and getattr(inline, "data", None):
+                                                img = Image.open(io.BytesIO(inline.data))
+                                                fitted = self.fit_image_to_aspect_ratio(img, width, height)
+                                                fitted.save(output_path, "JPEG", quality=95)
+                                                print(f"Generated {label} using Gemini Multimodal API ({mm_model}) with {len(ref_pil_imgs)} character ref(s)!")
+                                                return output_path
+                                except Exception as e_mm:
+                                    gemini_error = str(e_mm)
+
+                    # Fallback or text-only path: Imagen 3 API
                     for img_model in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
                         try:
-                            resp = client.models.generate_images(
-                                model=img_model,
-                                prompt=full_prompt[:2800],
-                                config=types.GenerateImagesConfig(
-                                    number_of_images=1,
-                                    aspect_ratio=imagen_ratio,
-                                    output_mime_type="image/jpeg",
-                                    person_generation="ALLOW_ADULT"
+                            resp = await asyncio.to_thread(
+                                lambda m=img_model: client.models.generate_images(
+                                    model=m,
+                                    prompt=full_prompt[:2800],
+                                    config=types.GenerateImagesConfig(
+                                        number_of_images=1,
+                                        aspect_ratio=imagen_ratio,
+                                        output_mime_type="image/jpeg",
+                                        person_generation="ALLOW_ADULT"
+                                    )
                                 )
                             )
                             if resp.generated_images:
@@ -940,14 +1006,14 @@ class ImageService:
                                 img = Image.open(io.BytesIO(raw_bytes))
                                 fitted = self.fit_image_to_aspect_ratio(img, width, height)
                                 fitted.save(output_path, "JPEG", quality=95)
-                                print(f"Generated scene {scene_idx + 1} using Google Gemini Imagen 3 API ({img_model})!")
-                                return _finalize(output_path)
+                                print(f"Generated {label} using Google Gemini Imagen 3 API ({img_model})!")
+                                return output_path
                         except Exception as e_model:
                             gemini_error = str(e_model)
                 except Exception as e:
                     gemini_error = str(e)
 
-            # 4b. Google Gemini Web Session Cookie (__Secure-1PSID)
+            # 4b. Google Gemini Web Session Cookie (__Secure-1PSID) — natively supports multi-file references!
             from backend.config import get_server_credentials
             s_creds = get_server_credentials()
             saved_psid = s_creds.get("gemini_cookie_psid")
@@ -964,19 +1030,9 @@ class ImageService:
                 try:
                     from backend.services.gemini_wrapper import GeminiWebWrapper
                     wrapper = GeminiWebWrapper.get_instance()
-                    req_files = [reference_image_path] if (reference_image_path and os.path.exists(reference_image_path)) else None
-                    if req_files:
-                        gemini_prompt = (
-                            f"Generate a brand-new scene illustration strictly depicting this exact scene action, props, and setting: {full_prompt[:2800]}. "
-                            f"Use the attached reference image ONLY to keep the main character's face, hairstyle, and clothing consistent — do NOT copy the pose or background from the reference image, and accurately depict all new actions, props, and characters described above. "
-                            f"Clean illustration without text, no speech bubbles, no words."
-                        )
-                    else:
-                        gemini_prompt = f"Generate an image of: {full_prompt[:2800]}. Clean illustration without text, no speech bubbles, no words."
-
                     resp = await wrapper.generate_content(
-                        gemini_prompt,
-                        files=req_files,
+                        multimodal_prompt or f"Generate an image of: {full_prompt[:2800]}. Clean illustration without text, no speech bubbles, no words.",
+                        files=req_files or None,
                         cookie_override=combined_cookie
                     )
                     saved_img = None
@@ -993,8 +1049,8 @@ class ImageService:
                             os.remove(saved_img)
                         except Exception:
                             pass
-                        print(f"Generated scene {scene_idx + 1} using Gemini Pro Web Session Imagen 3 with character consistency!")
-                        return _finalize(output_path)
+                        print(f"Generated {label} using Gemini Pro Web Session with {len(req_files or [])} reference(s)!")
+                        return output_path
                     else:
                         gemini_error = "Gemini returned response without image content. Try again or verify session cookies."
                 except Exception as e:
@@ -1003,7 +1059,201 @@ class ImageService:
             err_msg = gemini_error or "Google Gemini Imagen 3 generation failed. Please verify your Gemini API key or ensure cookies are valid."
             raise RuntimeError(f"Google Gemini Imagen 3 generation failed: {err_msg}")
 
-        raise RuntimeError(f"Unsupported image generation mode '{image_mode}'. Free Neural AI Engine has been removed.")
+        raise RuntimeError(f"Unsupported image generation mode '{image_mode}'.")
+
+    async def generate_character_portrait(
+        self,
+        name: str,
+        description: str,
+        output_path: str,
+        style_key: str = "ghibli",
+        width: int = 720,
+        height: int = 960,
+        image_mode: str = "gemini",
+        reference_image_path: str = None,
+        seed: int = None,
+        api_key: str = None,
+        provider: str = None
+    ) -> str:
+        """
+        Generates a clean, consistent Character Reference Sheet portrait (3:4 vertical) matching
+        the project's art style so it can be reused across all Scene Painting and AI Video steps.
+        """
+        output_path = str(output_path)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        if image_mode in ("manual", "storyboard_only", "placeholder"):
+            self.generate_procedural_fallback(
+                title=name or "Character",
+                prompt=description or name or "Character Portrait",
+                output_path=output_path,
+                style_key=style_key,
+                scene_idx=0,
+                width=width,
+                height=height
+            )
+            return output_path
+
+        if image_mode == "puter":
+            raise RuntimeError("In-Browser Puter image generation runs directly in the browser client.")
+
+        clean_name = (name or "Character").strip()
+        clean_desc = self.sanitize_visual_prompt(description or "") or f"expressive character named {clean_name}"
+        effective_style = "ghibli" if style_key == "dialogue_cinema" else (style_key or self.default_style or "ghibli")
+        style_info = ART_STYLES.get(effective_style, ART_STYLES["ghibli"])
+        style_suffix = style_info.get("prompt_suffix", "")
+
+        portrait_prompt = (
+            f"Single character design reference sheet portrait of {clean_name}: {clean_desc}. "
+            f"Medium three-quarter waist-up pose centered cleanly on a neutral soft studio backdrop, "
+            f"clear front-facing / three-quarter face, unmistakable hairstyle, distinctive outfit colors and signature silhouette"
+            f"{style_suffix}, clean illustration without text, no typography, no speech bubbles, no watermarks"
+        )
+        req_files = [reference_image_path] if (reference_image_path and os.path.exists(reference_image_path)) else None
+        mm_prompt = (
+            f"Using the attached photo/art as visual inspiration, draw a clean character reference portrait: {portrait_prompt}"
+            if req_files else
+            f"Generate a character reference portrait image: {portrait_prompt}"
+        )
+        return await self._generate_raw_ai_image(
+            full_prompt=portrait_prompt,
+            output_path=output_path,
+            style_key=effective_style,
+            width=width,
+            height=height,
+            image_mode=image_mode,
+            req_files=req_files,
+            multimodal_prompt=mm_prompt,
+            seed=seed,
+            api_key=api_key,
+            provider=provider,
+            label=f"character portrait '{clean_name}'"
+        )
+
+    async def generate_scene_image(
+        self,
+        prompt: str,
+        output_path: str,
+        style_key: str = "ghibli",
+        seed: int = None,
+        width: int = 1280,
+        height: int = 720,
+        scene_idx: int = 0,
+        title: str = "",
+        image_mode: str = "gemini",
+        character_desc: str = None,
+        reference_image_path: str = None,
+        character_references: list = None,
+        api_key: str = None,
+        provider: str = None,
+        camera_on_speaker: bool = False,
+        dialogues: list = None,
+        narration: str = "",
+        dialogue_only: bool = False,
+        enable_image_captions: bool = True
+    ) -> str:
+        """
+        Scene visual generation pipeline:
+        1. Google Gemini / Imagen 3 (Default — official API key multimodal + Imagen 3, or web session cookie)
+        2. Google Flow Bridge / FlowKit (if image_mode is flowkit)
+        3. Neural.love AI Art Engine (if image_mode is neural_love)
+        4. OpenAI DALL-E 3 (if image_mode or provider is OpenAI)
+        5. Storyboard-Only Canvas (if image_mode is manual)
+        Actively attaches matched character reference portraits (`character_references`) and prior
+        scene continuity frame (`reference_image_path`) to keep characters visually consistent.
+        """
+        output_path = str(output_path)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        comic_mode = is_comic_style(style_key)
+
+        # Remove stale base image before painting a brand-new illustration so `apply_comic_overlay_to_file` backs up the new art
+        base_backup_path = self.get_base_image_path(output_path)
+        if os.path.exists(base_backup_path):
+            try:
+                os.remove(base_backup_path)
+            except Exception:
+                pass
+
+        def _finalize(saved_path: str) -> str:
+            if comic_mode and os.path.exists(saved_path):
+                self.apply_comic_overlay_to_file(
+                    saved_path,
+                    dialogues=dialogues,
+                    narration=narration,
+                    prompt=prompt,
+                    title=title,
+                    scene_idx=scene_idx,
+                    dialogue_only=dialogue_only,
+                    enable_image_captions=enable_image_captions
+                )
+            return saved_path
+
+        # Merge character descriptions from matched character_references into character_desc if needed
+        merged_char_desc = (character_desc or "").strip()
+        if character_references:
+            ref_descs = []
+            for r in character_references:
+                if isinstance(r, dict) and (r.get("name") or "").strip():
+                    rn = r["name"].strip()
+                    rd = (r.get("description") or "").strip()
+                    if rn.lower() not in merged_char_desc.lower():
+                        ref_descs.append(f"{rn}: {rd}" if rd else rn)
+            if ref_descs:
+                merged_char_desc = (merged_char_desc + " | " + " | ".join(ref_descs)).strip(" |")
+
+        full_prompt = self.craft_full_prompt(
+            prompt,
+            style_key=style_key,
+            character_desc=merged_char_desc,
+            camera_on_speaker=camera_on_speaker
+        )
+
+        # ============================================================
+        # 0. STORYBOARD ONLY / MANUAL MODE (Zero AI Tokens)
+        # ============================================================
+        if image_mode in ("manual", "storyboard_only", "placeholder"):
+            # If no AI paint is used, composite the matched primary character portrait nicely if available
+            first_char_path = next(
+                (r.get("path") for r in (character_references or []) if isinstance(r, dict) and r.get("path") and os.path.exists(r["path"])),
+                None
+            )
+            if first_char_path:
+                try:
+                    c_img = Image.open(first_char_path)
+                    fitted = self.fit_image_to_aspect_ratio(c_img, width, height)
+                    fitted.save(output_path, "JPEG", quality=92)
+                    print(f"Scene {scene_idx + 1} visual composed from character portrait (Storyboard-Only mode).")
+                    return _finalize(output_path)
+                except Exception:
+                    pass
+            self.generate_procedural_fallback(title=title, prompt=prompt, output_path=output_path, style_key=style_key, scene_idx=scene_idx, width=width, height=height)
+            print(f"Scene {scene_idx + 1} visual rendered using Storyboard-Only canvas (zero AI calls).")
+            return _finalize(output_path)
+
+        if image_mode == "puter":
+            raise RuntimeError("In-Browser Puter image generation runs directly in the browser client. Please use the 'Repaint with Puter' button in the Storyboard.")
+
+        req_files, mm_prompt = self._collect_reference_files_and_instruction(
+            full_prompt=full_prompt,
+            character_references=character_references,
+            reference_image_path=reference_image_path,
+            max_refs=4
+        )
+        await self._generate_raw_ai_image(
+            full_prompt=full_prompt,
+            output_path=output_path,
+            style_key=style_key,
+            width=width,
+            height=height,
+            image_mode=image_mode,
+            req_files=req_files,
+            multimodal_prompt=mm_prompt,
+            seed=seed,
+            api_key=api_key,
+            provider=provider,
+            label=f"scene {scene_idx + 1}"
+        )
+        return _finalize(output_path)
 
     async def _fetch_thematic_image(self, keywords: list, width: int = 1280, height: int = 720) -> Image.Image:
         """Search and fetch high-res thematic visuals from open creative repositories."""

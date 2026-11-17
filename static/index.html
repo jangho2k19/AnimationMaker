@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
-  <link rel="stylesheet" href="/css/style.css?v=13">
+  <link rel="stylesheet" href="/css/style.css?v=14">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -489,6 +489,33 @@
                 </div>
               </div>
 
+              <!-- Stage 1 Character Creator Panel (Hình ảnh & Giọng nói nếu có) -->
+              <div id="stage1CharactersPanel" class="glass-panel compact-provider-panel stage1-char-studio-panel" style="margin-bottom: 10px; padding: 10px 12px; border: 1px solid rgba(16, 185, 129, 0.28);">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="font-size:15px;">👥</span>
+                    <strong style="font-size:12.5px; color:#f1f5f9;">Characters (Hình Ảnh &amp; Giọng Nói)</strong>
+                    <span id="badgeStage1CharCount" class="tag-badge" style="background:rgba(16,185,129,0.16); color:#6ee7b7; font-size:11px;">0 characters (Optional)</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <button id="btnStage1AddCharacter" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(16,185,129,0.45); color:#6ee7b7;" title="Thêm nhân vật với ảnh tham chiếu và giọng nói (nếu có)">
+                      <span>➕ Thêm Nhân Vật</span>
+                    </button>
+                    <button id="btnStage1ToggleCharacters" type="button" class="glass-btn secondary-btn mini-btn" style="padding:4px 8px; font-size:11px;" title="Mở rộng / Thu gọn danh sách nhân vật">
+                      <span id="textStage1ToggleChar">▾ Show</span>
+                    </button>
+                  </div>
+                </div>
+                <div id="stage1CharactersBody" style="display:none; margin-top:10px;">
+                  <p class="hint-text" style="margin: 0 0 8px 0; font-size:11.5px; line-height:1.4; color:#cbd5e1;">
+                    Tạo hoặc tải lên <strong>ảnh nhân vật</strong> &amp; chọn <strong>giọng nói (nếu có)</strong> trước khi lập kịch bản. Hình ảnh nhân vật sẽ được dùng trực tiếp khi <strong>vẽ từng cảnh</strong> và <strong>tạo video</strong> để đồng nhất nhân vật.
+                  </p>
+                  <div id="stage1CharactersList" class="stage1-char-list">
+                    <!-- Rendered dynamically via app.js -->
+                  </div>
+                </div>
+              </div>
+
               <!-- Multi-Provider AI Engine & Image Mode Selector -->
               <div class="ai-provider-panel glass-panel compact-provider-panel">
                 <div class="provider-panel-header">
@@ -938,8 +965,11 @@
               <button id="btnToggleImageCaptionsStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Turn ON or OFF the yellow Narrator Caption Box in Comic Book images (Dialogue bubbles stay active)">
                 <span id="iconImageCaptionsStage2">🖼️</span> <span id="textImageCaptionsStage2">Caption in Images: ON</span>
               </button>
-              <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle between Storyboard Only, Server API, and In-Browser Puter.js paint">
+              <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle Paint Engine (Gemini Imagen 3, Google Flow Character Refs, Neural.love, Puter.js, Storyboard Only)">
                 <span id="iconImageModeStage2">🌐</span> <span id="textImageModeStage2">Paint: Server API</span>
+              </button>
+              <button id="btnToggleVideoCharRefsStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Khi BẬT: Tự động đính kèm hình ảnh nhân vật cùng ảnh cảnh vào bước tạo video AI (Google Flow Omni R2V / Veo)">
+                <span id="iconVideoCharRefsStage2">👥</span> <span id="textVideoCharRefsStage2">Video Char Refs: ON</span>
               </button>
               <button id="btnToggleAutoPaint" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle automatic scene painting (Default: OFF — manual review mode)">
                 <span id="iconAutoPaint">🚫</span> <span id="textAutoPaint">Auto-Paint: OFF</span>
@@ -1018,28 +1048,51 @@
           <!-- Populated dynamically by app.js: [Sc 1 ✓] [Sc 2 ✓] [Sc 3 ⏳] ... -->
         </nav>
 
-        <!-- Character Voice Casting Bar (Non-sticky, regular page flow) -->
-        <div id="characterVoiceCastingBar" class="character-voice-casting-bar glass-panel" style="display:none;">
+        <!-- Character Studio: Portrait Images & Optional Voices (Non-sticky, regular page flow) -->
+        <div id="characterVoiceCastingBar" class="character-voice-casting-bar glass-panel" style="display:block;">
           <div class="casting-bar-header">
             <div class="casting-bar-title">
-              <span>🎭</span> <strong>Character Voice Casting</strong>
-              <span id="castingBarRoleCountBadge" class="casting-role-badge">0 roles</span>
-              <span class="casting-bar-hint">Assign distinct actor voices for each dialogue speaker</span>
+              <span>👥</span> <strong>Character Studio (Hình Ảnh &amp; Giọng Nói)</strong>
+              <span id="castingBarRoleCountBadge" class="casting-role-badge">0 characters</span>
+              <span class="casting-bar-hint">Tạo ảnh nhân vật &amp; chọn giọng nói (nếu có) — tự động áp dụng vào Tạo Cảnh &amp; Tạo Video</span>
             </div>
             <div class="casting-bar-actions">
-              <button id="btnAutoCastVoices" type="button" class="glass-btn secondary-btn compact-action-pill" title="Re-analyze character archetypes and auto-cast voices">
-                <span>🤖 Auto-Cast</span>
+              <button id="btnAddProjectCharacter" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(16,185,129,0.45); color:#6ee7b7;" title="Thêm nhân vật mới (tên, mô tả ngoại hình, ảnh & giọng nói tùy chọn)">
+                <span>➕ Thêm Nhân Vật</span>
               </button>
-              <button id="btnOpenVoiceModalFromBar" type="button" class="glass-btn secondary-btn compact-action-pill" title="Open Full Casting Studio Modal">
-                <span>🎛️ Full Studio ↗</span>
+              <button id="btnGenerateAllCharacterImages" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(56,189,248,0.45); color:#7dd3fc;" title="Tạo ảnh chân dung tham chiếu AI lần lượt cho tất cả nhân vật chưa có ảnh">
+                <span>🎨 Tạo Ảnh Nhân Vật</span>
               </button>
-              <button id="btnToggleCastingBarCollapse" type="button" class="glass-btn secondary-btn compact-action-pill" title="Collapse or expand casting drawer">
+              <button id="btnAutoCastVoices" type="button" class="glass-btn secondary-btn compact-action-pill" title="Tự động gán giọng đọc phù hợp cho các nhân vật có thoại">
+                <span>🤖 Auto-Cast Voices</span>
+              </button>
+              <button id="btnOpenVoiceModalFromBar" type="button" class="glass-btn secondary-btn compact-action-pill" title="Open Full Voice Casting Modal">
+                <span>🎛️ Voice Studio ↗</span>
+              </button>
+              <button id="btnToggleCastingBarCollapse" type="button" class="glass-btn secondary-btn compact-action-pill" title="Collapse or expand Character Studio">
                 <span id="textCastingCollapse">▲ Hide</span>
               </button>
             </div>
           </div>
-          <div id="characterVoicesList" class="character-voices-grid">
-            <!-- Populated dynamically via JS -->
+
+          <!-- Inline Add New Character Composer -->
+          <div id="inlineAddCharForm" class="inline-add-char-form" style="display:none;">
+            <div class="inline-add-char-grid">
+              <input type="text" id="inputNewCharName" class="styled-input compact-input" placeholder="Tên nhân vật (e.g. Tử Lộ, Cô Tấm, Robot X)...">
+              <input type="text" id="inputNewCharDesc" class="styled-input compact-input" placeholder="Mô tả ngoại hình cố định (tuổi, tóc, trang phục, phụ kiện)...">
+              <select id="selectNewCharVoice" class="styled-select compact-select" title="Giọng nói (nếu có)">
+                <option value="">🎙️ Giọng nói: Tự động / Không cố định</option>
+                <option value="none">🔇 Không thoại (Chỉ dùng hình ảnh)</option>
+              </select>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <button id="btnConfirmAddChar" type="button" class="glass-btn primary-glow-btn compact-btn" style="padding:6px 12px; font-size:12px;">✓ Tạo</button>
+                <button id="btnCancelAddChar" type="button" class="glass-btn secondary-btn compact-btn" style="padding:6px 10px; font-size:12px;">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="characterVoicesList" class="character-voices-grid character-studio-grid">
+            <!-- Populated dynamically via JS: Narrator Voice Card + Story Character Cards (Image + Desc + Optional Voice) -->
           </div>
         </div>
 
@@ -1233,6 +1286,7 @@
           <label for="selectSettingsImageMode" class="input-label">🎨 Default Image Painting Engine</label>
           <select id="selectSettingsImageMode" class="styled-select">
             <option value="gemini" selected>✨ Google Gemini / Imagen 3 AI Paint (API Key or Cookie)</option>
+            <option value="flowkit">🌊 Google Flow Bridge (Character Reference Images)</option>
             <option value="neural_love">💖 Neural.love AI Art Engine (High-Fidelity Artwork)</option>
             <option value="puter">🖌️ In-Browser AI Paint (Puter.js — subject to Puter balance)</option>
             <option value="manual">📝 Storyboard Only (No AI Painting — Placeholders & Manual Uploads)</option>
@@ -1523,6 +1577,6 @@ Narration: The detective scanned the horizon for clues..."></textarea>
   <div id="toastNotification" class="toast-popup"></div>
 
   <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=3.4"></script>
+  <script src="/js/app.js?v=3.5"></script>
 </body>
 </html>

@@ -468,25 +468,61 @@ class VoiceAgent:
                     "dialogue_only_silent": True
                 }
 
-        # Voice resolver
+        # Voice resolver ("": auto/fallback to Narrator; "none"/"silent": omit TTS audio for silent character)
         def get_voice_for_speaker(speaker_name: str) -> str:
             spk = (speaker_name or "").strip()
+            fallback_v = (char_voices.get("Narrator") or "").strip() or def_voice
             if not char_voices:
                 return def_voice
+            matched_v = None
             if spk in char_voices:
-                return char_voices[spk]
-            low_spk = spk.lower()
-            for k, v in char_voices.items():
-                if k.lower() == low_spk:
-                    return v
-            for k, v in char_voices.items():
-                if k.lower() in low_spk or low_spk in k.lower():
-                    return v
-            if low_spk == "character":
-                named = [v for k, v in char_voices.items() if k.lower() not in ("narrator", "người kể chuyện", "character")]
-                if named:
-                    return named[0]
-            return char_voices.get("Narrator") or def_voice
+                matched_v = char_voices[spk]
+            else:
+                low_spk = spk.lower()
+                for k, v in char_voices.items():
+                    if k.lower() == low_spk:
+                        matched_v = v
+                        break
+                if matched_v is None:
+                    for k, v in char_voices.items():
+                        if k.lower() in low_spk or low_spk in k.lower():
+                            matched_v = v
+                            break
+                if matched_v is None and low_spk == "character":
+                    named = [v for k, v in char_voices.items() if k.lower() not in ("narrator", "người kể chuyện", "character") and (v or "").strip() not in ("", "none", "silent", "mute")]
+                    if named:
+                        matched_v = named[0]
+            if matched_v is None:
+                return fallback_v
+            clean_v = str(matched_v).strip()
+            if clean_v.lower() in ("none", "silent", "mute"):
+                return "__SILENT__"
+            return clean_v or fallback_v
+
+        # Omit segments whose character explicitly has no speaking voice ("none"/"silent")
+        segments = [s for s in segments if get_voice_for_speaker(s["speaker"]) != "__SILENT__"]
+        if not segments:
+            sil_dur = 4.0
+            subprocess.run([
+                FFMPEG_PATH, "-y",
+                "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                "-t", str(sil_dur),
+                "-c:a", "libmp3lame", "-q:a", "4",
+                output_audio_path
+            ], capture_output=True)
+            if output_srt_path:
+                with open(output_srt_path, "w", encoding="utf-8") as srt_f:
+                    srt_f.write("")
+            return {
+                "audio_path": output_audio_path,
+                "srt_path": output_srt_path,
+                "duration": sil_dur,
+                "voice": def_voice,
+                "character_voices": char_voices,
+                "dialogues": all_segments,
+                "is_multivoice": True,
+                "dialogue_only_silent": True
+            }
 
         # Check if single speaker / single voice needed
         voices_needed = [get_voice_for_speaker(s["speaker"]) for s in segments]

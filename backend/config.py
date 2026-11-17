@@ -287,6 +287,12 @@ IMAGE_MODES = {
         "description": "High-fidelity Google Imagen 3 visuals powered by your Gemini Key or Cookie",
         "icon": "✨"
     },
+    "flowkit": {
+        "id": "flowkit",
+        "name": "Google Flow Bridge (Character Refs)",
+        "description": "Paints via Google Flow Chrome Extension using uploaded Character Reference Images",
+        "icon": "🌊"
+    },
     "neural_love": {
         "id": "neural_love",
         "name": "Neural.love AI Art",

@@ -57,15 +57,20 @@ class AniStoryApp {
     };
     this._renderCompleteResolver = null;
     this.batchQueue = this.loadBatchQueueFromStorage();
+    this.stage1Characters = this.loadStage1CharactersFromStorage();
+    this.isStage1CharsExpanded = this.stage1Characters.length > 0;
+    this.useCharRefsInVideo = localStorage.getItem("anistory_cfg_video_char_refs") !== "false";
 
     this.initElements();
     this.enableImageCaptions = localStorage.getItem("anistory_cfg_enable_image_captions") !== "false";
     this.updateSpeakerCamUI(this.cameraOnSpeaker);
     this.updateImageCaptionsUI(this.enableImageCaptions);
+    this.updateVideoCharRefsUI(this.useCharRefsInVideo);
     this.updateVoiceoverUI(this.enableVoiceover);
     this.updateMultivoiceUI(this.enableMultivoice);
     this.updateAutoPaintUI(localStorage.getItem("anistory_autopaint") === "true");
     this.updateAutoWorkflowToggleUI(this.autoWorkflowEnabled);
+    this.renderStage1Characters();
     this.renderBatchQueueList();
     this.restoreCachedProjectSync();
     this.attachEvents();
@@ -463,6 +468,18 @@ class AniStoryApp {
     this.btnToggleMultivoiceStage2 = document.getElementById("btnToggleMultivoiceStage2");
     this.iconMultivoiceStage2 = document.getElementById("iconMultivoiceStage2");
     this.textMultivoiceStage2 = document.getElementById("textMultivoiceStage2");
+    this.stage1CharactersPanel = document.getElementById("stage1CharactersPanel");
+    this.badgeStage1CharCount = document.getElementById("badgeStage1CharCount");
+    this.btnStage1AddCharacter = document.getElementById("btnStage1AddCharacter");
+    this.btnStage1ToggleCharacters = document.getElementById("btnStage1ToggleCharacters");
+    this.textStage1ToggleChar = document.getElementById("textStage1ToggleChar");
+    this.stage1CharactersBody = document.getElementById("stage1CharactersBody");
+    this.stage1CharactersList = document.getElementById("stage1CharactersList");
+
+    this.btnToggleVideoCharRefsStage2 = document.getElementById("btnToggleVideoCharRefsStage2");
+    this.iconVideoCharRefsStage2 = document.getElementById("iconVideoCharRefsStage2");
+    this.textVideoCharRefsStage2 = document.getElementById("textVideoCharRefsStage2");
+
     this.btnOpenVoiceCastingModal = document.getElementById("btnOpenVoiceCastingModal");
     this.textVoiceCastingBadge = document.getElementById("textVoiceCastingBadge");
     this.badgeVoiceRoleCount = document.getElementById("badgeVoiceRoleCount");
@@ -473,6 +490,14 @@ class AniStoryApp {
     this.textCastingCollapse = document.getElementById("textCastingCollapse");
     this.characterVoicesList = document.getElementById("characterVoicesList");
     this.btnAutoCastVoices = document.getElementById("btnAutoCastVoices");
+    this.btnAddProjectCharacter = document.getElementById("btnAddProjectCharacter");
+    this.btnGenerateAllCharacterImages = document.getElementById("btnGenerateAllCharacterImages");
+    this.inlineAddCharForm = document.getElementById("inlineAddCharForm");
+    this.inputNewCharName = document.getElementById("inputNewCharName");
+    this.inputNewCharDesc = document.getElementById("inputNewCharDesc");
+    this.selectNewCharVoice = document.getElementById("selectNewCharVoice");
+    this.btnConfirmAddChar = document.getElementById("btnConfirmAddChar");
+    this.btnCancelAddChar = document.getElementById("btnCancelAddChar");
     this.modalVoiceCasting = document.getElementById("modalVoiceCasting");
     this.btnCloseVoiceCasting = document.getElementById("btnCloseVoiceCasting");
     this.btnDoneVoiceCasting = document.getElementById("btnDoneVoiceCasting");
@@ -1480,13 +1505,19 @@ class AniStoryApp {
       }
     });
 
-    // Image Painting Mode Toggles (Google Gemini Imagen 3 vs Neural.love vs Puter.js vs Storyboard Only)
+    // Image Painting Mode Toggles (Google Gemini Imagen 3 vs FlowKit Character Ref vs Neural.love vs Puter.js vs Storyboard Only)
     const toggleImageModeHandler = () => {
-      const modes = ["gemini", "neural_love", "puter", "manual"];
+      const modes = ["gemini", "flowkit", "neural_love", "puter", "manual"];
       const currentIdx = Math.max(0, modes.indexOf(this.imageMode));
       const nextMode = modes[(currentIdx + 1) % modes.length];
       this.setImageMode(nextMode);
-      const label = nextMode === "gemini" ? "✨ Google Gemini / Imagen 3" : (nextMode === "neural_love" ? "💖 Neural.love AI Art" : (nextMode === "puter" ? "🖌️ In-Browser Puter.js" : "📝 Storyboard Only (No AI Paint)"));
+      const label = nextMode === "gemini"
+        ? "✨ Google Gemini / Imagen 3"
+        : (nextMode === "flowkit"
+          ? "🎬 FlowKit Character Ref Image"
+          : (nextMode === "neural_love"
+            ? "💖 Neural.love AI Art"
+            : (nextMode === "puter" ? "🖌️ In-Browser Puter.js" : "📝 Storyboard Only (No AI Paint)")));
       this.showToast(`Switched Image Mode to: ${label}`);
     };
 
@@ -1824,7 +1855,7 @@ class AniStoryApp {
       });
     }
 
-    // Toggle collapse/expand on inline Character Voice Casting Bar
+    // Toggle collapse/expand on inline Character Studio Bar (Portraits + Optional Voices)
     if (this.btnToggleCastingBarCollapse) {
       this.btnToggleCastingBarCollapse.addEventListener("click", () => {
         this.isCastingBarCollapsed = !this.isCastingBarCollapsed;
@@ -1834,6 +1865,142 @@ class AniStoryApp {
         if (this.textCastingCollapse) {
           this.textCastingCollapse.textContent = this.isCastingBarCollapsed ? "▼ Show" : "▲ Hide";
         }
+      });
+    }
+
+    // Stage 1 Character Creator Panel (Pre-Storyboard Characters: Image + Optional Voice)
+    if (this.btnStage1ToggleCharacters) {
+      this.btnStage1ToggleCharacters.addEventListener("click", () => {
+        this.isStage1CharsExpanded = !this.isStage1CharsExpanded;
+        if (this.stage1CharactersBody) {
+          this.stage1CharactersBody.style.display = this.isStage1CharsExpanded ? "block" : "none";
+        }
+        if (this.textStage1ToggleChar) {
+          this.textStage1ToggleChar.textContent = this.isStage1CharsExpanded ? "▲ Collapse" : "▼ Expand";
+        }
+      });
+    }
+
+    if (this.btnStage1AddCharacter) {
+      this.btnStage1AddCharacter.addEventListener("click", () => {
+        this.isStage1CharsExpanded = true;
+        if (this.stage1CharactersBody) this.stage1CharactersBody.style.display = "block";
+        if (this.textStage1ToggleChar) this.textStage1ToggleChar.textContent = "▲ Collapse";
+        this.stage1Characters.push({
+          id: `char_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: "",
+          description: "",
+          voice_id: "",
+          image_path: "",
+          role: "supporting"
+        });
+        this.saveStage1CharactersToStorage();
+        this.renderStage1Characters();
+        const inputs = this.stage1CharactersList?.querySelectorAll(".stage1-char-name");
+        if (inputs && inputs.length > 0) inputs[inputs.length - 1].focus();
+      });
+    }
+
+    // Stage 2: Toggle Character Reference Images in Video Generation (FlowKit R2V / Scene Continuity)
+    if (this.btnToggleVideoCharRefsStage2) {
+      this.btnToggleVideoCharRefsStage2.addEventListener("click", async () => {
+        if (!this.currentProject) return;
+        const oldState = this.currentProject.use_char_refs_in_video !== false;
+        const newState = !oldState;
+        this.updateVideoCharRefsUI(newState);
+        try {
+          const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/toggle-video-char-refs`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enable: newState })
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.project) this.currentProject = data.project;
+            this.currentProject.use_char_refs_in_video = data.use_char_refs_in_video;
+            this.useCharRefsInVideo = data.use_char_refs_in_video;
+            localStorage.setItem("anistory_cfg_video_char_refs", this.useCharRefsInVideo ? "true" : "false");
+            this.saveActiveProjectState();
+            this.updateVideoCharRefsUI(this.useCharRefsInVideo);
+            this.showToast(
+              this.useCharRefsInVideo
+                ? "🎬 Video Char Refs: ON — Character portrait images will be fed into Video Generation!"
+                : "🎬 Video Char Refs: OFF — Video generation uses only the scene start frame."
+            );
+          }
+        } catch (e) {
+          this.updateVideoCharRefsUI(oldState);
+          this.showToast("Failed to toggle Video Character Refs: " + e.message, true);
+        }
+      });
+    }
+
+    // Stage 2: Character Studio Inline Add & Batch Generate Portraits
+    if (this.btnAddProjectCharacter) {
+      this.btnAddProjectCharacter.addEventListener("click", () => {
+        if (!this.inlineAddCharForm) return;
+        const isOpen = this.inlineAddCharForm.style.display === "block";
+        this.inlineAddCharForm.style.display = isOpen ? "none" : "block";
+        if (!isOpen && this.inputNewCharName) {
+          this.inputNewCharName.value = "";
+          if (this.inputNewCharDesc) this.inputNewCharDesc.value = "";
+          if (this.selectNewCharVoice) this.selectNewCharVoice.value = "";
+          this.inputNewCharName.focus();
+        }
+      });
+    }
+
+    if (this.btnCancelAddChar) {
+      this.btnCancelAddChar.addEventListener("click", () => {
+        if (this.inlineAddCharForm) this.inlineAddCharForm.style.display = "none";
+      });
+    }
+
+    if (this.btnConfirmAddChar) {
+      this.btnConfirmAddChar.addEventListener("click", async () => {
+        if (!this.currentProject) return;
+        const name = (this.inputNewCharName?.value || "").trim();
+        const description = (this.inputNewCharDesc?.value || "").trim();
+        const voice_id = this.selectNewCharVoice ? this.selectNewCharVoice.value : "";
+        if (!name) {
+          this.showToast("Please enter a character name.", true);
+          this.inputNewCharName?.focus();
+          return;
+        }
+        this.btnConfirmAddChar.disabled = true;
+        try {
+          const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, description, voice_id })
+          });
+          if (!resp.ok) {
+            const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to add character");
+            throw new Error(msg);
+          }
+          const data = await resp.json();
+          if (data.project) {
+            this.currentProject = data.project;
+            this.saveActiveProjectState();
+          }
+          if (this.inlineAddCharForm) this.inlineAddCharForm.style.display = "none";
+          if (this.inputCharacterConsistency) {
+            this.inputCharacterConsistency.value = this.currentProject.characters || "";
+          }
+          this.renderCharacterVoiceCasting();
+          this.renderStoryboardView();
+          this.showToast(`👤 Added character "${name}"! Click 🎨 on the card to generate portrait.`);
+        } catch (err) {
+          this.showToast(err.message, true);
+        } finally {
+          this.btnConfirmAddChar.disabled = false;
+        }
+      });
+    }
+
+    if (this.btnGenerateAllCharacterImages) {
+      this.btnGenerateAllCharacterImages.addEventListener("click", () => {
+        this.generateAllProjectCharacterImages(this.btnGenerateAllCharacterImages);
       });
     }
 
@@ -2244,6 +2411,10 @@ class AniStoryApp {
         this.badgeImageMode.textContent = "📝 Storyboard Only (No AI Painting)";
         this.badgeImageMode.style.background = "rgba(16, 185, 129, 0.2)";
         this.badgeImageMode.style.color = "#6ee7b7";
+      } else if (mode === "flowkit") {
+        this.badgeImageMode.textContent = "🎬 FlowKit Character Ref Image";
+        this.badgeImageMode.style.background = "rgba(14, 165, 233, 0.2)";
+        this.badgeImageMode.style.color = "#38bdf8";
       } else if (mode === "neural_love") {
         this.badgeImageMode.textContent = "💖 Neural.love AI Art";
         this.badgeImageMode.style.background = "rgba(236, 72, 153, 0.2)";
@@ -2261,6 +2432,8 @@ class AniStoryApp {
     if (this.descImageMode) {
       if (mode === "manual") {
         this.descImageMode.textContent = "AI is dedicated exclusively to the storyboard. Scenes use SVG placeholders and user-uploaded media.";
+      } else if (mode === "flowkit") {
+        this.descImageMode.textContent = "FlowKit / Google Flow image generation with automatic Character Portrait References across scenes.";
       } else if (mode === "neural_love") {
         this.descImageMode.textContent = "High-fidelity artistic anime & fantasy illustrations via your Neural.love API Key";
       } else if (mode === "puter") {
@@ -2271,6 +2444,8 @@ class AniStoryApp {
     }
     if (this.btnToggleImageMode) {
       if (mode === "gemini") {
+        this.btnToggleImageMode.innerHTML = `<span>🎬</span> Switch to FlowKit Character Ref`;
+      } else if (mode === "flowkit") {
         this.btnToggleImageMode.innerHTML = `<span>💖</span> Switch to Neural.love AI Art`;
       } else if (mode === "neural_love") {
         this.btnToggleImageMode.innerHTML = `<span>🖌️</span> Switch to In-Browser Puter.js`;
@@ -2287,6 +2462,9 @@ class AniStoryApp {
       if (mode === "manual") {
         this.iconImageModeStage2.textContent = "📝";
         this.textImageModeStage2.textContent = "Paint: Storyboard Only";
+      } else if (mode === "flowkit") {
+        this.iconImageModeStage2.textContent = "🎬";
+        this.textImageModeStage2.textContent = "Paint: FlowKit Char Ref";
       } else if (mode === "neural_love") {
         this.iconImageModeStage2.textContent = "💖";
         this.textImageModeStage2.textContent = "Paint: Neural.love AI";
@@ -2527,8 +2705,234 @@ class AniStoryApp {
       this.btnOpenVoiceCastingModal.style.display = enabled ? "inline-flex" : "none";
     }
 
+    // Character Studio remains visible in Stage 2 even when Multi-Voice is OFF so users can manage Character Portraits & Visual Consistency
     if (this.characterVoiceCastingBar) {
-      this.characterVoiceCastingBar.style.display = enabled ? "block" : "none";
+      this.characterVoiceCastingBar.style.display = "block";
+    }
+  }
+
+  updateVideoCharRefsUI(enabled) {
+    if (this.iconVideoCharRefsStage2) {
+      this.iconVideoCharRefsStage2.textContent = enabled ? "🎭🎬" : "🎬";
+    }
+    if (this.textVideoCharRefsStage2) {
+      this.textVideoCharRefsStage2.textContent = enabled ? "Video Char Refs: ON" : "Video Char Refs: OFF";
+    }
+    if (this.btnToggleVideoCharRefsStage2) {
+      if (enabled) {
+        this.btnToggleVideoCharRefsStage2.style.borderColor = "rgba(16, 185, 129, 0.45)";
+        this.btnToggleVideoCharRefsStage2.style.color = "#6ee7b7";
+      } else {
+        this.btnToggleVideoCharRefsStage2.style.borderColor = "rgba(255, 255, 255, 0.14)";
+        this.btnToggleVideoCharRefsStage2.style.color = "var(--text-muted)";
+      }
+    }
+  }
+
+  getAvailableVoices() {
+    return this.config?.voices || this._allVoices || [];
+  }
+
+  loadStage1CharactersFromStorage() {
+    try {
+      const raw = localStorage.getItem("anistory_stage1_characters");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  saveStage1CharactersToStorage() {
+    try {
+      localStorage.setItem("anistory_stage1_characters", JSON.stringify(this.stage1Characters || []));
+    } catch (e) {
+      console.warn("Could not persist stage1Characters:", e);
+    }
+  }
+
+  buildOptionalVoiceOptionsHtml(selectedVoiceId = "") {
+    const selVal = selectedVoiceId === null || selectedVoiceId === undefined ? "" : String(selectedVoiceId);
+    const voices = this.getAvailableVoices();
+    let html = `<option value="" ${selVal === "" ? "selected" : ""}>🎙️ Tự động / Người kể (Không bắt buộc)</option>`;
+    html += `<option value="none" ${selVal === "none" ? "selected" : ""}>🔇 Không lồng tiếng (Chỉ hình ảnh)</option>`;
+    voices.forEach(v => {
+      const isSelected = v.id === selVal ? "selected" : "";
+      html += `<option value="${this.escapeHtml(v.id)}" ${isSelected}>${this.escapeHtml(v.name)} (${this.escapeHtml(v.gender || "")})</option>`;
+    });
+    return html;
+  }
+
+  renderStage1Characters() {
+    if (!this.stage1CharactersList) return;
+    const chars = this.stage1Characters || [];
+    const validCount = chars.filter(c => (c.name || "").trim()).length;
+    if (this.badgeStage1CharCount) {
+      const labelCount = chars.length;
+      this.badgeStage1CharCount.textContent = `${labelCount} ${labelCount === 1 ? "Character" : "Characters"}`;
+    }
+    if (this.stage1CharactersBody) {
+      this.stage1CharactersBody.style.display = this.isStage1CharsExpanded ? "block" : "none";
+    }
+    if (this.textStage1ToggleChar) {
+      this.textStage1ToggleChar.textContent = this.isStage1CharsExpanded ? "▲ Collapse" : "▼ Expand";
+    }
+
+    this.stage1CharactersList.innerHTML = "";
+    if (chars.length === 0) {
+      const emptyEl = document.createElement("div");
+      emptyEl.style.cssText = "padding:10px 12px; font-size:12px; color:var(--text-muted); border:1px dashed rgba(255,255,255,0.14); border-radius:10px; text-align:center;";
+      emptyEl.textContent = "Chưa tạo nhân vật trước. Nhấn '+ Thêm Nhân Vật' để tạo chân dung & giọng nói tùy chọn, hoặc để AI tự tạo khi lên kịch bản.";
+      this.stage1CharactersList.appendChild(emptyEl);
+      return;
+    }
+
+    chars.forEach((char, idx) => {
+      const card = document.createElement("div");
+      card.className = "stage1-char-card";
+      const cleanImg = char.image_path ? char.image_path.replace(/\\/g, "/") : "";
+      const imgHtml = cleanImg
+        ? `<img src="/media/${encodeURI(cleanImg)}?t=${Date.now()}" alt="${this.escapeHtml(char.name || "Character")}" style="width:68px; height:88px; object-fit:cover; border-radius:8px; border:1px solid rgba(255,255,255,0.16); display:block;">`
+        : `<div style="width:68px; height:88px; border-radius:8px; border:1px dashed rgba(255,255,255,0.22); background:rgba(15,23,42,0.55); display:flex; align-items:center; justify-content:center; font-size:24px;">👤</div>`;
+
+      card.innerHTML = `
+        <div style="display:flex; gap:12px; align-items:flex-start; width:100%;">
+          <div style="display:flex; flex-direction:column; gap:5px; align-items:center; flex-shrink:0;">
+            ${imgHtml}
+            <div style="display:flex; gap:4px;">
+              <button type="button" class="glass-btn secondary-btn btn-s1-gen-img" style="padding:3px 6px; font-size:10.5px;" title="AI Generate Character Portrait">🎨 AI</button>
+              <button type="button" class="glass-btn secondary-btn btn-s1-upload-img" style="padding:3px 6px; font-size:10.5px;" title="Upload Character Portrait">📁</button>
+              <input type="file" accept="image/*" class="input-s1-upload-img" style="display:none;">
+            </div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; gap:6px; min-width:0;">
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="text" class="styled-input stage1-char-name" value="${this.escapeHtml(char.name || "")}" placeholder="Tên nhân vật (VD: Tôn Ngộ Không, Bé An...)" style="flex:1; padding:6px 10px; font-size:12.5px; font-weight:600;">
+              <button type="button" class="glass-btn secondary-btn btn-s1-remove-char" style="padding:4px 8px; font-size:11px; color:#fca5a5;" title="Xóa nhân vật">🗑️</button>
+            </div>
+            <textarea class="styled-input stage1-char-desc" rows="2" placeholder="Mô tả ngoại hình (tóc, trang phục, độ tuổi, phụ kiện)..." style="padding:6px 10px; font-size:11.5px; resize:vertical;">${this.escapeHtml(char.description || "")}</textarea>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <select class="styled-select stage1-char-voice" style="flex:1; padding:5px 8px; font-size:11.5px;">
+                ${this.buildOptionalVoiceOptionsHtml(char.voice_id)}
+              </select>
+              <button type="button" class="glass-btn secondary-btn btn-s1-audition" style="padding:4px 8px; font-size:11px;" title="Nghe thử giọng">🔊</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const nameInput = card.querySelector(".stage1-char-name");
+      const descInput = card.querySelector(".stage1-char-desc");
+      const voiceSel = card.querySelector(".stage1-char-voice");
+      const btnGen = card.querySelector(".btn-s1-gen-img");
+      const btnUpload = card.querySelector(".btn-s1-upload-img");
+      const fileInput = card.querySelector(".input-s1-upload-img");
+      const btnAudition = card.querySelector(".btn-s1-audition");
+      const btnRemove = card.querySelector(".btn-s1-remove-char");
+
+      nameInput.addEventListener("input", () => {
+        this.stage1Characters[idx].name = nameInput.value;
+        this.saveStage1CharactersToStorage();
+      });
+      descInput.addEventListener("input", () => {
+        this.stage1Characters[idx].description = descInput.value;
+        this.saveStage1CharactersToStorage();
+      });
+      voiceSel.addEventListener("change", () => {
+        this.stage1Characters[idx].voice_id = voiceSel.value;
+        this.saveStage1CharactersToStorage();
+      });
+      btnAudition.addEventListener("click", () => {
+        const vId = voiceSel.value;
+        if (vId === "none") {
+          this.showToast("Nhân vật đang đặt chế độ Không lồng tiếng (🔇).");
+          return;
+        }
+        const effectiveId = vId || this.selectVoice?.value || "vi-VN-HoaiMyNeural-story";
+        this.playCharacterVoiceAudition(effectiveId, nameInput.value || `Character ${idx + 1}`);
+      });
+      btnRemove.addEventListener("click", () => {
+        this.stage1Characters.splice(idx, 1);
+        this.saveStage1CharactersToStorage();
+        this.renderStage1Characters();
+      });
+      btnGen.addEventListener("click", () => this.generateStage1CharPortrait(idx, btnGen));
+      btnUpload.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files && fileInput.files[0]) {
+          this.uploadStage1CharPortrait(idx, fileInput.files[0]);
+        }
+      });
+
+      this.stage1CharactersList.appendChild(card);
+    });
+  }
+
+  async generateStage1CharPortrait(idx, btnEl) {
+    const char = this.stage1Characters?.[idx];
+    if (!char) return;
+    if (!(char.name || "").trim() && !(char.description || "").trim()) {
+      this.showToast("Nhập tên hoặc mô tả nhân vật trước khi tạo ảnh!", true);
+      return;
+    }
+    const oldText = btnEl.textContent;
+    btnEl.disabled = true;
+    btnEl.textContent = "⏳";
+    try {
+      const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
+      const apiKey = this.getEffectiveApiKey(provider);
+      const resp = await fetch("/api/characters/generate-draft-portrait", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: char.id,
+          name: (char.name || `Character ${idx + 1}`).trim(),
+          description: (char.description || "").trim(),
+          art_style: this.selectedStyleKey || "ghibli",
+          image_mode: this.imageMode || "gemini",
+          ai_provider: provider,
+          api_key: apiKey
+        })
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Portrait generation failed");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      char.image_path = data.image_path || "";
+      this.saveStage1CharactersToStorage();
+      this.renderStage1Characters();
+      this.showToast(`🎨 Đã tạo chân dung nhân vật "${char.name || "Character"}"!`);
+    } catch (e) {
+      this.showToast(e.message, true);
+    } finally {
+      btnEl.disabled = false;
+      btnEl.textContent = oldText;
+    }
+  }
+
+  async uploadStage1CharPortrait(idx, file) {
+    const char = this.stage1Characters?.[idx];
+    if (!char || !file) return;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const resp = await fetch("/api/characters/upload-draft-portrait", {
+        method: "POST",
+        body: fd
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Upload portrait failed");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      char.image_path = data.image_path || "";
+      this.saveStage1CharactersToStorage();
+      this.renderStage1Characters();
+      this.showToast(`📁 Đã tải ảnh chân dung cho "${char.name || "Character"}"!`);
+    } catch (e) {
+      this.showToast(e.message, true);
     }
   }
 
@@ -2539,6 +2943,11 @@ class AniStoryApp {
     const icon = isNarrator ? "🎙️" : "🎭";
 
     let optionsHtml = "";
+    if (!isNarrator) {
+      const selVal = currentVoice === null || currentVoice === undefined ? "" : String(currentVoice);
+      optionsHtml += `<option value="" ${selVal === "" ? "selected" : ""}>🎙️ Auto / Narrator (Optional)</option>`;
+      optionsHtml += `<option value="none" ${selVal === "none" ? "selected" : ""}>🔇 Silent / No Voice</option>`;
+    }
     allVoices.forEach(v => {
       const isSelected = v.id === currentVoice ? "selected" : "";
       optionsHtml += `<option value="${v.id}" ${isSelected}>${v.name}</option>`;
@@ -2576,11 +2985,9 @@ class AniStoryApp {
             if (this.selectVoiceStage2) this.selectVoiceStage2.value = newVoiceId;
           }
           this.saveActiveProjectState();
-          this.showToast(`🎭 ${charName}: assigned voice "${newVoiceId}"`);
-          // Sync any duplicate selects across views
-          document.querySelectorAll(`.char-voice-select[data-char="${encodeURIComponent(charName)}"]`).forEach(s => {
-            if (s !== sel) s.value = newVoiceId;
-          });
+          const label = newVoiceId === "none" ? "Silent (Visual Only)" : (newVoiceId || "Auto / Narrator");
+          this.showToast(`🎭 ${charName}: assigned voice "${label}"`);
+          this.renderCharacterVoiceCasting();
         }
       } catch (err) {
         this.showToast("Failed to update voice: " + err.message, true);
@@ -2590,50 +2997,338 @@ class AniStoryApp {
     const btnAud = card.querySelector(".char-audition-btn");
     btnAud.addEventListener("click", () => {
       const voiceId = sel.value;
-      this.playCharacterVoiceAudition(voiceId, charName);
+      if (voiceId === "none") {
+        this.showToast(`${charName} is set to Silent (No Voice).`);
+        return;
+      }
+      this.playCharacterVoiceAudition(voiceId || this.currentProject?.voice || "vi-VN-HoaiMyNeural-story", charName);
     });
 
     return card;
   }
 
+  createCharacterStudioCard(charProfile, allVoices, multivoiceEnabled) {
+    const card = document.createElement("div");
+    card.className = "character-studio-card";
+    const charId = charProfile.id || "";
+    const charName = charProfile.name || "Character";
+    const charDesc = charProfile.description || "";
+    const currentVoice = charProfile.voice_id !== undefined ? charProfile.voice_id : (this.currentProject?.character_voices?.[charName] ?? "");
+    const cleanImg = charProfile.image_path ? charProfile.image_path.replace(/\\/g, "/") : "";
+
+    const portraitHtml = cleanImg
+      ? `<img src="/media/${encodeURI(cleanImg)}?t=${Date.now()}" alt="${this.escapeHtml(charName)}" style="width:82px; height:108px; object-fit:cover; border-radius:10px; border:1px solid rgba(139,92,246,0.45); display:block;">`
+      : `<div style="width:82px; height:108px; border-radius:10px; border:1px dashed rgba(255,255,255,0.22); background:rgba(15,23,42,0.55); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; color:var(--text-muted); font-size:11px; text-align:center; padding:4px;">
+           <span style="font-size:22px;">👤</span>
+           <span>No Portrait</span>
+         </div>`;
+
+    let voiceOptionsHtml = `<option value="" ${currentVoice === "" ? "selected" : ""}>🎙️ Auto / Narrator (Optional)</option>`;
+    voiceOptionsHtml += `<option value="none" ${currentVoice === "none" ? "selected" : ""}>🔇 Silent / Visual Only</option>`;
+    allVoices.forEach(v => {
+      const isSelected = v.id === currentVoice ? "selected" : "";
+      voiceOptionsHtml += `<option value="${this.escapeHtml(v.id)}" ${isSelected}>${this.escapeHtml(v.name)}</option>`;
+    });
+
+    card.innerHTML = `
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <div style="display:flex; flex-direction:column; gap:6px; align-items:center; flex-shrink:0;">
+          ${portraitHtml}
+          <div style="display:flex; gap:4px;">
+            <button type="button" class="glass-btn secondary-btn btn-studio-gen-img" style="padding:3px 7px; font-size:10.5px;" title="Generate AI Portrait for ${this.escapeHtml(charName)}">🎨 AI</button>
+            <button type="button" class="glass-btn secondary-btn btn-studio-upload-img" style="padding:3px 7px; font-size:10.5px;" title="Upload Custom Portrait">📁</button>
+            <input type="file" accept="image/*" class="input-studio-upload-img" style="display:none;">
+          </div>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:6px; min-width:0;">
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input type="text" class="styled-input studio-char-name" value="${this.escapeHtml(charName)}" placeholder="Character Name" style="flex:1; padding:5px 9px; font-size:12.5px; font-weight:600;">
+            <span class="tag-badge" style="font-size:10px; padding:2px 6px; ${cleanImg ? 'background:rgba(16,185,129,0.2); color:#6ee7b7;' : 'background:rgba(255,255,255,0.08); color:var(--text-muted);'}">${cleanImg ? "✓ Ref" : "No Ref"}</span>
+            <button type="button" class="glass-btn secondary-btn btn-studio-delete-char" style="padding:4px 7px; font-size:11px; color:#fca5a5;" title="Delete Character">🗑️</button>
+          </div>
+          <textarea class="styled-input studio-char-desc" rows="2" placeholder="Visual description for consistent Image & Video prompts..." style="padding:5px 9px; font-size:11.5px; line-height:1.35; resize:vertical;">${this.escapeHtml(charDesc)}</textarea>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <select class="styled-select studio-char-voice" data-char="${encodeURIComponent(charName)}" style="flex:1; padding:5px 8px; font-size:11.5px;" title="Giọng nói tùy chọn (có thể để Auto hoặc Silent)">
+              ${voiceOptionsHtml}
+            </select>
+            <button type="button" class="glass-btn secondary-btn btn-studio-audition" style="padding:4px 8px; font-size:11px;" title="Audition voice">🔊</button>
+          </div>
+          ${!multivoiceEnabled ? '<div style="font-size:10px; color:var(--text-muted);">Multi-Voice OFF (Voice setting saved for when Multi-Voice is enabled)</div>' : ''}
+        </div>
+      </div>
+    `;
+
+    const nameEl = card.querySelector(".studio-char-name");
+    const descEl = card.querySelector(".studio-char-desc");
+    const voiceEl = card.querySelector(".studio-char-voice");
+    const btnGen = card.querySelector(".btn-studio-gen-img");
+    const btnUpload = card.querySelector(".btn-studio-upload-img");
+    const fileInput = card.querySelector(".input-studio-upload-img");
+    const btnAudition = card.querySelector(".btn-studio-audition");
+    const btnDelete = card.querySelector(".btn-studio-delete-char");
+
+    const syncUpdate = () => {
+      this.updateProjectCharacterProfile({
+        id: charId,
+        name: nameEl.value.trim() || charName,
+        description: descEl.value.trim(),
+        voice_id: voiceEl.value,
+        image_path: charProfile.image_path || "",
+        role: charProfile.role || "supporting"
+      });
+    };
+
+    nameEl.addEventListener("change", syncUpdate);
+    descEl.addEventListener("change", syncUpdate);
+    voiceEl.addEventListener("change", syncUpdate);
+
+    btnGen.addEventListener("click", () => this.generateProjectCharacterImage(charId, btnGen));
+    btnUpload.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files && fileInput.files[0]) {
+        this.uploadProjectCharacterImage(charId, fileInput.files[0]);
+      }
+    });
+    btnAudition.addEventListener("click", () => {
+      const vId = voiceEl.value;
+      if (vId === "none") {
+        this.showToast(`${nameEl.value || charName} is set to Silent (No Voice).`);
+        return;
+      }
+      this.playCharacterVoiceAudition(vId || this.currentProject?.voice || "vi-VN-HoaiMyNeural-story", nameEl.value || charName);
+    });
+    btnDelete.addEventListener("click", () => this.deleteProjectCharacterProfile(charId, nameEl.value || charName));
+
+    return card;
+  }
+
+  async updateProjectCharacterProfile(profilePayload) {
+    if (!this.currentProject) return;
+    try {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(profilePayload)
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to update character");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      if (data.project) {
+        this.currentProject = data.project;
+        this.saveActiveProjectState();
+        if (this.inputCharacterConsistency) {
+          this.inputCharacterConsistency.value = this.currentProject.characters || "";
+        }
+        this.renderCharacterVoiceCasting();
+        this.showToast(`💾 Updated character "${profilePayload.name}"`);
+      }
+    } catch (err) {
+      this.showToast(err.message, true);
+    }
+  }
+
+  async deleteProjectCharacterProfile(charId, charName) {
+    if (!this.currentProject || !charId) return;
+    try {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(charId)}`, {
+        method: "DELETE"
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to delete character");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      if (data.project) {
+        this.currentProject = data.project;
+        this.saveActiveProjectState();
+        if (this.inputCharacterConsistency) {
+          this.inputCharacterConsistency.value = this.currentProject.characters || "";
+        }
+        this.renderCharacterVoiceCasting();
+        this.renderStoryboardView();
+        this.showToast(`🗑️ Removed character "${charName}"`);
+      }
+    } catch (err) {
+      this.showToast(err.message, true);
+    }
+  }
+
+  async generateProjectCharacterImage(charId, btnEl) {
+    if (!this.currentProject || !charId) return;
+    const oldText = btnEl ? btnEl.textContent : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = "⏳";
+    }
+    try {
+      const provider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
+      const apiKey = this.getEffectiveApiKey(provider);
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(charId)}/generate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: apiKey,
+          ai_provider: provider,
+          image_mode: this.imageMode || this.currentProject.image_mode || "gemini"
+        })
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to generate character portrait");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      if (data.project) {
+        this.currentProject = data.project;
+        this.saveActiveProjectState();
+        this.renderCharacterVoiceCasting();
+        this.renderStoryboardView();
+        this.showToast("🎨 Character portrait generated! Now used automatically in Scene & Video generation.");
+      }
+    } catch (err) {
+      this.showToast(err.message, true);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = oldText;
+      }
+    }
+  }
+
+  async uploadProjectCharacterImage(charId, file) {
+    if (!this.currentProject || !charId || !file) return;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(charId)}/upload-image`, {
+        method: "POST",
+        body: fd
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to upload character portrait");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      if (data.project) {
+        this.currentProject = data.project;
+        this.saveActiveProjectState();
+        this.renderCharacterVoiceCasting();
+        this.renderStoryboardView();
+        this.showToast("📁 Uploaded character portrait! Now active for Scene & Video refs.");
+      }
+    } catch (err) {
+      this.showToast(err.message, true);
+    }
+  }
+
+  async generateAllProjectCharacterImages(btnEl) {
+    if (!this.currentProject) return;
+    const oldHtml = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = `<span>⏳ Generating...</span>`;
+    }
+    try {
+      const provider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
+      const apiKey = this.getEffectiveApiKey(provider);
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/generate-all-images`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          force_all: false,
+          api_key: apiKey,
+          ai_provider: provider,
+          image_mode: this.imageMode || this.currentProject.image_mode || "gemini"
+        })
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Batch character portrait generation failed");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      if (data.project) {
+        this.currentProject = data.project;
+        this.saveActiveProjectState();
+        this.renderCharacterVoiceCasting();
+        this.renderStoryboardView();
+        const countImgs = (this.currentProject.character_profiles || []).filter(c => c.image_path).length;
+        this.showToast(`🎨 Character Portraits Ready (${countImgs} active)!`);
+      }
+    } catch (err) {
+      this.showToast(err.message, true);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = oldHtml;
+      }
+    }
+  }
+
   renderCharacterVoiceCasting() {
     if (!this.currentProject) return;
 
-    const isEnabled = this.currentProject.enable_multivoice !== false;
+    const isMultivoiceEnabled = this.currentProject.enable_multivoice !== false;
+    // Character Studio (Portraits + Optional Voices) is always available in Stage 2
     if (this.characterVoiceCastingBar) {
-      this.characterVoiceCastingBar.style.display = isEnabled ? "block" : "none";
+      this.characterVoiceCastingBar.style.display = "block";
     }
     if (this.btnOpenVoiceCastingModal) {
-      this.btnOpenVoiceCastingModal.style.display = isEnabled ? "inline-flex" : "none";
+      this.btnOpenVoiceCastingModal.style.display = isMultivoiceEnabled ? "inline-flex" : "none";
     }
-    if (!isEnabled) return;
 
     const voicesMap = this.currentProject.character_voices || {};
-    let charNames = Object.keys(voicesMap);
+    let profiles = Array.isArray(this.currentProject.character_profiles)
+      ? this.currentProject.character_profiles
+      : [];
 
-    // Filter out generic "Character" if specific named characters exist
+    // Fallback synthesis for legacy projects that don't yet have character_profiles
+    if (profiles.length === 0) {
+      profiles = Object.keys(voicesMap)
+        .filter(c => !["narrator", "người kể chuyện", "character"].includes(c.toLowerCase()))
+        .map((c, idx) => ({
+          id: `char_legacy_${idx}`,
+          name: c,
+          description: "",
+          voice_id: voicesMap[c] || "",
+          image_path: "",
+          role: idx === 0 ? "lead" : "supporting"
+        }));
+    }
+
+    let charNames = Object.keys(voicesMap);
     const hasNamedChars = charNames.some(c => !["narrator", "người kể chuyện", "character"].includes(c.toLowerCase()));
     if (hasNamedChars) {
       charNames = charNames.filter(c => c.toLowerCase() !== "character");
     }
-
     if (charNames.length === 0) {
       voicesMap["Narrator"] = this.currentProject.voice || "vi-VN-HoaiMyNeural-story";
       charNames.push("Narrator");
     }
 
-    const countText = `${charNames.length} ${charNames.length === 1 ? 'Role' : 'Roles'}`;
-    if (this.badgeVoiceRoleCount) this.badgeVoiceRoleCount.textContent = countText;
-    if (this.castingBarRoleCountBadge) this.castingBarRoleCountBadge.textContent = `${countText} Assigned`;
+    const portraitCount = profiles.filter(p => Boolean(p.image_path)).length;
+    const voicedCount = profiles.filter(p => p.voice_id && p.voice_id !== "none").length;
+    const countText = `${profiles.length} ${profiles.length === 1 ? "Character" : "Characters"}`;
+    if (this.badgeVoiceRoleCount) this.badgeVoiceRoleCount.textContent = `${charNames.length} Roles`;
+    if (this.castingBarRoleCountBadge) {
+      this.castingBarRoleCountBadge.textContent = `${countText} • ${portraitCount} Portraits • ${voicedCount} Voiced`;
+    }
 
-    const allVoices = this.config?.voices || [];
+    const allVoices = this.getAvailableVoices();
 
     if (this.characterVoicesList) {
       this.characterVoicesList.innerHTML = "";
-      charNames.forEach((charName) => {
-        const isNarrator = charName.toLowerCase() in { "narrator": 1, "người kể chuyện": 1 };
-        const card = this.createCharacterVoiceCard(charName, voicesMap[charName], allVoices, isNarrator);
-        this.characterVoicesList.appendChild(card);
+      this.characterVoicesList.classList.add("character-studio-grid");
+      // Always show compact Narrator voice card first
+      const narratorVoice = voicesMap["Narrator"] || this.currentProject.voice || "vi-VN-HoaiMyNeural-story";
+      this.characterVoicesList.appendChild(
+        this.createCharacterVoiceCard("Narrator", narratorVoice, allVoices, true)
+      );
+      // Render Character Studio Cards (Portrait + Description + Optional Voice)
+      profiles.forEach(prof => {
+        this.characterVoicesList.appendChild(
+          this.createCharacterStudioCard(prof, allVoices, isMultivoiceEnabled)
+        );
       });
     }
 
@@ -3546,6 +4241,7 @@ ${isAutoScenes
   }
 
   renderVoices(voices) {
+    this._allVoices = voices || [];
     const groupLabels = {
       vn_neural: "🇻🇳 Giọng Đọc Việt Nam Chuyên Biệt (14 Giọng)",
       vn_gemini: "✨ Google Gemini Multimodal (10 Giọng Tiếng Việt)",
@@ -3554,9 +4250,20 @@ ${isAutoScenes
     };
     const savedVoice = localStorage.getItem("anistory_cfg_voice");
 
-    const populateSelect = (selectEl, selectedId) => {
+    const populateSelect = (selectEl, selectedId, keepOptionalLead = false) => {
       if (!selectEl) return;
       selectEl.innerHTML = "";
+      if (keepOptionalLead) {
+        const optAuto = document.createElement("option");
+        optAuto.value = "";
+        optAuto.textContent = "🎙️ Tự động / Người kể (Không bắt buộc)";
+        selectEl.appendChild(optAuto);
+
+        const optNone = document.createElement("option");
+        optNone.value = "none";
+        optNone.textContent = "🔇 Không lồng tiếng (Chỉ hình ảnh)";
+        selectEl.appendChild(optNone);
+      }
       const groups = {};
       voices.forEach(v => {
         const gKey = v.group || (v.id.startsWith("vi-") ? "vn_neural" : (v.id.startsWith("gemini-") ? "vn_gemini" : (v.id.startsWith("gtts-vi") ? "vn_gtts" : "intl")));
@@ -3573,7 +4280,7 @@ ${isAutoScenes
           const opt = document.createElement("option");
           opt.value = v.id;
           opt.textContent = `${v.name} (${v.gender})`;
-          if (selectedId ? (v.id === selectedId) : (v.id === "vi-VN-HoaiMyNeural" || v.id === "gemini-Aoede")) {
+          if (!keepOptionalLead && (selectedId ? (v.id === selectedId) : (v.id === "vi-VN-HoaiMyNeural" || v.id === "gemini-Aoede"))) {
             opt.selected = true;
           }
           optgroup.appendChild(opt);
@@ -3584,6 +4291,8 @@ ${isAutoScenes
 
     populateSelect(this.selectVoice, savedVoice);
     populateSelect(this.selectVoiceStage2, this.currentProject?.voice || savedVoice);
+    populateSelect(this.selectNewCharVoice, "", true);
+    this.renderStage1Characters();
   }
 
   switchStage(stageNum, pushState = true) {
@@ -3766,6 +4475,9 @@ ${isAutoScenes
       if (this.selectAiProvider) localStorage.setItem("anistory_cfg_provider", provider);
       if (model) localStorage.setItem("anistory_cfg_model", model);
 
+      const presetChars = (this.stage1Characters || []).filter(
+        c => (c.name || "").trim() || (c.description || "").trim() || (c.image_path || "").trim()
+      );
       const payload = {
         title: projectTitle,
         idea: idea,
@@ -3786,7 +4498,9 @@ ${isAutoScenes
         enable_multivoice: this.enableMultivoice !== false,
         camera_on_speaker: this.cameraOnSpeaker !== false,
         director_skill: this.selectDirectorSkill ? this.selectDirectorSkill.value : "auto",
-        enable_image_captions: this.enableImageCaptions !== false
+        enable_image_captions: this.enableImageCaptions !== false,
+        character_profiles: presetChars,
+        use_char_refs_in_video: this.useCharRefsInVideo !== false
       };
       if (this.selectDirectorSkill) {
         localStorage.setItem("anistory_cfg_director_skill", this.selectDirectorSkill.value);
@@ -4075,6 +4789,9 @@ ${isAutoScenes
       const apiKey = localStorage.getItem("anistory_gemini_key") || null;
       const aspectRatio = this.selectAspectRatio ? this.selectAspectRatio.value : "16:9";
       const projectTitle = this.inputProjectTitle ? this.inputProjectTitle.value.trim() : "";
+      const presetChars = (this.stage1Characters || []).filter(
+        c => (c.name || "").trim() || (c.description || "").trim() || (c.image_path || "").trim()
+      );
       const resp = await fetch("/api/import-story", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4089,7 +4806,10 @@ ${isAutoScenes
           enable_voiceover: this.enableVoiceover !== false,
           enable_subtitles: this.enableSubtitles !== false,
           enable_multivoice: this.enableMultivoice !== false,
-          camera_on_speaker: this.cameraOnSpeaker !== false
+          camera_on_speaker: this.cameraOnSpeaker !== false,
+          enable_image_captions: this.enableImageCaptions !== false,
+          character_profiles: presetChars,
+          use_char_refs_in_video: this.useCharRefsInVideo !== false
         })
       });
 
@@ -4193,8 +4913,11 @@ ${isAutoScenes
     const multivoiceActive = this.currentProject.enable_multivoice !== false;
     const voiceoverActive = this.currentProject.enable_voiceover !== false;
     const speakerCamActive = Boolean(this.currentProject.camera_on_speaker || this.currentProject.art_style === "dialogue_cinema");
+    const videoCharRefsActive = this.currentProject.use_char_refs_in_video !== false;
+    this.useCharRefsInVideo = videoCharRefsActive;
     this.updateSubtitlesUI(this.currentProject.enable_subtitles !== false);
     this.updateImageCaptionsUI(this.currentProject.enable_image_captions !== false);
+    this.updateVideoCharRefsUI(videoCharRefsActive);
     this.updateVoiceoverUI(voiceoverActive);
     this.updateMultivoiceUI(multivoiceActive);
     this.updateSpeakerCamUI(speakerCamActive);
@@ -4209,9 +4932,50 @@ ${isAutoScenes
       this.selectVoiceStage2.value = this.currentProject.voice;
     }
 
+    const allCharProfiles = Array.isArray(this.currentProject.character_profiles)
+      ? this.currentProject.character_profiles
+      : [];
+    const charProfilesWithImg = allCharProfiles.filter(p => p && p.image_path);
+
+    const getMatchedCharacterIdsForScene = (sceneObj) => {
+      if (!charProfilesWithImg.length) return [];
+      if (Array.isArray(sceneObj.character_ids) && sceneObj.character_ids.length > 0) {
+        return sceneObj.character_ids;
+      }
+      const haystack = `${sceneObj.visual_prompt || ""} ${sceneObj.acting_prompt || ""} ${sceneObj.narration || ""} ${JSON.stringify(sceneObj.dialogues || [])}`.toLowerCase();
+      const matched = [];
+      charProfilesWithImg.forEach(p => {
+        const pname = (p.name || "").trim().toLowerCase();
+        if (!pname) return;
+        const tokens = pname.split(/\s+/).filter(t => t.length >= 2);
+        if (haystack.includes(pname) || tokens.some(t => haystack.includes(t))) {
+          matched.push(p.id);
+        }
+      });
+      if (matched.length === 0) {
+        matched.push(charProfilesWithImg[0].id);
+      }
+      return matched;
+    };
+
     const scenes = this.currentProject.scenes || [];
     this.renderSceneQuickJumpRibbon(scenes);
     scenes.forEach((scene, idx) => {
+      const matchedCharIds = getMatchedCharacterIdsForScene(scene);
+      const isSceneCharPinned = Array.isArray(scene.character_ids) && scene.character_ids.length > 0;
+      const charRefsStripHtml = charProfilesWithImg.length > 0
+        ? `<div class="scene-char-refs-strip" title="Click to pin/unpin character portraits used for generating this scene &amp; video">
+             <span style="font-size:10.5px; color:var(--text-muted); margin-right:4px;">👤 Refs${isSceneCharPinned ? ' (Pinned)' : ' (Auto)'}:</span>
+             ${charProfilesWithImg.map(p => {
+               const isActive = matchedCharIds.includes(p.id);
+               const cleanThumb = p.image_path.replace(/\\/g, "/");
+               return `<button type="button" class="scene-char-ref-chip ${isActive ? 'active' : ''}" data-idx="${idx}" data-char-id="${this.escapeHtml(p.id)}">
+                 <img src="/media/${encodeURI(cleanThumb)}" alt="${this.escapeHtml(p.name)}">
+                 <span>${this.escapeHtml(p.name)}</span>
+               </button>`;
+             }).join("")}
+           </div>`
+        : "";
       const card = document.createElement("div");
       card.className = "scene-card";
       card.id = `sceneCard_${idx}`;
@@ -4406,9 +5170,10 @@ ${isAutoScenes
                 <label class="field-label" style="margin-bottom:0;">🎨 Image Prompt <span style="font-size:10.5px; color:var(--text-muted); font-weight:normal;">(Midjourney / Imagen 3)</span></label>
                 <button class="scene-action-pill btn-copy-image-prompt" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1;" title="Copy image prompt to clipboard">📋 Copy</button>
               </div>
-              <span class="prompt-type-badge image-badge">🖼️ Image Art</span>
+              <span class="prompt-type-badge image-badge">🖼️ Image Art${matchedCharIds.length > 0 ? ` (${matchedCharIds.length} Char Ref)` : ''}</span>
             </div>
             <textarea class="styled-input scene-visual-input" id="visual_prompt_${idx}" rows="2" style="resize:vertical; min-height:54px; font-size:11.5px; line-height:1.45; font-family:inherit;" placeholder="Detailed still illustration prompt: environment, character clothing & features, art style, framing, lighting...">${scene.visual_prompt || ""}</textarea>
+            ${charRefsStripHtml}
           </div>
 
           <!-- PANE 3: Video Prompt (Acting & Motion / Veo 3 / Google Flow / Kling) -->
@@ -4427,12 +5192,48 @@ ${isAutoScenes
                 <button class="scene-action-pill btn-copy-video-prompt" data-idx="${idx}" style="padding:2px 8px; font-size:10px; height:20px; line-height:1;" title="Copy video acting prompt to clipboard">📋 Copy</button>
                 <button class="scene-action-pill btn-refine-video-prompt" data-idx="${idx}" style="padding:2px 9px; font-size:10.5px; height:21px; line-height:1; color:#f5f3ff; background:rgba(139,92,246,0.3); border:1px solid rgba(167,139,250,0.6); font-weight:600;" title="Upgrade to director-grade professional cinematic video prompt">✨ Refine</button>
               </div>
-              <span class="prompt-type-badge video-badge">⚡ 8s Video</span>
+              <span class="prompt-type-badge video-badge">⚡ 8s Video${(videoCharRefsActive && matchedCharIds.length > 0) ? ` + 🎭 ${matchedCharIds.length} Ref` : ''}</span>
             </div>
             <textarea class="styled-input scene-acting-input" id="acting_prompt_${idx}" rows="2" style="resize:vertical; min-height:54px; font-size:11.5px; line-height:1.45; font-family:inherit;" placeholder="Director-grade cinematic video prompt: [Shot Type & Camera Move] 0-3s: Initial organic motion... 3-6s: Core performance / dialogue... 6-8s: Settle and landing. Lighting... Audio: ... SFX: ... Negative: ...">${scene.acting_prompt || ""}</textarea>
           </div>
         </div>
       `;
+
+      // Scene character reference chips toggle (pin/unpin character portraits for Scene & Video)
+      card.querySelectorAll(".scene-char-ref-chip").forEach(chip => {
+        chip.addEventListener("click", async () => {
+          const cid = chip.dataset.charId;
+          if (!cid || !this.currentProject) return;
+          const currentIds = Array.isArray(scene.character_ids) && scene.character_ids.length > 0
+            ? [...scene.character_ids]
+            : [...matchedCharIds];
+          const nextIds = currentIds.includes(cid)
+            ? currentIds.filter(id => id !== cid)
+            : [...currentIds, cid];
+          try {
+            const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/scenes/${idx}/characters`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ character_ids: nextIds })
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data.project) {
+                this.currentProject = data.project;
+                this.saveActiveProjectState();
+                this.renderStoryboardView();
+                this.showToast(
+                  nextIds.length > 0
+                    ? `🎭 Scene ${idx + 1}: using ${nextIds.length} pinned character portrait(s)!`
+                    : `🎭 Scene ${idx + 1}: restored auto-matched character portraits.`
+                );
+              }
+            }
+          } catch (err) {
+            this.showToast("Failed to update scene character refs: " + err.message, true);
+          }
+        });
+      });
 
       // Inner tabs switching logic
       card.querySelectorAll(".scene-prompt-tab-btn").forEach(btn => {
@@ -5668,8 +6469,14 @@ ${isAutoScenes
         }
         this.currentProject = await resp.json();
         this.saveActiveProjectState();
-        const modeLabel = (curProvider === "gemini_cookie" || curProvider === "gemini") ? "Google Imagen 3" : (curProvider === "neural_love" ? "Neural.love AI" : "AI Paint");
-        this.showToast(`Scene ${sceneIdx + 1} painted with ${modeLabel}! 🎨✨`);
+        const modeLabel = this.imageMode === "flowkit"
+          ? "FlowKit Char-Ref"
+          : ((curProvider === "gemini_cookie" || curProvider === "gemini")
+            ? "Google Imagen 3"
+            : (curProvider === "neural_love" ? "Neural.love AI" : "AI Paint"));
+        const charImgsCount = (this.currentProject.character_profiles || []).filter(p => p && p.image_path).length;
+        const refNote = charImgsCount > 0 ? ` + ${charImgsCount} Character Ref` : "";
+        this.showToast(`Scene ${sceneIdx + 1} painted with ${modeLabel}${refNote}! 🎨✨`);
       }
 
       const updatedScene = this.currentProject.scenes[sceneIdx];
@@ -5877,7 +6684,13 @@ ${isAutoScenes
     buttonEl.textContent = "⚡ Rendering...";
 
     try {
-      this.showToast(`Submitting Scene ${sceneIdx + 1} to Google Veo via FlowKit... 🎬`);
+      const hasCharRefs = this.currentProject.use_char_refs_in_video !== false &&
+        (this.currentProject.character_profiles || []).some(p => p && p.image_path);
+      this.showToast(
+        hasCharRefs
+          ? `Submitting Scene ${sceneIdx + 1} + Character Portraits to FlowKit AI Video... 🎭🎬`
+          : `Submitting Scene ${sceneIdx + 1} to Google Veo via FlowKit... 🎬`
+      );
       const resp = await fetch(`/api/projects/${this.currentProject.id}/generate-flowkit-video/${sceneIdx}`, {
         method: "POST"
       });
@@ -5927,7 +6740,9 @@ ${isAutoScenes
       this.currentProject.characters = this.inputCharacterConsistency.value.trim();
     }
     await this.saveStoryboardEdits(false);
-    this.showToast("Character consistency anchor locked! 🔒👥");
+    this.renderCharacterVoiceCasting();
+    this.renderStoryboardView();
+    this.showToast("Character consistency anchor locked & synced with Character Studio! 🔒👥");
   }
 
   async saveStoryboardEdits(notify = true) {
