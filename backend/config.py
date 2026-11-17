@@ -101,6 +101,75 @@ SPEAKER_FOCUS_PROMPT_SUFFIX = (
     "warm key light on the active speaker's face, shallow 50mm f/1.8 depth of field with soft background bokeh"
 )
 
+# Director Storyboard Skills for Deep Analysis & Storyboard Generation
+STORYBOARD_SKILLS = {
+    "auto": {
+        "id": "auto",
+        "name": "🤖 Auto-Detect Best Director Skill",
+        "description": "Deep-analyzes your idea, script, or product to automatically apply the optimal storytelling & camera skill.",
+        "directive": ""
+    },
+    "cinematic_storyteller": {
+        "id": "cinematic_storyteller",
+        "name": "🎬 Cinematic 3-Act Storyteller (Pixar / Ghibli)",
+        "description": "Emotional 3-act narrative arc, visual motifs, rich world-building & expressive character progression.",
+        "directive": (
+            "DIRECTOR SKILL — CINEMATIC 3-ACT STORYTELLER: Build a deeply resonant Pixar/Ghibli-grade emotional arc "
+            "(Act I: evocative world setup & character desire; Act II: escalating causal stakes & heartfelt interaction; "
+            "Act III: transformative climax & poetic visual resolution). Weave recurring visual motifs and atmospheric lighting progressions across scenes."
+        )
+    },
+    "comedy_punchline_master": {
+        "id": "comedy_punchline_master",
+        "name": "😂 Comedy & Folklore Punchline Director",
+        "description": "Sharp comedic timing: clear premise setup, conversational volley, reaction close-ups & unhurried final punchline.",
+        "directive": (
+            "DIRECTOR SKILL — COMEDY & FOLKLORE PUNCHLINE MASTER: Structure the storyboard for maximum comedic & satirical payoff. "
+            "Establish the relatable premise clearly in early scenes, build ironic tension through back-and-forth character dialogue, "
+            "cut to expressive facial reaction close-ups (`speaker_focus`), and dedicate the final climax scene to delivering the full, "
+            "unabridged twist or punchline verbatim with vivid comical facial expressions (shock, wide eyes, deadpan, or laughter)."
+        )
+    },
+    "dialogue_drama_director": {
+        "id": "dialogue_drama_director",
+        "name": "🗣️ Shot-Reverse-Shot Dialogue Director",
+        "description": "Intimate character-driven conversations, over-the-shoulder framing, micro-expressions & multi-voice interplay.",
+        "directive": (
+            "DIRECTOR SKILL — SHOT-REVERSE-SHOT DIALOGUE DIRECTOR: Direct every conversational beat like an award-winning dialogue film. "
+            "Alternate camera focus between active speakers using Medium Close-Ups and Over-The-Shoulder Shot-Reverse-Shot framing (`speaker_focus`). "
+            "Segment each character's spoken lines cleanly in `dialogues` and highlight subtle micro-expressions, posture shifts, and eye contact."
+        )
+    },
+    "comic_graphic_novel": {
+        "id": "comic_graphic_novel",
+        "name": "💬 Comic Book & Speech Bubble Director",
+        "description": "Dynamic graphic-novel panel composition with upper headroom and punchy dialogue inside speech balloons.",
+        "directive": (
+            "DIRECTOR SKILL — COMIC BOOK & SPEECH BUBBLE DIRECTOR: Compose each scene as a high-impact graphic novel panel with bold ink contours, "
+            "dramatic perspective, upper headroom for speech balloons, and punchy, natural character dialogue embedded in comic speech bubbles."
+        )
+    },
+    "viral_hook_retention": {
+        "id": "viral_hook_retention",
+        "name": "⚡ Viral Hook & High-Retention Pacing",
+        "description": "1.5s pattern-interrupt opening hook, high-momentum scene transitions & curiosity gaps for Shorts/Reels.",
+        "directive": (
+            "DIRECTOR SKILL — VIRAL HOOK & HIGH-RETENTION PACING: Open Scene 1 with an immediate visual and narrative hook that grabs attention "
+            "in the first 1.5 seconds. Maintain relentless causal momentum where each scene ends on a micro-curiosity turn leading into the next beat."
+        )
+    },
+    "commercial_conversion": {
+        "id": "commercial_conversion",
+        "name": "🛍️ High-Converting Product Commercial (AIDA / PAS)",
+        "description": "Customer Pain-Point Hook → Hero Product Reveal → Macro Spec Proof → Lifestyle Transformation → Urgent Offer CTA.",
+        "directive": (
+            "DIRECTOR SKILL — HIGH-CONVERTING PRODUCT COMMERCIAL: Apply proven AIDA & Problem-Agitation-Solution advertising psychology: "
+            "1) Relatable pain point or magnetic visual hook; 2) Pristine Hero Product reveal; 3) Macro engineering/ingredient proof of key specs; "
+            "4) Aspirational lifestyle transformation; 5) Irresistible offer & urgent Call-to-Action."
+        )
+    }
+}
+
 # Voices available (Vietnamese Dedicated Neural Personas, Google Gemini Multimodal Voices & International)
 VOICES = [
     # 1. Vietnamese Dedicated Neural Voices & Character Personas (Microsoft Edge Neural — 100% Free & Consistent)

@@ -445,6 +445,50 @@
                 </div>
               </div>
 
+              <!-- Director Skill & Deep Input Analyzer Panel -->
+              <div class="director-skill-panel glass-panel compact-provider-panel" style="margin-bottom: 10px; padding: 10px 12px; border: 1px solid rgba(139, 92, 246, 0.28);">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:220px;">
+                    <label for="selectDirectorSkill" class="input-label small-label" style="margin-bottom:0; white-space:nowrap;">
+                      <span>🎯 Director Skill:</span>
+                    </label>
+                    <select id="selectDirectorSkill" class="styled-select compact-select" style="flex:1; height:30px; font-size:12px;">
+                      <option value="auto" selected>🤖 Auto-Detect Best Director Skill</option>
+                      <option value="cinematic_storyteller">🎬 Cinematic 3-Act Storyteller (Pixar / Ghibli)</option>
+                      <option value="comedy_punchline_master">😂 Comedy &amp; Folklore Punchline Director</option>
+                      <option value="dialogue_drama_director">🗣️ Shot-Reverse-Shot Dialogue Director</option>
+                      <option value="comic_graphic_novel">💬 Comic Book &amp; Speech Bubble Director</option>
+                      <option value="viral_hook_retention">⚡ Viral Hook &amp; High-Retention Pacing</option>
+                      <option value="commercial_conversion">🛍️ High-Converting Product Commercial (AIDA / PAS)</option>
+                    </select>
+                  </div>
+                  <button id="btnDeepAnalyzeInput" type="button" class="glass-btn secondary-btn compact-btn" style="padding:5px 12px; font-size:12px; border-color:rgba(56,189,248,0.45); color:#7dd3fc;" title="Deep-analyze your Idea, Pasted Storyboard, or Product Description to preview the Scene-by-Scene Director Blueprint">
+                    <span>🧠 Deep Analyze &amp; Blueprint</span>
+                  </button>
+                </div>
+
+                <!-- Collapsible Deep Analysis Blueprint Preview -->
+                <div id="deepAnalysisPreviewCard" style="display:none; margin-top:10px; padding:10px 12px; border-radius:10px; background:rgba(15,23,42,0.78); border:1px solid rgba(56,189,248,0.3); font-size:12px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                      <span id="badgeDeepAnalysisGenre" class="tag-badge" style="background:rgba(139,92,246,0.22); color:#c4b5fd; font-size:11px;">🎬 Genre</span>
+                      <span id="badgeDeepAnalysisSkill" class="tag-badge" style="background:rgba(56,189,248,0.18); color:#7dd3fc; font-size:11px;">🎯 Skill</span>
+                      <span id="badgeDeepAnalysisScenes" class="tag-badge" style="background:rgba(16,185,129,0.18); color:#34d399; font-size:11px;">🎞️ Scenes</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <button id="btnApplyDeepAnalysis" type="button" class="glass-btn primary-glow-btn mini-btn" style="padding:3px 9px; font-size:11px;" title="Apply recommended scene count and director skill">
+                        ✓ Apply Blueprint
+                      </button>
+                      <button id="btnCloseDeepAnalysis" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 7px; font-size:11px;" title="Hide blueprint preview">
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                  <div id="deepAnalysisCharactersBox" style="color:#cbd5e1; margin-bottom:6px; line-height:1.45;"></div>
+                  <div id="deepAnalysisBeatsList" style="display:flex; flex-direction:column; gap:4px; max-height:165px; overflow-y:auto; padding-right:4px;"></div>
+                </div>
+              </div>
+
               <!-- Multi-Provider AI Engine & Image Mode Selector -->
               <div class="ai-provider-panel glass-panel compact-provider-panel">
                 <div class="provider-panel-header">

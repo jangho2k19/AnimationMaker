@@ -116,6 +116,465 @@ class ScriptAgent:
             estimated = min(estimated, len(sentences) + 1)
         return max(4, min(16, estimated))
 
+    @classmethod
+    def deep_analyze_story_input(
+        cls,
+        idea: str,
+        title: str = "",
+        art_style: str = "ghibli",
+        language: str = "en",
+        audience: str = "general",
+        num_scenes: int = 0,
+        target_duration: Any = None,
+        director_skill: str = "auto",
+        camera_on_speaker: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Deeply analyzes a raw story idea, joke/fable, or pasted screenplay/storyboard
+        to produce a structured Director Blueprint (genre, tone, resolved Director Skill,
+        extracted character roster with immutable visual anchors, and chronological
+        scene-by-scene beat & dialogue allocation).
+        """
+        from backend.config import STORYBOARD_SKILLS, is_comic_style
+
+        raw = (idea or "").strip()
+        lang = cls.detect_language(f"{title or ''} {raw}", fallback=language)
+        is_vi = lang.startswith("vi")
+
+        # 1. Check if input is already a multi-scene structured storyboard
+        imported_preview = cls.parse_imported_storyboard(raw, allow_narrative_fallback=False) if raw else None
+        is_structured = bool(imported_preview and imported_preview.get("scenes") and len(imported_preview["scenes"]) >= 2)
+
+        # Strip moral/commentary footer for clean beat analysis
+        clean_story = re.sub(
+            r'(?is)\n\s*(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học(?:\s+rút ra)?|Lời bàn)\s*:.*$',
+            '',
+            raw
+        ).strip() or raw
+
+        moral_match = re.search(
+            r'(?is)\n\s*(?:Ý nghĩa trào phúng|Ý nghĩa|Bài học(?:\s+rút ra)?|Lời bàn)\s*:\s*(.+)$',
+            raw
+        )
+        extracted_moral = moral_match.group(1).strip() if moral_match else ""
+
+        words = clean_story.split()
+        word_count = len(words)
+        story_dialogues = cls.extract_story_dialogues(clean_story) if clean_story else []
+
+        if is_structured:
+            input_type = "structured_storyboard"
+        elif story_dialogues:
+            input_type = "narrative_story_with_dialogue"
+        elif word_count > 30 or "\n" in clean_story:
+            input_type = "narrative_prose"
+        else:
+            input_type = "short_concept"
+
+        # 2. Genre & Emotional Tone Detection
+        low = f"{title or ''} {clean_story}".lower()
+        if any(k in low for k in [
+            "truyện cười", "hài", "kể khổ", "sợ vợ", "hai ông chồng", "vợ chồng", "quan huyện",
+            "bẩm quan", "ăn trộm", "chõng", "nói thách", "keo kiệt", "lười", "joke", "funny",
+            "hilarious", "comedy", "satire", "punchline"
+        ]):
+            genre = "comedy_satire"
+            genre_label = "Hài Hước & Trào Phúng Dân Gian (Comedy & Satire)" if is_vi else "Comedy & Satirical Fable"
+            tone = "Witty, expressive, ironical & punchline-driven"
+        elif any(k in low for k in ["cyberpunk", "detective", "robot", "neon", "hologram", "ai ", "cyborg", "sci-fi", "tương lai"]):
+            genre = "cyberpunk"
+            genre_label = "Viễn Tưởng Cyberpunk (Sci-Fi Cyberpunk)" if is_vi else "Cyberpunk & Sci-Fi"
+            tone = "Atmospheric, high-tech, suspenseful & kinetic"
+        elif any(k in low for k in ["tấm cám", "cổ tích", "vua", "hoàng tử", "công chúa", "bụt", "tiên", "fairy tale", "fable", "folklore", "làng quê", "bác nông dân", "con trâu"]):
+            genre = "folklore"
+            genre_label = "Cổ Tích & Dân Gian (Folklore & Fable)" if is_vi else "Folklore & Fairy Tale"
+            tone = "Warm, timeless, expressive & morally resonant"
+        elif any(k in low for k in ["space", "star", "planet", "saturn", "galaxy", "astronaut", "vũ trụ", "sao thổ", "phi hành gia"]):
+            genre = "space"
+            genre_label = "Phiêu Lưu Vũ Trụ (Cosmic Odyssey)" if is_vi else "Cosmic Space Odyssey"
+            tone = "Wonder-filled, awe-inspiring & cinematic"
+        elif any(k in low for k in ["dragon", "magic", "wizard", "spell", "castle", "sword", "rồng", "phép thuật", "hiệp sĩ"]):
+            genre = "fantasy"
+            genre_label = "Kỳ Ảo & Phép Thuật (Epic Fantasy)" if is_vi else "Magical Epic Fantasy"
+            tone = "Heroic, mystical & emotionally sweeping"
+        elif any(k in low for k in ["cat", "dog", "kitten", "puppy", "rabbit", "turtle", "thỏ", "rùa", "mèo", "chó", "sóc", "rừng xanh"]):
+            genre = "nature_animals"
+            genre_label = "Thiên Nhiên & Động Vật Đáng Yêu (Heartwarming Nature)" if is_vi else "Heartwarming Nature & Animals"
+            tone = "Playful, heartwarming, vibrant & charming"
+        else:
+            genre = "adventure"
+            genre_label = "Phiêu Lưu Điện Ảnh (Cinematic Adventure / Drama)" if is_vi else "Cinematic Adventure & Drama"
+            tone = "Emotionally engaging, character-driven & cinematic"
+
+        # 3. Resolve Director Skill
+        chosen_skill_key = (director_skill or "auto").strip().lower()
+        if chosen_skill_key not in STORYBOARD_SKILLS or chosen_skill_key == "auto":
+            if is_comic_style(art_style):
+                chosen_skill_key = "comic_graphic_novel"
+            elif genre == "comedy_satire":
+                chosen_skill_key = "comedy_punchline_master"
+            elif camera_on_speaker or len(story_dialogues) >= 2:
+                chosen_skill_key = "dialogue_drama_director"
+            else:
+                chosen_skill_key = "cinematic_storyteller"
+        skill_info = STORYBOARD_SKILLS.get(chosen_skill_key, STORYBOARD_SKILLS["cinematic_storyteller"])
+
+        # 4. Optimal Scene Count & Duration
+        if is_structured:
+            est_scenes = len(imported_preview["scenes"])
+        elif num_scenes and int(num_scenes) > 0:
+            est_scenes = int(num_scenes)
+        else:
+            est_scenes = cls.estimate_optimal_scene_count(raw, target_duration)
+
+        # 5. Extract Character Roster & Immutable Visual Consistency Anchors
+        extracted_chars = []
+        seen_char_low = set()
+
+        def _add_char(c_name: str):
+            c_clean = (c_name or "").strip().strip(".,:;!?'\"“”()-–—")
+            if not c_clean or len(c_clean) < 2:
+                return
+            c_low = c_clean.lower()
+            if c_low in ("narrator", "người kể chuyện", "character", "nhân vật", "none", "ai", "tôi", "ta", "mình", "nó", "họ"):
+                return
+            # Avoid adding descriptive action phrases like "Ông Rầu Rĩ" or "Ông Kia Trợn Mắt" when "Ông chồng 1/2" already exist
+            if any(w in c_low for w in ("rầu rĩ", "trợn mắt", "ngơ ngác", "kinh hãi", "thở dài", "mỉm cười", "ông kia")) and len(extracted_chars) >= 2:
+                return
+            if c_low not in seen_char_low:
+                seen_char_low.add(c_low)
+                extracted_chars.append(c_clean)
+
+        # Check pair patterns like "Hai ông chồng" / "Hai người bạn"
+        if re.search(r'\bhai\s+ông\s+chồng\b', low):
+            _add_char("Ông chồng 1")
+            _add_char("Ông chồng 2")
+        elif re.search(r'\bhai\s+vợ\s+chồng\b', low):
+            _add_char("Người chồng")
+            _add_char("Người vợ")
+
+        for d in story_dialogues:
+            spk = (d.get("speaker") or "").strip()
+            if spk:
+                _add_char(spk)
+            else:
+                inferred = cls.infer_speaker_from_context(d.get("intro", ""), extracted_chars)
+                if inferred and inferred != "Character":
+                    _add_char(inferred)
+
+        # Scan common Vietnamese & English role nouns if still fewer than 2 characters
+        role_patterns_vi = [
+            r'\b(Quan\s+huyện|Quan\s+lớn|Nhà\s+vua|Hoàng\s+tử|Công\s+chúa|Bác\s+nông\s+dân|Chàng\s+trai|Cô\s+gái|Ông\s+lão|Bà\s+lão|Người\s+chồng|Người\s+vợ|Tên\s+trộm|Chú\s+mèo|Chú\s+thỏ|Chú\s+rùa|Thầy\s+giáo|Cậu\s+bé)\b'
+        ]
+        for pat in role_patterns_vi:
+            for m in re.finditer(pat, clean_story, re.IGNORECASE):
+                _add_char(m.group(1).strip().capitalize())
+
+        # Build immutable visual anchor descriptions for each character
+        char_blueprints = []
+        for idx_c, c_name in enumerate(extracted_chars[:5]):
+            c_low = c_name.lower()
+            if "ông chồng 1" in c_low or (idx_c == 0 and "chồng" in c_low):
+                desc = (
+                    f"{c_name}: Người đàn ông trung niên ~38 tuổi, gương mặt khắc khổ hài hước, mặc áo sơ mi xanh nhạt giản dị, quần âu sẫm màu"
+                    if is_vi else
+                    f"{c_name}: 38yo husband with expressive weary-comedic face, tousled short black hair, light-blue rolled-sleeve shirt, dark trousers"
+                )
+            elif "ông chồng 2" in c_low or (idx_c == 1 and "chồng" in c_low):
+                desc = (
+                    f"{c_name}: Người đàn ông ~40 tuổi dáng vẻ từng trải, mắt tròn biểu cảm, mặc áo thun polo màu vàng nâu ấm áp"
+                    if is_vi else
+                    f"{c_name}: 40yo friend with wide expressive eyes, neat short hair with glasses, warm amber-brown polo shirt, casual slacks"
+                )
+            elif "quan" in c_low:
+                desc = (
+                    f"{c_name}: Quan huyện uy nghiêm đội mũ cánh chuồn đen, râu dài điểm bạc, mặc áo quan gấm xanh thẫm thêu hoa văn cổ truyền"
+                    if is_vi else
+                    f"{c_name}: Traditional magistrate wearing black winged official cap, long silver-streaked beard, deep royal-blue embroidered silk robe"
+                )
+            elif "vợ" in c_low or "bà" in c_low or "cô" in c_low:
+                desc = (
+                    f"{c_name}: Người phụ nữ sắc sảo, tóc búi gọn gàng, ánh mắt nghiêm nghị sống động, mặc trang phục truyền thống/đời thường chỉnh tề"
+                    if is_vi else
+                    f"{c_name}: Expressive woman with neatly styled dark hair, sharp lively eyes, wearing a distinct coral-red blouse and neat skirt"
+                )
+            else:
+                palette_clothes = (
+                    ["áo bà ba nâu mộc mạc", "áo khoác xanh chàm", "trang phục vàng ấm áp", "áo lụa trắng thanh lịch"]
+                    if is_vi else
+                    ["signature mustard-yellow tunic", "cobalt-blue jacket", "emerald-green explorer vest", "warm crimson cloak"]
+                )
+                outfit = palette_clothes[idx_c % len(palette_clothes)]
+                desc = (
+                    f"{c_name}: Nhân vật có gương mặt biểu cảm rõ nét, kiểu tóc đặc trưng nhất quán, mặc {outfit}"
+                    if is_vi else
+                    f"{c_name}: Expressive character with consistent facial features, distinct hairstyle, wearing {outfit}"
+                )
+            char_blueprints.append(desc)
+
+        characters_blueprint_str = " | ".join(char_blueprints) if char_blueprints else (
+            imported_preview.get("characters", "") if is_structured else ""
+        )
+
+        # 6. Build Chronological Scene-by-Scene Beat & Dialogue Allocation
+        scene_beats = []
+        if is_structured:
+            for sc in imported_preview["scenes"]:
+                scene_beats.append({
+                    "scene_number": sc.get("scene_number", len(scene_beats) + 1),
+                    "role": sc.get("archetype", "Scene Beat"),
+                    "title": sc.get("title", ""),
+                    "summary": sc.get("narration", "")[:140],
+                    "dialogues": sc.get("dialogues", []),
+                    "recommended_camera": sc.get("camera_motion", "zoom_in")
+                })
+        else:
+            # Split story sentences chronologically across `est_scenes`
+            raw_sents = [
+                s.strip()
+                for s in re.split(r'(?<=[.!?])\s+(?=[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ"“–\-—])|\n+', clean_story)
+                if s.strip()
+            ]
+            if not raw_sents and clean_story:
+                raw_sents = [clean_story]
+
+            beat_roles_en = ["Act I — Hook & Setting Setup", "Act II — Inciting Action", "Act II — Rising Exchange & Tension", "Act III — Climax / Punchline Twist", "Act III — Resonant Resolution"]
+            beat_roles_vi = ["Mở Đầu — Bối Cảnh & Tình Huống", "Phát Triển — Tình Tiết Khởi Phát", "Cao Trào — Đối Thoại & Đẩy Kịch Tính", "Đỉnh Điểm — Cú Twist / Punchline Kết", "Kết Thúc — Dư Âm & Thông Điệp"]
+            roles_pool = beat_roles_vi if is_vi else beat_roles_en
+
+            for sc_i in range(est_scenes):
+                if sc_i == 0:
+                    role_name = roles_pool[0]
+                elif sc_i == est_scenes - 1:
+                    role_name = roles_pool[3] if (story_dialogues and not extracted_moral) else roles_pool[-1]
+                elif sc_i == est_scenes - 2 and est_scenes >= 4:
+                    role_name = roles_pool[3]
+                else:
+                    role_name = roles_pool[min(2, sc_i)]
+
+                # Slice sentences proportionally
+                if len(raw_sents) >= est_scenes:
+                    start_idx = int(round(sc_i * len(raw_sents) / est_scenes))
+                    end_idx = int(round((sc_i + 1) * len(raw_sents) / est_scenes))
+                    chunk_sents = raw_sents[start_idx:max(start_idx + 1, end_idx)]
+                elif sc_i < len(raw_sents):
+                    chunk_sents = [raw_sents[sc_i]]
+                else:
+                    chunk_sents = [raw_sents[-1]] if raw_sents else []
+
+                chunk_text = " ".join(chunk_sents).strip()
+                # Match dialogues belonging to this chunk
+                beat_dials = []
+                for d in story_dialogues:
+                    d_line = d.get("line", "").strip()
+                    if d_line and d_line in chunk_text:
+                        beat_dials.append({
+                            "speaker": d.get("speaker") or cls.infer_speaker_from_context(d.get("intro", ""), extracted_chars),
+                            "text": d_line
+                        })
+
+                rec_cam = "speaker_focus" if (beat_dials and (camera_on_speaker or len(story_dialogues) >= 2)) else (
+                    "zoom_in" if sc_i in (0, est_scenes - 1) else ("pan_right" if sc_i % 2 == 1 else "subtle_drift")
+                )
+                scene_beats.append({
+                    "scene_number": sc_i + 1,
+                    "role": role_name,
+                    "summary": chunk_text[:180] if chunk_text else f"Beat {sc_i + 1} of '{raw[:60]}'",
+                    "dialogues": beat_dials,
+                    "recommended_camera": rec_cam
+                })
+
+        # 7. Format LLM Prompt Blueprint Block
+        beat_lines = []
+        for b in scene_beats:
+            d_preview = ""
+            if b.get("dialogues"):
+                d_strs = [f'{d.get("speaker", "Speaker")}: "{d.get("text", "")}"' for d in b["dialogues"][:2]]
+                d_preview = f" | Key Dialogue(s) to include: {'; '.join(d_strs)}"
+            beat_lines.append(
+                f"   * Scene {b['scene_number']} [{b['role']}] (Camera: {b['recommended_camera']}): {b['summary']}{d_preview}"
+            )
+        beats_block = "\n".join(beat_lines)
+
+        prompt_blueprint = f"""
+DEEP STORY ANALYSIS & DIRECTOR BLUEPRINT (AUTO-ANALYZED PRE-PRODUCTION PLAN):
+- Detected Genre & Tone: {genre_label} ({tone})
+- Active Director Skill: {skill_info['name']}
+  * {skill_info['directive']}
+- Canonical Character Visual Blueprint: {characters_blueprint_str or 'Derive consistent protagonist & companion visual tokens'}
+- Scene-by-Scene Structural Beat Plan ({est_scenes} scenes):
+{beats_block}"""
+        if extracted_moral:
+            prompt_blueprint += f"\n- Core Satirical Meaning / Moral Takeaway: {extracted_moral}"
+
+        return {
+            "mode": "story",
+            "input_type": input_type,
+            "language": lang,
+            "genre": genre,
+            "genre_label": genre_label,
+            "tone": tone,
+            "director_skill": chosen_skill_key,
+            "director_skill_name": skill_info["name"],
+            "director_skill_description": skill_info["description"],
+            "recommended_scenes": est_scenes,
+            "recommended_duration": est_scenes * 8,
+            "characters_list": extracted_chars,
+            "characters_blueprint": characters_blueprint_str,
+            "dialogue_count": len(story_dialogues),
+            "moral_or_punchline": extracted_moral or (story_dialogues[-1]["line"] if story_dialogues else ""),
+            "scene_beats": scene_beats,
+            "prompt_blueprint": prompt_blueprint
+        }
+
+    @classmethod
+    def deep_analyze_product_input(
+        cls,
+        product_name: str,
+        description: str,
+        specs: str = "",
+        brand: str = "",
+        target_audience: str = "General",
+        ad_style: str = "cinematic_commercial",
+        call_to_action: str = "Order now!",
+        pricing_offer: str = "",
+        num_scenes: int = 4,
+        art_style: str = "realistic",
+        language: str = "en"
+    ) -> Dict[str, Any]:
+        """
+        Deeply analyzes a Product Description, Technical Specs, Brand, and Offer
+        to extract Product DNA (category, customer pain point solved, top USPs,
+        quantitative specs, studio lighting & material tokens, and a scene-by-scene
+        AIDA/PAS commercial blueprint).
+        """
+        raw_name = (product_name or "").strip() or "Hero Product"
+        raw_desc = (description or "").strip()
+        raw_specs = (specs or "").strip()
+        combined = f"{raw_name} {brand or ''} {raw_desc} {raw_specs}".strip()
+        lang = cls.detect_language(combined, fallback=language)
+        is_vi = lang.startswith("vi")
+        low = combined.lower()
+
+        # 1. Detect Product Category & Studio Material / Lighting Tokens
+        if any(k in low for k in ["headphone", "earbud", "speaker", "audio", "anc", "sound", "tai nghe", "loa", "âm thanh"]):
+            category = "audio_electronics"
+            cat_label = "Thiết Bị Âm Thanh Cao Cấp (Premium Audio)" if is_vi else "Premium Audio & Acoustics"
+            material_tokens = "brushed aerospace titanium, matte acoustic mesh, soft memory-foam ear cushions, dramatic dark-studio rim lighting with cyan/gold specular highlights"
+            default_pain = "Tiếng ồn xung quanh làm gián đoạn sự tập trung và cảm xúc âm nhạc của bạn?" if is_vi else "Tired of chaotic background noise ruining your focus and favorite music?"
+        elif any(k in low for k in ["watch", "smartwatch", "phone", "laptop", "tablet", "chip", "sensor", "battery", "đồng hồ", "điện thoại", "máy tính"]):
+            category = "smart_gadgets"
+            cat_label = "Công Nghệ & Thiết Bị Thông Minh (Smart Tech)" if is_vi else "Smart Tech & Precision Gadgets"
+            material_tokens = "sapphire crystal display, CNC-machined aerospace aluminum chassis, luminous OLED telemetry interface, sleek studio macro reflections"
+            default_pain = "Bạn cần một thiết bị thông minh mạnh mẽ đồng hành bền bỉ suốt cả ngày dài?" if is_vi else "Need uncompromising intelligence and endurance that keeps up with every second of your day?"
+        elif any(k in low for k in ["serum", "cream", "skin", "glow", "collagen", "hyaluronic", "vitamin", "cleanser", "dưỡng da", "kem", "mỹ phẩm", "làn da"]):
+            category = "skincare_beauty"
+            cat_label = "Mỹ Phẩm & Chăm Sóc Sắc Đẹp (Skincare & Beauty)" if is_vi else "Luxury Skincare & Beauty"
+            material_tokens = "frosted glass dropper bottle, golden luminous botanical serum droplets on dewy water ripples, soft warm sunlight and silk studio diffusion"
+            default_pain = "Làn da mệt mỏi, thiếu sức sống khiến bạn kém tự tin mỗi khi xuất hiện?" if is_vi else "Struggling with tired, dull skin that hides your natural radiance?"
+        elif any(k in low for k in ["shoe", "sneaker", "running", "apparel", "jacket", "wear", "carbon", "giày", "thể thao", "áo", "thời trang"]):
+            category = "fashion_footwear"
+            cat_label = "Thời Trang & Thể Thao Hiệu Năng (Active & Fashion)" if is_vi else "Performance Footwear & Apparel"
+            material_tokens = "ultralight breathable engineered mesh, responsive carbon-fiber propulsion plate, kinetic energy particles, dramatic stadium/street rim lighting"
+            default_pain = "Mỗi bước chạy nặng nề đang kìm hãm tốc độ và sự bứt phá của bạn?" if is_vi else "Are heavy, unforgiving steps holding back your true speed and endurance?"
+        elif any(k in low for k in ["espresso", "coffee", "kitchen", "blender", "vacuum", "home", "air purifier", "cà phê", "máy pha", "gia dụng", "nhà bếp"]):
+            category = "kitchen_home"
+            cat_label = "Gia Dụng Thông Minh & Phong Cách Sống (Smart Home & Living)" if is_vi else "Smart Home & Culinary Living"
+            material_tokens = "polished stainless steel, rich velvety golden espresso crema, warm aromatic morning steam, sunlit marble countertop"
+            default_pain = "Buổi sáng bận rộn khiến bạn bỏ lỡ hương vị hoàn hảo đúng chuẩn chuyên gia?" if is_vi else "Rushed mornings robbing you of that Café-grade perfection at home?"
+        else:
+            category = "luxury_lifestyle"
+            cat_label = "Sản Phẩm Cao Cấp (Flagship Product Showcase)" if is_vi else "Flagship Product Showcase"
+            material_tokens = "precision-crafted surfaces, immaculate studio softbox key lighting, crisp edge reflections, 50mm f/1.8 shallow depth of field"
+            default_pain = "Bạn đang tìm kiếm giải pháp hoàn hảo nâng tầm chất lượng cuộc sống mỗi ngày?" if is_vi else "Ready to upgrade your everyday experience with uncompromising quality?"
+
+        # 2. Extract Bullet Specs & Quantitative Highlights (even if pasted inside `description`)
+        spec_items = []
+        for src_txt in (raw_specs, raw_desc):
+            for part in re.split(r'[\n•·;|]+', src_txt):
+                p_clean = part.strip(" -–—*•\t")
+                if 4 <= len(p_clean) <= 95 and p_clean not in spec_items:
+                    # Prioritize clauses with numbers/units or technical keywords
+                    if src_txt == raw_specs or re.search(r'\b\d+(?:\.\d+)?\s*(?:%|dB|h|hr|hrs|giờ|phút|min|mm|cm|g|kg|W|mAh|Hz|K|MP|bar|x)\b', p_clean, re.IGNORECASE):
+                        spec_items.append(p_clean)
+
+        # Extract core USP sentences from description
+        desc_sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+|\n+', raw_desc) if len(s.strip()) >= 8]
+        usps = desc_sents[:3] if desc_sents else [raw_desc or f"Premium quality {raw_name}"]
+        if not spec_items and desc_sents:
+            spec_items = [s[:80] for s in desc_sents[:3]]
+
+        # Auto-extract embedded offer or CTA from description if user left `pricing_offer` blank
+        eff_offer = (pricing_offer or "").strip()
+        if not eff_offer:
+            m_off = re.search(r'((?:ưu đãi|giảm\s+giá|giảm|flash\s+sale|sale|chỉ\s+còn|only\s+\$)[^\n!?]{3,55})', combined, re.IGNORECASE)
+            if m_off:
+                eff_offer = m_off.group(1).strip(" .,;:-")
+
+        eff_cta = (call_to_action or "").strip() or ("Đặt hàng ngay hôm nay!" if is_vi else "Order now — Limited time offer!")
+        sc_count = max(3, int(num_scenes or 4))
+
+        # 3. Build Scene-by-Scene Commercial Beat Plan
+        archetype_plan = [
+            ("Scene 1 — The Magnetic Hook (Pain Point / Desire)", "zoom_in", default_pain),
+            (f"Scene 2 — Hero Reveal: {raw_name}", "pan_right", usps[0] if usps else f"Introducing {raw_name} by {brand or 'Official'}"),
+            ("Scene 3 — Precision Macro Specs & Proof", "zoom_in", " • ".join(spec_items[:3]) if spec_items else (usps[1] if len(usps) > 1 else "Engineered for peak performance")),
+            ("Scene 4 — Lifestyle Transformation & Joy", "pan_left", usps[-1] if usps else f"Effortless daily satisfaction with {raw_name}"),
+            ("Scene 5 — Irresistible Offer & Call to Action", "zoom_out", f"{eff_offer + ' — ' if eff_offer else ''}{eff_cta}")
+        ]
+        scene_beats = []
+        for i in range(sc_count):
+            if i == sc_count - 1 and sc_count >= 3:
+                role, cam, summary = archetype_plan[-1]
+                role = f"Scene {i + 1} — Irresistible Offer & Call to Action"
+            elif i < len(archetype_plan):
+                role, cam, summary = archetype_plan[i]
+                role = re.sub(r'^Scene \d+', f'Scene {i + 1}', role)
+            else:
+                role = f"Scene {i + 1} — Feature Spotlight & Social Proof"
+                cam = "subtle_drift"
+                summary = spec_items[i % len(spec_items)] if spec_items else raw_desc[:100]
+            scene_beats.append({
+                "scene_number": i + 1,
+                "role": role,
+                "summary": summary,
+                "recommended_camera": cam
+            })
+
+        beats_str = "\n".join(
+            f"   * {b['role']} (Camera: {b['recommended_camera']}): {b['summary']}"
+            for b in scene_beats
+        )
+        specs_summary_str = " | ".join(spec_items[:4]) if spec_items else "High-precision craftsmanship and flagship performance"
+
+        prompt_blueprint = f"""
+DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
+- Product Category: {cat_label} ({category})
+- Customer Pain-Point Hook (Scene 1 Anchor): {default_pain}
+- Extracted Top USPs: {"; ".join(usps[:3])}
+- Quantitative & Material Specs to Spotlight: {specs_summary_str}
+- Studio Lighting & Surface Material Tokens (include in every `visual_prompt`): {material_tokens}
+- Scene-by-Scene Commercial Conversion Plan ({sc_count} scenes):
+{beats_str}"""
+
+        return {
+            "mode": "advertisement",
+            "category": category,
+            "category_label": cat_label,
+            "language": lang,
+            "product_name": raw_name,
+            "brand": (brand or "").strip() or "Official",
+            "pain_point_hook": default_pain,
+            "extracted_usps": usps,
+            "extracted_specs": spec_items,
+            "visual_material_tokens": material_tokens,
+            "effective_offer": eff_offer,
+            "effective_cta": eff_cta,
+            "recommended_scenes": sc_count,
+            "scene_beats": scene_beats,
+            "prompt_blueprint": prompt_blueprint
+        }
+
     async def generate_storyboard(
         self,
         idea: str,
@@ -125,7 +584,8 @@ class ScriptAgent:
         language: str = "en",
         audience: str = "general",
         title: str = None,
-        camera_on_speaker: bool = False
+        camera_on_speaker: bool = False,
+        director_skill: str = "auto"
     ) -> Dict[str, Any]:
         """
         Brainstorms and structures an animated short film from a user idea.
@@ -221,7 +681,8 @@ class ScriptAgent:
             language,
             audience,
             title=title,
-            camera_on_speaker=camera_on_speaker
+            camera_on_speaker=camera_on_speaker,
+            director_skill=director_skill
         )
 
         try:
@@ -481,10 +942,22 @@ class ScriptAgent:
         language: str = "en",
         audience: str = "general",
         title: str = None,
-        camera_on_speaker: bool = False
+        camera_on_speaker: bool = False,
+        director_skill: str = "auto"
     ) -> str:
+        analysis = self.deep_analyze_story_input(
+            idea=idea,
+            title=title or "",
+            art_style=art_style,
+            language=language,
+            audience=audience,
+            num_scenes=num_scenes,
+            target_duration=target_duration,
+            director_skill=director_skill,
+            camera_on_speaker=camera_on_speaker
+        )
         is_auto_scenes = not num_scenes or num_scenes <= 0
-        est_scenes = self.estimate_optimal_scene_count(idea, target_duration) if is_auto_scenes else num_scenes
+        est_scenes = analysis["recommended_scenes"] if is_auto_scenes else num_scenes
         min_auto_scenes = max(3, est_scenes - 1)
         max_auto_scenes = min(20, est_scenes + 2)
 
@@ -600,6 +1073,7 @@ Parameters:
 - Target Audience: {audience} | Art Style: {art_style} | Narration & Script Language: {lang_display}
 - {pacing_param}
 {adaptation_mandate}
+{analysis["prompt_blueprint"]}
 
 CINEMATIC DIRECTIVES:
 {arc_header}
@@ -2642,9 +3116,57 @@ Return ONLY raw JSON matching this structure:
                         "scenes": normalized_scenes
                     }
 
-        # 2. Heuristic text parser (if user pasted plain text screenplay)
+        # 1b. Markdown Table Storyboard Parser (e.g. | Scene | Visual | Narration / Dialogue |)
+        table_lines = [ln.strip() for ln in cleaned_text.splitlines() if ln.strip().startswith("|") and ln.strip().endswith("|")]
+        if len(table_lines) >= 3:
+            header_cells = [c.strip().lower() for c in table_lines[0].strip("|").split("|")]
+            has_scene_col = any(any(k in h for k in ("scene", "cảnh", "shot", "panel", "stt", "#")) for h in header_cells)
+            has_content_col = any(any(k in h for k in ("visual", "image", "hình", "prompt", "narration", "dialogue", "thoại", "lời dẫn", "script", "nội dung")) for h in header_cells)
+            if has_scene_col and has_content_col:
+                table_scenes = []
+                for row_ln in table_lines[1:]:
+                    cells = [c.strip() for c in row_ln.strip("|").split("|")]
+                    if all(re.match(r'^[:\-]+$', c) for c in cells if c):
+                        continue
+                    if len(cells) < 2:
+                        continue
+                    sc_idx_t = len(table_scenes) + 1
+                    sc_title_t = f"Scene {sc_idx_t}"
+                    vis_t, act_t, narr_t = "", "", ""
+                    for col_i, cell_val in enumerate(cells):
+                        col_name = header_cells[col_i] if col_i < len(header_cells) else ""
+                        if any(k in col_name for k in ("scene", "cảnh", "shot", "panel", "stt", "#")) and col_i == 0:
+                            clean_c = re.sub(r'^(?:Scene|Cảnh|Shot|Panel)\s*\d*\s*[:\-–—]?\s*', '', cell_val, flags=re.IGNORECASE).strip()
+                            if clean_c and not clean_c.isdigit():
+                                sc_title_t = clean_c
+                        elif any(k in col_name for k in ("acting", "video", "motion", "chuyển động")):
+                            act_t = cell_val
+                        elif any(k in col_name for k in ("visual", "image", "hình", "bối cảnh", "minh họa")):
+                            vis_t = cell_val
+                        elif any(k in col_name for k in ("narration", "voiceover", "dialogue", "thoại", "lời", "script", "thuyết minh", "nội dung")):
+                            narr_t = (f"{narr_t} {cell_val}".strip() if narr_t else cell_val)
+                    if vis_t or narr_t or act_t:
+                        sc_obj = ScriptAgent.ensure_separate_prompts({
+                            "scene_number": sc_idx_t,
+                            "title": sc_title_t,
+                            "archetype": "Cinematic Scene",
+                            "visual_prompt": vis_t or narr_t,
+                            "acting_prompt": act_t,
+                            "narration": narr_t or vis_t,
+                            "camera_motion": "zoom_in"
+                        })
+                        table_scenes.append(sc_obj)
+                if len(table_scenes) >= 2:
+                    return {
+                        "title": "Imported Table Storyboard",
+                        "logline": "",
+                        "characters": "",
+                        "scenes": table_scenes
+                    }
+
+        # 2. Heuristic text parser (if user pasted plain text screenplay or structured storyboard)
         scene_blocks = re.split(
-            r"(?:^|\n)((?:Scene|Cảnh|Phân cảnh)\s*\d+|CẢNH\s+CUỐI|CẢNH\s+KẾT|FINAL\s+SCENE)[:\s\-–—]*",
+            r"(?:^|\n)[#*\s]*((?:Scene|Cảnh|Phân\s*cảnh|Shot|Panel|Frame)\s*\d+|CẢNH\s+CUỐI|CẢNH\s+KẾT|FINAL\s+SCENE|\[\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2}\])[#*\s:\-–—]*",
             cleaned_text,
             flags=re.IGNORECASE
         )
@@ -2757,37 +3279,49 @@ Return ONLY raw JSON matching this structure:
                         idx_line += 1
                         continue
 
-                    # Check labeled fields
-                    m_vis = re.match(r'^(?:Visual|Hình ảnh|Miêu tả)[:\s]+(.+)', line, re.IGNORECASE)
+                    # Check labeled fields (English & Vietnamese)
+                    clean_label_line = re.sub(r'^[\-*•]+\s*|\*\*([^*]+)\*\*', lambda m: m.group(1) if m.group(1) else '', line).strip()
+                    m_vis = re.match(r'^(?:Visual(?:\s+Prompt)?|Image(?:\s+Prompt)?|Prompt\s+ảnh|Hình\s+ảnh|Miêu\s+tả(?:\s+hình\s+ảnh)?|Bối\s+cảnh)[:\s]+(.+)', clean_label_line, re.IGNORECASE)
                     if m_vis:
                         explicit_visuals.append(m_vis.group(1).strip())
                         idx_line += 1
                         continue
 
-                    m_aud = re.match(r'^(?:Âm thanh|Audio|Âm nhạc|Music|SFX)[:\s]+(.+)', line, re.IGNORECASE)
+                    m_aud = re.match(r'^(?:Âm\s+thanh|Audio|Âm\s+nhạc|Music|SFX)[:\s]+(.+)', clean_label_line, re.IGNORECASE)
                     if m_aud:
                         idx_line += 1
                         continue
 
-                    m_arch = re.match(r'^(?:Archetype|Thể loại cảnh)[:\s]+(.+)', line, re.IGNORECASE)
+                    m_arch = re.match(r'^(?:Archetype|Thể\s+loại\s+cảnh)[:\s]+(.+)', clean_label_line, re.IGNORECASE)
                     if m_arch:
                         archetype_override = m_arch.group(1).strip()
                         idx_line += 1
                         continue
 
-                    m_act = re.match(r'^(?:Acting|Video|Motion|Diễn xuất|Hành động)[:\s]+(.+)', line, re.IGNORECASE)
+                    m_act = re.match(r'^(?:Acting(?:\s+Prompt)?|Video(?:\s+Prompt)?|Prompt\s+video|Motion(?:\s+Prompt)?|Chuyển\s+động|Diễn\s+xuất|Hành\s+động)[:\s]+(.+)', clean_label_line, re.IGNORECASE)
                     if m_act:
                         explicit_acting = m_act.group(1).strip()
                         idx_line += 1
                         continue
 
-                    m_narr = re.match(r'^(?:Narration|Thuyết minh|Lời dẫn|Voiceover)[:\s]+(.+)', line, re.IGNORECASE)
+                    m_narr = re.match(r'^(?:Narration|Thuyết\s+minh|Lời\s+dẫn|Voiceover)[:\s]+(.+)', clean_label_line, re.IGNORECASE)
                     if m_narr:
                         explicit_narration = m_narr.group(1).strip()
                         idx_line += 1
                         continue
 
-                    # Check ALL-CAPS speaker line followed by dialogue
+                    m_dial_field = re.match(r'^(?:Dialogue|Dialog|Thoại|Lời\s+thoại)[:\s]+(.+)', clean_label_line, re.IGNORECASE)
+                    if m_dial_field:
+                        d_raw = m_dial_field.group(1).strip()
+                        m_inline_spk = re.match(r'^([A-Za-zÀ-ỹ0-9\s]{1,28}?)\s*(?:\(([^)]+)\))?\s*:\s*(.+)$', d_raw)
+                        if m_inline_spk:
+                            dialogues.append((m_inline_spk.group(1).strip(), (m_inline_spk.group(2) or "").strip(), m_inline_spk.group(3).strip(' "“”')))
+                        else:
+                            dialogues.append(("Character", "", d_raw.strip(' "“”')))
+                        idx_line += 1
+                        continue
+
+                    # Check ALL-CAPS speaker line followed by dialogue on next line
                     m_spk = speaker_re.match(line)
                     if m_spk and idx_line + 1 < len(content_lines):
                         spk_name = m_spk.group(1).strip().title()
@@ -2796,6 +3330,22 @@ Return ONLY raw JSON matching this structure:
                         dialogues.append((spk_name, spk_tone, dial_line))
                         idx_line += 2
                         continue
+
+                    # Check inline speaker dialogue line: e.g. `- Ông A (rầu rĩ): "Vợ tôi dữ lắm!"` or `Ông B: "Vợ tôi còn hơn thế!"`
+                    m_inline_dialogue = re.match(
+                        r'^(?:[–\-—•*]\s*)?\*{0,2}([A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ][A-Za-zÀ-ỹ0-9\s]{1,24}?)\*{0,2}\s*(?:\(([^)]{1,35})\))?\s*:\s*["“]?([^"”\n]{2,})["”]?$',
+                        line
+                    )
+                    if m_inline_dialogue:
+                        cand_spk = m_inline_dialogue.group(1).strip()
+                        if cand_spk.lower() not in (
+                            "scene", "cảnh", "phân cảnh", "visual", "hình ảnh", "narration", "thuyết minh",
+                            "lời dẫn", "acting", "video", "camera", "góc máy", "audio", "âm thanh", "sfx",
+                            "duration", "thời lượng", "title", "tiêu đề", "bối cảnh"
+                        ):
+                            dialogues.append((cand_spk, (m_inline_dialogue.group(2) or "").strip(), m_inline_dialogue.group(3).strip(' "“”')))
+                            idx_line += 1
+                            continue
 
                     # Regular narrative action / stage direction line
                     clean_action = re.sub(r'^(?:Cảnh chuyển|Chuyển cảnh|Cut to)[:\s]+', '', line, flags=re.IGNORECASE).strip()
@@ -2945,6 +3495,7 @@ Return ONLY raw JSON matching this structure:
 
                 w_count = len(narration.split())
                 sc_dur = explicit_duration if explicit_duration > 0 else (min(12.0, max(6.0, round(w_count / 2.2, 1))) if w_count > 0 else 8.0)
+                structured_dials = [{"speaker": spk_n, "text": d_ln} for (spk_n, _, d_ln) in dialogues if d_ln]
                 sc_dict = {
                     "scene_number": len(scenes) + 1,
                     "title": sc_title,
@@ -2953,9 +3504,12 @@ Return ONLY raw JSON matching this structure:
                     "visual_prompt": visual,
                     "acting_prompt": acting,
                     "narration": narration,
+                    "dialogues": structured_dials,
                     "camera_motion": motion_cycle[len(scenes) % len(motion_cycle)]
                 }
                 sc_dict = ScriptAgent.ensure_separate_prompts(sc_dict)
+                if structured_dials and not sc_dict.get("dialogues"):
+                    sc_dict["dialogues"] = structured_dials
                 scenes.append(sc_dict)
 
             if scenes:
@@ -3959,6 +4513,19 @@ Return ONLY raw JSON matching this structure:
         }
         chosen_style_desc = ad_styles_guide.get(ad_style, ad_styles_guide["cinematic_commercial"])
         brand_str = brand.strip() if (brand and brand.strip()) else "Exclusive"
+        prod_analysis = self.deep_analyze_product_input(
+            product_name=product_name,
+            description=description,
+            specs=specs,
+            brand=brand,
+            target_audience=target_audience,
+            ad_style=ad_style,
+            call_to_action=call_to_action,
+            pricing_offer=pricing_offer,
+            num_scenes=num_scenes,
+            art_style=art_style,
+            language=language
+        )
 
         return f"""You are an elite commercial director and master advertising copywriter from premier global agencies (Apple, Ogilvy, Nike commercials, Wieden+Kennedy).
 Craft an electrifying, high-converting product commercial storyboard tailored for high-impact AI advertising video generation (Google Flow / Google Veo 3 I2V, Midjourney / Imagen 3).
@@ -3967,13 +4534,14 @@ Product Details:
 - Product Name: {product_name}
 - Brand: {brand_str}
 - Overview & Core Benefits: {description}
-- Technical Specs & Features: {specs or "State-of-the-art engineering and craftsmanship"}
+- Technical Specs & Features: {specs or " | ".join(prod_analysis["extracted_specs"]) or "State-of-the-art engineering and craftsmanship"}
 - Target Audience: {target_audience}
 - Commercial Vibe & Style: {chosen_style_desc}
-- Special Offer / Pricing: {pricing_offer or "Limited Time Exclusive Offer"}
-- Call to Action (CTA): {call_to_action}
+- Special Offer / Pricing: {prod_analysis["effective_offer"] or "Limited Time Exclusive Offer"}
+- Call to Action (CTA): {prod_analysis["effective_cta"]}
 - Voiceover Narration Language: {language}
 - Visual Art Style: {art_style} (e.g. realistic 35mm photography)
+{prod_analysis["prompt_blueprint"]}
 
 COMMERCIAL STRUCTURE (Across {num_scenes} scenes):
 - Scene 1 [THE HOOK]: Magnetic visual hook that captures 100% attention in the first 1.5 seconds. Highlights the user desire, curiosity, or dynamic silhouette tease of the product.
@@ -4035,71 +4603,90 @@ Return ONLY raw JSON matching this structure:
         art_style: str = "realistic",
         language: str = "en"
     ) -> Dict[str, Any]:
-        """Built-in offline Commercial Generator for advertising goods."""
-        is_vi = language.startswith("vi")
-        brand_name = brand.strip() if (brand and brand.strip()) else "Official"
-        clean_name = product_name.strip() or "Premium Product"
-        clean_specs = specs.strip() or "Advanced engineering, premium materials, high performance"
-        clean_offer = pricing_offer.strip() or ("Ưu đãi giới hạn hôm nay!" if is_vi else "Limited-time exclusive offer!")
-        clean_cta = call_to_action.strip() or ("Đặt hàng ngay hôm nay!" if is_vi else "Order now to claim your discount!")
+        """Built-in offline Commercial Generator for advertising goods powered by deep product analysis."""
+        prod_dna = self.deep_analyze_product_input(
+            product_name=product_name,
+            description=description,
+            specs=specs,
+            brand=brand,
+            target_audience=target_audience,
+            ad_style=ad_style,
+            call_to_action=call_to_action,
+            pricing_offer=pricing_offer,
+            num_scenes=num_scenes,
+            art_style=art_style,
+            language=language
+        )
+        is_vi = prod_dna["language"].startswith("vi")
+        brand_name = prod_dna["brand"]
+        clean_name = prod_dna["product_name"]
+        extracted_specs = prod_dna["extracted_specs"]
+        extracted_usps = prod_dna["extracted_usps"]
+        mat_tokens = prod_dna["visual_material_tokens"]
+        pain_hook = prod_dna["pain_point_hook"]
+        clean_specs = " • ".join(extracted_specs[:3]) if extracted_specs else (specs.strip() or "Advanced engineering, premium materials, high performance")
+        usp_primary = extracted_usps[0] if extracted_usps else (description.strip() or f"Discover {clean_name}")
+        usp_secondary = extracted_usps[1] if len(extracted_usps) > 1 else usp_primary
+        clean_offer = prod_dna["effective_offer"] or ("Ưu đãi giới hạn hôm nay!" if is_vi else "Limited-time exclusive offer!")
+        clean_cta = prod_dna["effective_cta"]
 
         style_prefix = "Photorealistic cinematic 35mm photograph" if art_style == "realistic" else f"{art_style.capitalize()} style"
 
         ad_templates = [
             {
                 "archetype": "The Hook",
-                "title_en": "The Hook: Experience Better",
-                "title_vi": "Mở Đầu: Đỉnh Cao Trải Nghiệm",
-                "vis_en": f"{style_prefix}. Dramatic moody studio lighting casting rim reflections across the sleek silhouette of {clean_name}. High-end product photography, shallow depth of field, 8k resolution.",
-                "vis_vi": f"{style_prefix}. Ánh sáng studio điện ảnh tạo viền sáng ấn tượng trên thân máy sang trọng của {clean_name}. Nhiếp ảnh sản phẩm cao cấp, độ phân giải 8k.",
+                "title_en": f"The Hook: {clean_name}",
+                "title_vi": f"Mở Đầu: {clean_name}",
+                "vis_en": f"{style_prefix}. Dramatic studio lighting casting rim reflections across the sleek silhouette of {clean_name}, {mat_tokens}. High-end commercial photography, shallow depth of field, 8k resolution.",
+                "vis_vi": f"{style_prefix}. Ánh sáng studio điện ảnh tạo viền sáng ấn tượng trên {clean_name}, {mat_tokens}. Nhiếp ảnh sản phẩm cao cấp, độ phân giải 8k.",
                 "act_en": f"0-3s: Camera glides slowly across the sleek contours of {clean_name}. 3-6s: An elegant sweep of golden rim light reveals the fine surface textures. 6-8s: Camera locks onto the signature silhouette.",
                 "act_vi": f"0-3s: Camera glides slowly across the sleek contours of {clean_name}. 3-6s: An elegant sweep of golden rim light reveals the fine surface textures. 6-8s: Camera locks onto the signature silhouette.",
-                "narr_en": "Are you ready to elevate your daily routine? Discover what you've been missing.",
-                "narr_vi": "Bạn đã sẵn sàng nâng tầm trải nghiệm mỗi ngày? Hãy khám phá sự khác biệt.",
+                "narr_en": f"{pain_hook} {usp_primary[:90]}",
+                "narr_vi": f"{pain_hook} {usp_primary[:90]}",
                 "motion": "zoom_in"
             },
             {
                 "archetype": "The Product Reveal",
                 "title_en": f"Meet {clean_name}",
                 "title_vi": f"Giới Thiệu {clean_name}",
-                "vis_en": f"{style_prefix}. Hero beauty shot of {clean_name} ({brand_name}), perfectly centered on a minimalist reflective pedestal with soft atmospheric backlight, flawless industrial design.",
-                "vis_vi": f"{style_prefix}. Bức ảnh tôn vinh tuyệt đẹp của {clean_name} ({brand_name}), đặt trên bệ trưng bày tối giản với ánh sáng nền dịu nhẹ, thiết kế hoàn mỹ.",
-                "act_en": f"0-3s: {clean_name} rotates smoothly on an invisible turntable. 3-6s: Sleek accents glow subtly as the device activates. 6-8s: Camera pulls to an authoritative hero angle.",
-                "act_vi": f"0-3s: {clean_name} rotates smoothly on an invisible turntable. 3-6s: Sleek accents glow subtly as the device activates. 6-8s: Camera pulls to an authoritative hero angle.",
-                "narr_en": f"Introducing {clean_name}. Crafted by {brand_name} for those who demand absolute excellence.",
-                "narr_vi": f"Giới thiệu {clean_name}. Được chế tác bởi {brand_name} dành riêng cho những ai yêu thích sự hoàn hảo.",
+                "vis_en": f"{style_prefix}. Hero beauty shot of {clean_name} ({brand_name}), centered on a minimalist reflective pedestal with soft atmospheric backlight, {mat_tokens}, flawless industrial design.",
+                "vis_vi": f"{style_prefix}. Bức ảnh tôn vinh tuyệt đẹp của {clean_name} ({brand_name}) trên bệ trưng bày tối giản với ánh sáng nền dịu nhẹ, {mat_tokens}, thiết kế hoàn mỹ.",
+                "act_en": f"0-3s: {clean_name} rotates smoothly on an invisible turntable. 3-6s: Sleek accents glow subtly as the product features shine. 6-8s: Camera pulls to an authoritative hero angle.",
+                "act_vi": f"0-3s: {clean_name} rotates smoothly on an invisible turntable. 3-6s: Sleek accents glow subtly as the product features shine. 6-8s: Camera pulls to an authoritative hero angle.",
+                "narr_en": f"Introducing {clean_name} by {brand_name}. {usp_primary[:100]}",
+                "narr_vi": f"Giới thiệu {clean_name} từ {brand_name}. {usp_primary[:100]}",
                 "motion": "pan_right"
             },
             {
                 "archetype": "Tech Specs & Features",
                 "title_en": "Precision Engineering & Specs",
                 "title_vi": "Thông Số & Hiệu Năng Đột Phá",
-                "vis_en": f"{style_prefix}. Extreme macro close-up highlighting technical details and materials: {clean_specs}. Pristine textures, precision craftsmanship, 8k uhd clarity.",
-                "vis_vi": f"{style_prefix}. Cận cảnh góc siêu macro thể hiện chi tiết kỹ thuật và vật liệu cao cấp: {clean_specs}. Kết cấu tinh xảo, độ sắc nét 8k.",
-                "act_en": f"0-3s: Camera glides into a high-detail macro shot of the functional interface. 3-6s: Dynamic movement demonstrates responsiveness and flawless build quality. 6-8s: Settle back to three-quarter view.",
-                "act_vi": f"0-3s: Camera glides into a high-detail macro shot of the functional interface. 3-6s: Dynamic movement demonstrates responsiveness and flawless build quality. 6-8s: Settle back to three-quarter view.",
-                "narr_en": f"Engineered with {clean_specs[:55]}. Every millimeter built for uncompromising peak performance.",
-                "narr_vi": f"Tích hợp {clean_specs[:55]}. Từng chi tiết nhỏ nhất đều tối ưu cho hiệu năng đỉnh cao.",
+                "vis_en": f"{style_prefix}. Extreme macro close-up of {clean_name} highlighting technical details and materials: {clean_specs}, {mat_tokens}. Pristine textures, precision craftsmanship, 8k uhd clarity.",
+                "vis_vi": f"{style_prefix}. Cận cảnh góc siêu macro của {clean_name} thể hiện chi tiết kỹ thuật và vật liệu cao cấp: {clean_specs}, {mat_tokens}. Kết cấu tinh xảo, độ sắc nét 8k.",
+                "act_en": f"0-3s: Camera glides into a high-detail macro shot of {clean_name}. 3-6s: Dynamic movement demonstrates responsiveness and flawless build quality. 6-8s: Settle back to three-quarter view.",
+                "act_vi": f"0-3s: Camera glides into a high-detail macro shot of {clean_name}. 3-6s: Dynamic movement demonstrates responsiveness and flawless build quality. 6-8s: Settle back to three-quarter view.",
+                "narr_en": f"Featuring {clean_specs[:95]}. Every detail engineered for peak performance.",
+                "narr_vi": f"Nổi bật với {clean_specs[:95]}. Từng chi tiết đều tối ưu cho hiệu năng đỉnh cao.",
                 "motion": "zoom_in"
             },
             {
                 "archetype": "Lifestyle Experience",
                 "title_en": "Elevated Daily Living",
                 "title_vi": "Trải Nghiệm Cuộc Sống Đỉnh Cao",
-                "vis_en": f"{style_prefix}. Elegant lifestyle scene of modern user seamlessly enjoying {clean_name} in an aesthetic contemporary space. Warm golden sunlight streaming in, natural joyful expression.",
-                "vis_vi": f"{style_prefix}. Khung cảnh phong cách sống hiện đại, người dùng thư thái tận hưởng {clean_name} trong không gian sang trọng. Ánh nắng sớm ấm áp, nụ cười hài lòng.",
-                "act_en": f"0-3s: User interacts effortlessly with {clean_name}, feeling immediate tactile delight. 3-6s: Genuine smile and feeling of elevated comfort and confidence. 6-8s: Smooth pan back to the glowing product.",
-                "act_vi": f"0-3s: User interacts effortlessly with {clean_name}, feeling immediate tactile delight. 3-6s: Genuine smile and feeling of elevated comfort and confidence. 6-8s: Smooth pan back to the glowing product.",
-                "narr_en": "Feel the seamless difference every single day. Effortless, intuitive, and truly transformative.",
-                "narr_vi": "Cảm nhận sự tiện nghi vượt trội mỗi ngày. Đơn giản, tinh tế và đầy cảm hứng.",
+                "vis_en": f"{style_prefix}. Elegant lifestyle scene of a confident customer seamlessly enjoying {clean_name} in a modern space, {mat_tokens}. Warm golden sunlight streaming in, natural joyful expression.",
+                "vis_vi": f"{style_prefix}. Khung cảnh phong cách sống hiện đại, khách hàng hào hứng trải nghiệm {clean_name} trong không gian sang trọng, {mat_tokens}. Ánh nắng ấm áp, nụ cười hài lòng.",
+                "act_en": f"0-3s: Customer interacts effortlessly with {clean_name}, feeling immediate tactile delight. 3-6s: Genuine smile and feeling of elevated comfort and confidence. 6-8s: Smooth pan back to the glowing product.",
+                "act_vi": f"0-3s: Customer interacts effortlessly with {clean_name}, feeling immediate tactile delight. 3-6s: Genuine smile and feeling of elevated comfort and confidence. 6-8s: Smooth pan back to the glowing product.",
+                "narr_en": f"{usp_secondary[:110]} Feel the difference every single day.",
+                "narr_vi": f"{usp_secondary[:110]} Cảm nhận sự khác biệt vượt trội mỗi ngày.",
                 "motion": "subtle_drift"
             },
             {
                 "archetype": "Special Offer & CTA",
                 "title_en": "Exclusive Offer & Call to Action",
                 "title_vi": "Ưu Đãi Đặc Biệt & Đặt Hàng",
-                "vis_en": f"{style_prefix}. Grand cinematic finale beauty shot of {clean_name} with official packaging and premium accessories, glowing luxury backdrop, celebratory lighting.",
-                "vis_vi": f"{style_prefix}. Khung hình kết thúc hoành tráng của {clean_name} cùng trọn bộ phụ kiện cao cấp, phông nền tỏa sáng rực rỡ, góc chụp ấn tượng.",
+                "vis_en": f"{style_prefix}. Grand cinematic finale beauty shot of {clean_name} with official {brand_name} packaging, {mat_tokens}, glowing luxury backdrop, celebratory lighting.",
+                "vis_vi": f"{style_prefix}. Khung hình kết thúc hoành tráng của {clean_name} cùng hộp sản phẩm {brand_name} sang trọng, {mat_tokens}, phông nền tỏa sáng rực rỡ.",
                 "act_en": f"0-3s: Camera pulls back smoothly revealing {clean_name} in its full glory. 3-6s: A celebratory light flare shimmers across the brand emblem. 6-8s: Hero stance settles with ultimate brand prestige.",
                 "act_vi": f"0-3s: Camera pulls back smoothly revealing {clean_name} in its full glory. 3-6s: A celebratory light flare shimmers across the brand emblem. 6-8s: Hero stance settles with ultimate brand prestige.",
                 "narr_en": f"{clean_offer} {clean_cta}",

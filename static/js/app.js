@@ -220,6 +220,16 @@ class AniStoryApp {
     this.selectTargetDuration = document.getElementById("selectTargetDuration");
     this.selectLanguage = document.getElementById("selectLanguage");
     this.selectAudience = document.getElementById("selectAudience");
+    this.selectDirectorSkill = document.getElementById("selectDirectorSkill");
+    this.btnDeepAnalyzeInput = document.getElementById("btnDeepAnalyzeInput");
+    this.deepAnalysisPreviewCard = document.getElementById("deepAnalysisPreviewCard");
+    this.badgeDeepAnalysisGenre = document.getElementById("badgeDeepAnalysisGenre");
+    this.badgeDeepAnalysisSkill = document.getElementById("badgeDeepAnalysisSkill");
+    this.badgeDeepAnalysisScenes = document.getElementById("badgeDeepAnalysisScenes");
+    this.btnApplyDeepAnalysis = document.getElementById("btnApplyDeepAnalysis");
+    this.btnCloseDeepAnalysis = document.getElementById("btnCloseDeepAnalysis");
+    this.deepAnalysisCharactersBox = document.getElementById("deepAnalysisCharactersBox");
+    this.deepAnalysisBeatsList = document.getElementById("deepAnalysisBeatsList");
     this.btnGenerateStoryboard = document.getElementById("btnGenerateStoryboard");
 
     // Storyboard stage elements
@@ -1647,6 +1657,28 @@ class AniStoryApp {
           console.error(e);
           this.showToast("Failed to update visual style: " + e.message, true);
         }
+      });
+    }
+
+    // Director Skill & Deep Input Analyzer in Stage 1
+    if (this.selectDirectorSkill) {
+      const savedSkill = localStorage.getItem("anistory_cfg_director_skill");
+      if (savedSkill) {
+        this.selectDirectorSkill.value = savedSkill;
+      }
+      this.selectDirectorSkill.addEventListener("change", () => {
+        localStorage.setItem("anistory_cfg_director_skill", this.selectDirectorSkill.value);
+      });
+    }
+    if (this.btnDeepAnalyzeInput) {
+      this.btnDeepAnalyzeInput.addEventListener("click", () => this.deepAnalyzeCurrentInput());
+    }
+    if (this.btnApplyDeepAnalysis) {
+      this.btnApplyDeepAnalysis.addEventListener("click", () => this.applyDeepAnalysisBlueprint());
+    }
+    if (this.btnCloseDeepAnalysis) {
+      this.btnCloseDeepAnalysis.addEventListener("click", () => {
+        if (this.deepAnalysisPreviewCard) this.deepAnalysisPreviewCard.style.display = "none";
       });
     }
 
@@ -3249,6 +3281,148 @@ ${isAutoScenes
     }
   }
 
+  async deepAnalyzeCurrentInput() {
+    const isAdMode = this.inputMode === "ad";
+    const isPasteMode = this.inputMode === "paste";
+    const ideaText = isPasteMode
+      ? (this.inputDirectPasteText ? this.inputDirectPasteText.value.trim() : "")
+      : (this.inputIdeaPrompt ? this.inputIdeaPrompt.value.trim() : "");
+    const prodName = this.inputAdProductName ? this.inputAdProductName.value.trim() : "";
+    const prodDesc = this.textareaAdDesc ? this.textareaAdDesc.value.trim() : "";
+
+    if (isAdMode && !prodName && !prodDesc) {
+      this.showToast("Please enter a Product Name or Product Description to deep-analyze!", true);
+      return;
+    }
+    if (!isAdMode && !ideaText) {
+      this.showToast("Please enter a Story Idea or paste a Storyboard/Script to deep-analyze!", true);
+      return;
+    }
+
+    const origHtml = this.btnDeepAnalyzeInput ? this.btnDeepAnalyzeInput.innerHTML : "";
+    if (this.btnDeepAnalyzeInput) {
+      this.btnDeepAnalyzeInput.disabled = true;
+      this.btnDeepAnalyzeInput.innerHTML = `<span>⏳ Analyzing...</span>`;
+    }
+
+    try {
+      const numScenesVal = this.selectSceneCount ? parseInt(this.selectSceneCount.value, 10) : 0;
+      const payload = {
+        mode: isAdMode ? "advertisement" : "story",
+        idea: ideaText,
+        title: this.inputProjectTitle ? this.inputProjectTitle.value.trim() : "",
+        art_style: this.selectedStyleKey || "ghibli",
+        language: this.selectLanguage ? this.selectLanguage.value : "en",
+        audience: isAdMode ? (this.selectAdAudience ? this.selectAdAudience.value : "General") : (this.selectAudience ? this.selectAudience.value : "general"),
+        num_scenes: isNaN(numScenesVal) ? 0 : numScenesVal,
+        target_duration: this.selectTargetDuration ? this.selectTargetDuration.value : "auto",
+        director_skill: this.selectDirectorSkill ? this.selectDirectorSkill.value : "auto",
+        camera_on_speaker: Boolean(this.cameraOnSpeaker),
+        product_name: prodName,
+        description: prodDesc,
+        specs: this.textareaAdSpecs ? this.textareaAdSpecs.value.trim() : "",
+        brand: this.inputAdBrand ? this.inputAdBrand.value.trim() : "",
+        ad_style: this.selectAdStyle ? this.selectAdStyle.value : "cinematic_commercial",
+        call_to_action: this.inputAdCTA ? this.inputAdCTA.value.trim() : "",
+        pricing_offer: this.inputAdOffer ? this.inputAdOffer.value.trim() : ""
+      };
+
+      const resp = await fetch("/api/analyze-storyboard-input", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) {
+        throw new Error("Failed to analyze input");
+      }
+      const data = await resp.json();
+      const analysis = data.analysis || {};
+      this.lastDeepAnalysis = analysis;
+
+      if (this.badgeDeepAnalysisGenre) {
+        this.badgeDeepAnalysisGenre.textContent = isAdMode
+          ? `🛍️ ${analysis.category_label || "Commercial"}`
+          : `🎬 ${analysis.genre_label || "Cinematic Story"}`;
+      }
+      if (this.badgeDeepAnalysisSkill) {
+        this.badgeDeepAnalysisSkill.textContent = isAdMode
+          ? `🎯 AIDA / PAS Commercial`
+          : `🎯 ${analysis.director_skill_name || "Director Skill"}`;
+      }
+      if (this.badgeDeepAnalysisScenes) {
+        const recSc = analysis.recommended_scenes || 4;
+        const dialCnt = analysis.dialogue_count || 0;
+        this.badgeDeepAnalysisScenes.textContent = isAdMode
+          ? `🎞️ ${recSc} Scenes (~${recSc * 8}s)`
+          : `🎞️ ${recSc} Scenes (~${recSc * 8}s)${dialCnt > 0 ? ` • 💬 ${dialCnt} dialogues` : ""}`;
+      }
+
+      if (this.deepAnalysisCharactersBox) {
+        if (isAdMode) {
+          const specsStr = (analysis.extracted_specs || []).slice(0, 4).join(" • ") || "Precision craftsmanship";
+          this.deepAnalysisCharactersBox.innerHTML =
+            `<div><strong style="color:#f8fafc;">🪝 Hook:</strong> ${this.escapeHtml(analysis.pain_point_hook || "")}</div>` +
+            `<div style="margin-top:2px;"><strong style="color:#f8fafc;">⚙️ Extracted Specs:</strong> ${this.escapeHtml(specsStr)}</div>`;
+        } else {
+          const charsStr = analysis.characters_blueprint || "Auto-derived protagonist & supporting cast";
+          this.deepAnalysisCharactersBox.innerHTML =
+            `<div><strong style="color:#f8fafc;">👥 Character Blueprint:</strong> ${this.escapeHtml(charsStr)}</div>`;
+        }
+      }
+
+      if (this.deepAnalysisBeatsList) {
+        this.deepAnalysisBeatsList.innerHTML = "";
+        (analysis.scene_beats || []).forEach(b => {
+          const row = document.createElement("div");
+          row.style.cssText = "padding:5px 8px; border-radius:6px; background:rgba(30,41,59,0.65); border-left:3px solid #38bdf8; line-height:1.35;";
+          const dialCount = (b.dialogues || []).length;
+          const dialBadge = dialCount > 0 ? `<span style="color:#34d399; font-size:10.5px; margin-left:6px;">💬 ${dialCount} line(s)</span>` : "";
+          row.innerHTML =
+            `<div style="font-weight:600; color:#e2e8f0; font-size:11.5px;">Scene ${b.scene_number}: ${this.escapeHtml(b.role || "")} <span style="color:#94a3b8; font-weight:400;">(${this.escapeHtml(b.recommended_camera || "zoom_in")})</span>${dialBadge}</div>` +
+            `<div style="color:#cbd5e1; font-size:11px; margin-top:2px;">${this.escapeHtml(b.summary || "")}</div>`;
+          this.deepAnalysisBeatsList.appendChild(row);
+        });
+      }
+
+      if (this.deepAnalysisPreviewCard) {
+        this.deepAnalysisPreviewCard.style.display = "block";
+      }
+      this.showToast("🧠 Deep Analysis complete! Scene-by-scene Director Blueprint ready.");
+    } catch (e) {
+      console.error(e);
+      this.showToast("Deep Analysis failed: " + e.message, true);
+    } finally {
+      if (this.btnDeepAnalyzeInput) {
+        this.btnDeepAnalyzeInput.disabled = false;
+        this.btnDeepAnalyzeInput.innerHTML = origHtml;
+      }
+    }
+  }
+
+  applyDeepAnalysisBlueprint() {
+    const a = this.lastDeepAnalysis;
+    if (!a) return;
+    if (a.director_skill && this.selectDirectorSkill) {
+      this.selectDirectorSkill.value = a.director_skill;
+      localStorage.setItem("anistory_cfg_director_skill", a.director_skill);
+    }
+    if (a.recommended_scenes && this.selectSceneCount) {
+      const optExists = Array.from(this.selectSceneCount.options).some(o => parseInt(o.value, 10) === a.recommended_scenes);
+      if (optExists) {
+        this.selectSceneCount.value = String(a.recommended_scenes);
+      } else {
+        this.selectSceneCount.value = "0"; // Auto
+      }
+      localStorage.setItem("anistory_cfg_scene_count", this.selectSceneCount.value);
+    }
+    if ((a.dialogue_count || 0) >= 2 && !this.cameraOnSpeaker) {
+      this.cameraOnSpeaker = true;
+      localStorage.setItem("anistory_cfg_camera_on_speaker", "true");
+      this.updateSpeakerCamUI(true);
+    }
+    this.showToast(`✓ Applied Blueprint: ${a.director_skill_name || "Director Skill"} (${a.recommended_scenes || 4} scenes)!`);
+  }
+
   renderStyles(styles) {
     this.styleOptionsGrid.innerHTML = "";
     let savedStyle = localStorage.getItem("anistory_cfg_art_style") || this.selectedStyleKey || "ghibli";
@@ -3537,8 +3711,12 @@ ${isAutoScenes
         enable_voiceover: this.enableVoiceover !== false,
         enable_subtitles: this.enableSubtitles !== false,
         enable_multivoice: this.enableMultivoice !== false,
-        camera_on_speaker: this.cameraOnSpeaker !== false
+        camera_on_speaker: this.cameraOnSpeaker !== false,
+        director_skill: this.selectDirectorSkill ? this.selectDirectorSkill.value : "auto"
       };
+      if (this.selectDirectorSkill) {
+        localStorage.setItem("anistory_cfg_director_skill", this.selectDirectorSkill.value);
+      }
 
       const resp = await fetch("/api/create-story", {
         method: "POST",

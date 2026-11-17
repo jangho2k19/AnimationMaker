@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from PIL import Image
 
-from backend.config import BASE_DIR, OUTPUT_DIR, ART_STYLES, VOICES, CAMERA_MOTIONS, AI_PROVIDERS, IMAGE_MODES, DURATION_PRESETS, VIDEO_DIMENSIONS, is_comic_style
+from backend.config import BASE_DIR, OUTPUT_DIR, ART_STYLES, VOICES, CAMERA_MOTIONS, AI_PROVIDERS, IMAGE_MODES, DURATION_PRESETS, VIDEO_DIMENSIONS, STORYBOARD_SKILLS, is_comic_style
 from backend.pipeline import AnimationPipeline
 from backend.agents.script_agent import ScriptAgent
 
@@ -50,6 +50,26 @@ class CreateStoryRequest(BaseModel):
     enable_subtitles: bool = True
     enable_multivoice: bool = True
     camera_on_speaker: bool = False
+    director_skill: str = "auto"
+
+class AnalyzeStoryboardInputRequest(BaseModel):
+    mode: str = "story"  # "story" | "paste" | "advertisement"
+    idea: Optional[str] = ""
+    title: Optional[str] = ""
+    art_style: str = "ghibli"
+    language: str = "en"
+    audience: str = "general"
+    num_scenes: int = 0
+    target_duration: Optional[Union[int, str]] = None
+    director_skill: str = "auto"
+    camera_on_speaker: bool = False
+    product_name: Optional[str] = ""
+    description: Optional[str] = ""
+    specs: Optional[str] = ""
+    brand: Optional[str] = ""
+    ad_style: Optional[str] = "cinematic_commercial"
+    call_to_action: Optional[str] = ""
+    pricing_offer: Optional[str] = ""
 
 class ImportStoryRequest(BaseModel):
     text: str
@@ -64,6 +84,7 @@ class ImportStoryRequest(BaseModel):
     enable_subtitles: bool = True
     enable_multivoice: bool = True
     camera_on_speaker: bool = False
+    director_skill: str = "auto"
 
 class SetCharacterVoiceRequest(BaseModel):
     character_name: str
@@ -233,6 +254,7 @@ async def get_credentials(request: Request):
 async def get_config():
     return {
         "art_styles": ART_STYLES,
+        "storyboard_skills": STORYBOARD_SKILLS,
         "voices": VOICES,
         "camera_motions": CAMERA_MOTIONS,
         "ai_providers": AI_PROVIDERS,
@@ -240,6 +262,39 @@ async def get_config():
         "duration_presets": DURATION_PRESETS,
         "video_dimensions": VIDEO_DIMENSIONS
     }
+
+@app.post("/api/analyze-storyboard-input")
+async def analyze_storyboard_input(req: AnalyzeStoryboardInputRequest):
+    """Deep-analyzes a Story Idea, Pasted Storyboard/Script, or Product Description to generate a pre-production blueprint."""
+    mode = (req.mode or "story").strip().lower()
+    if mode in ("advertisement", "ad", "product"):
+        analysis = ScriptAgent.deep_analyze_product_input(
+            product_name=req.product_name or "",
+            description=req.description or req.idea or "",
+            specs=req.specs or "",
+            brand=req.brand or "",
+            target_audience=req.audience or "General",
+            ad_style=req.ad_style or "cinematic_commercial",
+            call_to_action=req.call_to_action or "Order now!",
+            pricing_offer=req.pricing_offer or "",
+            num_scenes=req.num_scenes if (req.num_scenes and req.num_scenes > 0) else 4,
+            art_style=req.art_style or "realistic",
+            language=req.language or "en"
+        )
+        return {"status": "ok", "analysis": analysis}
+    else:
+        analysis = ScriptAgent.deep_analyze_story_input(
+            idea=req.idea or "",
+            title=req.title or "",
+            art_style=req.art_style or "ghibli",
+            language=req.language or "en",
+            audience=req.audience or "general",
+            num_scenes=req.num_scenes or 0,
+            target_duration=req.target_duration,
+            director_skill=req.director_skill or "auto",
+            camera_on_speaker=bool(req.camera_on_speaker)
+        )
+        return {"status": "ok", "analysis": analysis}
 
 @app.post("/api/gemini/detect-models")
 @app.get("/api/gemini/detect-models")
@@ -546,7 +601,8 @@ async def create_story(req: CreateStoryRequest):
             enable_voiceover=req.enable_voiceover,
             enable_subtitles=req.enable_subtitles,
             enable_multivoice=req.enable_multivoice,
-            camera_on_speaker=req.camera_on_speaker
+            camera_on_speaker=req.camera_on_speaker,
+            director_skill=req.director_skill or "auto"
         )
         if is_auto_pacing:
             project["pacing_mode"] = "auto"

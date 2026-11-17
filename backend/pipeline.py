@@ -103,7 +103,8 @@ class AnimationPipeline:
         project_type: str = "animation",
         product_info: Optional[Dict[str, Any]] = None,
         enable_multivoice: bool = True,
-        camera_on_speaker: bool = False
+        camera_on_speaker: bool = False,
+        director_skill: str = "auto"
     ) -> Dict[str, Any]:
         """Initialize a new project record with folder name matching the title."""
         if art_style == "dialogue_cinema":
@@ -144,6 +145,7 @@ class AnimationPipeline:
             "product_images": [],
             "idea": idea,
             "art_style": art_style,
+            "director_skill": director_skill or "auto",
             "camera_on_speaker": bool(camera_on_speaker),
             "language": "vi" if is_vi_proj else "en",
             "voice": chosen_voice,
@@ -363,13 +365,30 @@ class AnimationPipeline:
             language=effective_lang,
             audience=audience,
             title=project_title,
-            camera_on_speaker=bool(project.get("camera_on_speaker", False))
+            camera_on_speaker=bool(project.get("camera_on_speaker", False)),
+            director_skill=project.get("director_skill", "auto")
         )
 
         final_title = project_title or story_data.get("title") or "Animated Short Film"
         project["title"] = final_title
         project["logline"] = story_data["logline"]
-        project["characters"] = story_data.get("characters", "")
+        chars_val = (story_data.get("characters") or "").strip()
+        if not chars_val:
+            try:
+                deep_info = ScriptAgent.deep_analyze_story_input(
+                    idea=project["idea"],
+                    title=final_title,
+                    art_style=project["art_style"],
+                    language=effective_lang,
+                    audience=audience,
+                    num_scenes=len(story_data.get("scenes", [])),
+                    director_skill=project.get("director_skill", "auto"),
+                    camera_on_speaker=bool(project.get("camera_on_speaker", False))
+                )
+                chars_val = deep_info.get("characters_blueprint", "")
+            except Exception:
+                pass
+        project["characters"] = chars_val
         project["scenes"] = story_data["scenes"]
 
         # Auto-cast character voices for multi-voice dialogue
