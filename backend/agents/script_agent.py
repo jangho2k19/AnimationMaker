@@ -3604,6 +3604,285 @@ Return ONLY raw JSON matching this structure:
         return {"title": "Imported Story", "logline": "", "scenes": []}
 
     @staticmethod
+    def _normalize_parsed_character(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Normalizes a character dict extracted by AI or heuristic parsers."""
+        if not isinstance(item, dict):
+            return None
+        raw_name = (
+            item.get("name")
+            or item.get("character_name")
+            or item.get("ten")
+            or item.get("tên")
+            or item.get("character")
+            or item.get("title")
+            or ""
+        )
+        name = re.sub(r'^\s*(?:\d+[\.\)\-]\s*|[-*•]+\s*)', '', str(raw_name)).strip()
+        name = re.sub(r'^[*_`"\[\(]+|[*_`"\)\]]+$', '', name).strip()
+        name = re.sub(r'^(?:Character|Nhân vật|Tên)\s*\d*\s*[:\-]\s*', '', name, flags=re.IGNORECASE).strip()
+        if not name or name.lower() in ("narrator", "người kể chuyện", "none", "character", "nhân vật", "n/a"):
+            return None
+        if len(name) > 80:
+            name = name[:80].strip()
+
+        raw_desc = (
+            item.get("description")
+            or item.get("prompt")
+            or item.get("visual_prompt")
+            or item.get("appearance")
+            or item.get("mo_ta")
+            or item.get("mô tả")
+            or ""
+        )
+        desc = re.sub(r'\s+', ' ', str(raw_desc)).strip()
+
+        raw_role = str(item.get("role") or "").strip().lower()
+        if raw_role in ("lead", "main", "protagonist", "hero", "heroine", "chính", "vai chính"):
+            role = "lead"
+        else:
+            role = "supporting"
+
+        raw_voice = str(item.get("voice_id") or "").strip()
+        raw_hint = str(item.get("voice_hint") or item.get("voice") or "").strip().lower()
+        if raw_voice.lower() in ("none", "silent", "mute") or any(
+            k in raw_hint for k in ("none", "silent", "mute", "no voice", "không thoại", "câm", "im lặng")
+        ):
+            voice_id = "none"
+        else:
+            voice_id = raw_voice
+
+        return {
+            "name": name,
+            "description": desc,
+            "role": role,
+            "voice_id": voice_id,
+            "voice_hint": str(item.get("voice_hint") or "").strip(),
+        }
+
+    @classmethod
+    def parse_characters_heuristic(cls, raw_text: str) -> List[Dict[str, Any]]:
+        """
+        Fallback parser for .txt character prompt sheets when AI parsing is unavailable
+        or returns empty. Supports JSON, labeled `Name:`/`Prompt:` blocks, markdown headings,
+        numbered lists, and `Name | Prompt` / `Name: Prompt` lines.
+        """
+        text = (raw_text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not text:
+            return []
+
+        results: List[Dict[str, Any]] = []
+        seen_names: Dict[str, int] = {}
+
+        def _push(cand: Optional[Dict[str, Any]]):
+            if not cand:
+                return
+            key = cand["name"].lower()
+            if key in seen_names:
+                existing = results[seen_names[key]]
+                if len(cand["description"]) > len(existing["description"]):
+                    existing["description"] = cand["description"]
+                if cand.get("voice_id") and not existing.get("voice_id"):
+                    existing["voice_id"] = cand["voice_id"]
+                return
+            seen_names[key] = len(results)
+            results.append(cand)
+
+        # 1. Try raw JSON first if the .txt file contains JSON
+        stripped = text.lstrip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                parsed_json = json.loads(stripped, strict=False)
+                items = (
+                    parsed_json
+                    if isinstance(parsed_json, list)
+                    else (parsed_json.get("characters") or parsed_json.get("cast") or parsed_json.get("profiles") or [])
+                )
+                if isinstance(items, list):
+                    for it in items:
+                        _push(cls._normalize_parsed_character(it if isinstance(it, dict) else {"name": str(it)}))
+                    if results:
+                        return results
+            except Exception:
+                pass
+
+        # 2. Split into logical character blocks on blank lines, dividers, markdown headers, or numbered items
+        lines = text.split("\n")
+        blocks: List[List[str]] = []
+        current_block: List[str] = []
+        header_re = re.compile(
+            r'^(?:#{1,4}\s+.+|\d+[\.\)]\s+.+|(?:Character|Nhân vật|Char)\s*\d+\s*[:\-\.\)].*|\[[^\[\]]{1,50}\]\s*)$',
+            re.IGNORECASE,
+        )
+        kv_name_re = re.compile(r'^(?:Name|Tên(?:\s+nhân\s+vật)?|Character(?:\s+Name)?)\s*[:\-]\s*(.+)$', re.IGNORECASE)
+
+        for raw_line in lines:
+            ln = raw_line.strip()
+            if not ln or re.match(r'^[-=_*]{3,}$', ln):
+                if current_block:
+                    blocks.append(current_block)
+                    current_block = []
+                continue
+            if current_block and (header_re.match(ln) or kv_name_re.match(ln)):
+                blocks.append(current_block)
+                current_block = [ln]
+            else:
+                current_block.append(ln)
+        if current_block:
+            blocks.append(current_block)
+
+        kv_prompt_re = re.compile(
+            r'^(?:Prompt|Visual(?:\s+Prompt)?|Description|Desc|Appearance|Ngoại hình|Mô tả|Image\s*Prompt)\s*[:\-]\s*(.+)$',
+            re.IGNORECASE,
+        )
+        kv_voice_re = re.compile(r'^(?:Voice|Giọng(?:\s+nói)?|Voice\s*Hint)\s*[:\-]\s*(.+)$', re.IGNORECASE)
+        kv_role_re = re.compile(r'^(?:Role|Vai(?:\s+trò)?)\s*[:\-]\s*(.+)$', re.IGNORECASE)
+
+        for blk in blocks:
+            # Handle multi-line lists where every line is "CharName: Description"
+            if len(blk) > 1 and all(
+                re.match(r'^[^:\n|]{1,45}\s*[:|]\s*.+$', b) and not kv_prompt_re.match(b) and not kv_voice_re.match(b) and not kv_name_re.match(b)
+                for b in blk
+            ):
+                for single in blk:
+                    sep = "|" if ("|" in single and single.index("|") < single.find(":") if ":" in single else "|" in single) else ":"
+                    left, right = single.split(sep, 1)
+                    _push(cls._normalize_parsed_character({"name": left, "description": right}))
+                continue
+
+            c_name = ""
+            desc_parts: List[str] = []
+            c_voice = ""
+            c_role = ""
+
+            for b_idx, ln in enumerate(blk):
+                m_n = kv_name_re.match(ln)
+                m_p = kv_prompt_re.match(ln)
+                m_v = kv_voice_re.match(ln)
+                m_r = kv_role_re.match(ln)
+
+                if m_n and not c_name:
+                    c_name = m_n.group(1).strip()
+                elif m_p:
+                    desc_parts.append(m_p.group(1).strip())
+                elif m_v:
+                    c_voice = m_v.group(1).strip()
+                elif m_r:
+                    c_role = m_r.group(1).strip()
+                elif b_idx == 0 and not c_name:
+                    clean_first = re.sub(r'^#{1,4}\s+', '', ln).strip()
+                    if "|" in clean_first and len(clean_first.split("|", 1)[0].strip()) <= 50:
+                        left, right = clean_first.split("|", 1)
+                        c_name = left.strip()
+                        if right.strip():
+                            desc_parts.append(right.strip())
+                    elif ":" in clean_first and len(clean_first.split(":", 1)[0].strip()) <= 55:
+                        left, right = clean_first.split(":", 1)
+                        # Check "Character 1: Hero" where right is name vs "Hero: prompt text"
+                        if re.match(r'^(?:\d+[\.\)]?\s*)?(?:Character|Nhân vật|Char)\s*\d*$', left.strip(), re.IGNORECASE):
+                            sub_parts = re.split(r'\s*(?:—|–|\s-\s|\|)\s*', right.strip(), maxsplit=1)
+                            c_name = sub_parts[0].strip()
+                            if len(sub_parts) > 1 and sub_parts[1].strip():
+                                desc_parts.append(sub_parts[1].strip())
+                        else:
+                            c_name = left.strip()
+                            if right.strip():
+                                desc_parts.append(right.strip())
+                    else:
+                        m_dash = re.match(r'^([^\-–—]{1,50}?)\s+(?:—|–|-)\s+(.+)$', clean_first)
+                        if m_dash and len(blk) == 1:
+                            c_name = m_dash.group(1).strip()
+                            desc_parts.append(m_dash.group(2).strip())
+                        else:
+                            c_name = clean_first
+                else:
+                    desc_parts.append(ln)
+
+            if c_name:
+                _push(cls._normalize_parsed_character({
+                    "name": c_name,
+                    "description": " ".join(desc_parts).strip(),
+                    "voice_hint": c_voice,
+                    "role": c_role,
+                }))
+
+        return results
+
+    async def parse_characters_from_text(self, raw_text: str) -> Dict[str, Any]:
+        """
+        Uses the configured AI model to parse arbitrary character prompt text (.txt files,
+        bullet lists, Midjourney/Veo prompts, story notes) into structured character definitions:
+        `[{"name": ..., "description": ..., "role": "lead"|"supporting", "voice_id": ...}]`.
+        Falls back gracefully to `parse_characters_heuristic` when offline or on provider error.
+        """
+        text = (raw_text or "").strip()
+        if not text:
+            return {"characters": [], "parser": "empty"}
+
+        clipped = text[:24000]
+        prompt = f"""You are a senior Character Designer & Casting Director.
+Analyze the user's raw text (imported from a .txt character prompt sheet, script cast list, or image prompts) and extract EVERY character into structured JSON.
+
+RULES:
+1. Extract each distinct character's clean Name (strip numbering like "1.", brackets, or labels like "Character 1:").
+2. Put all visual details, clothing, age, hair, face features, props, style keywords, and image-generation prompt details into `description` as a vivid visual character prompt. Preserve all specific prompt details from the source text (do NOT omit user prompt tokens/traits; keep the original language or clean descriptive phrasing without losing visual fidelity).
+3. If the text gives multiple characters without explicit labels, infer each character's clean name and their matching appearance/prompt cleanly.
+4. Set `role` to `"lead"` for main/protagonist characters and `"supporting"` otherwise.
+5. Set `voice_hint` ONLY if voice/speaking status is mentioned (e.g. `"none"` if silent / no voice, `"male"`, `"female"`, `"elder"`, `"child"`, or `""` if unspecified). Do NOT invent `Narrator` as a character.
+6. Return ONLY valid JSON in this exact format:
+{{
+  "characters": [
+    {{
+      "name": "Character Name",
+      "description": "Detailed visual character appearance / image generation prompt...",
+      "role": "lead",
+      "voice_hint": ""
+    }}
+  ]
+}}
+
+RAW CHARACTER PROMPT TEXT:
+\"\"\"
+{clipped}
+\"\"\"
+"""
+        parser_note = ""
+        if (self.provider or "").lower() not in ("builtin", "offline", "architect"):
+            try:
+                parsed = await self._dispatch_llm_request(prompt)
+                raw_list = None
+                if isinstance(parsed, dict):
+                    raw_list = parsed.get("characters") or parsed.get("cast") or parsed.get("profiles")
+                    # `_clean_json_response` wraps bare JSON arrays as {"scenes": [...]}
+                    if not raw_list and isinstance(parsed.get("scenes"), list):
+                        sc = parsed["scenes"]
+                        if sc and isinstance(sc[0], dict) and any(k in sc[0] for k in ("name", "character_name", "ten", "tên")):
+                            raw_list = sc
+                if isinstance(raw_list, list) and raw_list:
+                    normalized = []
+                    seen = set()
+                    for item in raw_list:
+                        norm = self._normalize_parsed_character(item if isinstance(item, dict) else {"name": str(item)})
+                        if norm and norm["name"].lower() not in seen:
+                            seen.add(norm["name"].lower())
+                            normalized.append(norm)
+                    if normalized:
+                        return {
+                            "characters": normalized,
+                            "parser": "ai",
+                            "provider": self.provider,
+                        }
+            except Exception as err:
+                parser_note = str(err)
+                print(f"⚠️ AI character import parse fell back to smart text parser: {err}")
+
+        fallback_chars = self.parse_characters_heuristic(text)
+        return {
+            "characters": fallback_chars,
+            "parser": "heuristic",
+            "parser_note": parser_note,
+        }
+
+    @staticmethod
     def _clean_story_heading_title(raw_title: str) -> str:
         t = (raw_title or "").strip()
         if not t:

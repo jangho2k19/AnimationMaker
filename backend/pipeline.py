@@ -1656,18 +1656,117 @@ class AnimationPipeline:
             self.save_project(project)
         return self.get_project(project_id) or project
 
-    async def generate_all_character_portraits(self, project_id: str, force_all: bool = False) -> Dict[str, Any]:
-        """Generates portrait images sequentially for all characters in the project."""
+    def bulk_import_character_profiles(
+        self,
+        project_id: str,
+        characters: list,
+        replace: bool = False,
+    ) -> Dict[str, Any]:
+        """Bulk imports/merges parsed character definitions into a project's character_profiles."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        if replace:
+            profiles = []
+            narrator_voice = (project.get("character_voices") or {}).get("Narrator") or project.get("voice") or "en-US-ChristopherNeural"
+            project["character_voices"] = {"Narrator": narrator_voice}
+        else:
+            profiles = self.sync_character_profiles(project, sync_back_string=False)
+
+        if "character_voices" not in project or not isinstance(project["character_voices"], dict):
+            project["character_voices"] = {"Narrator": project.get("voice") or "en-US-ChristopherNeural"}
+
+        existing_ids = {p["id"] for p in profiles if p.get("id")}
+        by_name = {p["name"].strip().lower(): p for p in profiles if p.get("name")}
+
+        for entry in (characters or []):
+            if not isinstance(entry, dict):
+                continue
+            c_name = (entry.get("name") or "").strip()
+            if not c_name or c_name.lower() in ("narrator", "người kể chuyện"):
+                continue
+            c_desc = (entry.get("description") or "").strip()
+            c_role = (entry.get("role") or "supporting").strip() or "supporting"
+            c_voice = str(entry.get("voice_id") or "").strip()
+            c_img = str(entry.get("image_path") or "").replace("\\", "/").strip()
+
+            key = c_name.lower()
+            if key in by_name:
+                target = by_name[key]
+                if c_desc:
+                    target["description"] = c_desc
+                if c_role and c_role != "character":
+                    target["role"] = c_role
+                if c_voice:
+                    target["voice_id"] = c_voice
+                    project["character_voices"][target["name"]] = c_voice
+                if c_img and not target.get("image_path"):
+                    target["image_path"] = c_img
+            else:
+                new_cid = (entry.get("id") or f"char_{self._char_slug(c_name)}").strip()
+                new_cid = re.sub(r'[^a-zA-Z0-9_\-]', '_', new_cid) or f"char_{uuid.uuid4().hex[:6]}"
+                if new_cid in existing_ids:
+                    n = 2
+                    while f"{new_cid}_{n}" in existing_ids:
+                        n += 1
+                    new_cid = f"{new_cid}_{n}"
+                existing_ids.add(new_cid)
+                item = {
+                    "id": new_cid,
+                    "name": c_name,
+                    "description": c_desc,
+                    "voice_id": c_voice,
+                    "image_path": c_img,
+                    "role": c_role,
+                }
+                profiles.append(item)
+                by_name[key] = item
+                if c_voice:
+                    project["character_voices"][c_name] = c_voice
+
+        project["character_profiles"] = profiles
+        project["characters"] = " | ".join(
+            f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
+            for p in profiles
+        )
+        self.save_project(project)
+        return self.get_project(project_id) or project
+
+    async def generate_all_character_portraits(
+        self,
+        project_id: str,
+        force_all: bool = False,
+        char_ids: Optional[list] = None,
+    ) -> Dict[str, Any]:
+        """Generates portrait images sequentially for all (or selected) characters in the project."""
         project = self.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
         profiles = self.sync_character_profiles(project, sync_back_string=False)
+        selected_set = set(char_ids) if char_ids else None
+        attempted = 0
+        succeeded = 0
+        errors = []
         for char in profiles:
+            if selected_set is not None and char["id"] not in selected_set:
+                continue
             has_img = bool(char.get("image_path") and (PROJECTS_DIR.parent / char["image_path"]).exists())
             if force_all or not has_img:
-                await self.generate_character_portrait(project_id, char["id"])
+                attempted += 1
+                try:
+                    await self.generate_character_portrait(project_id, char["id"])
+                    succeeded += 1
+                except Exception as err:
+                    errors.append(f"{char.get('name', char['id'])}: {err}")
                 await asyncio.sleep(0.5)
-        return self.get_project(project_id) or project
+        if attempted > 0 and succeeded == 0 and errors:
+            raise RuntimeError("; ".join(errors))
+        updated = self.get_project(project_id) or project
+        if errors:
+            updated = dict(updated)
+            updated["_batch_portrait_warnings"] = errors
+        return updated
 
     def set_scene_characters(self, project_id: str, scene_idx: int, character_ids: list) -> Dict[str, Any]:
         """Pins specific character IDs onto a scene for Scene Image & Video generation."""

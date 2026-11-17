@@ -120,9 +120,24 @@ class GenerateCharacterImageRequest(BaseModel):
 
 class GenerateAllCharacterImagesRequest(BaseModel):
     force_all: bool = False
+    char_ids: Optional[List[str]] = None
     api_key: Optional[str] = None
     ai_provider: Optional[str] = None
     image_mode: Optional[str] = None
+
+class ParseCharactersImportRequest(BaseModel):
+    text: str
+    ai_provider: Optional[str] = "gemini"
+    ai_model: Optional[str] = None
+    api_key: Optional[str] = None
+
+class BulkImportCharactersRequest(BaseModel):
+    characters: Optional[List[Dict[str, Any]]] = None
+    text: Optional[str] = None
+    replace: bool = False
+    ai_provider: Optional[str] = "gemini"
+    ai_model: Optional[str] = None
+    api_key: Optional[str] = None
 
 class SetSceneCharactersRequest(BaseModel):
     character_ids: List[str]
@@ -203,6 +218,17 @@ pipeline = AnimationPipeline()
 MAX_IMAGE_UPLOAD_BYTES = 25 * 1024 * 1024      # 25 MB per image
 MAX_VIDEO_UPLOAD_BYTES = 500 * 1024 * 1024     # 500 MB per acting clip
 MAX_JSON_UPLOAD_BYTES = 10 * 1024 * 1024       # 10 MB per imported project
+MAX_TEXT_UPLOAD_BYTES = 2 * 1024 * 1024        # 2 MB per .txt character prompt sheet
+
+
+def _decode_text_upload(raw_bytes: bytes) -> str:
+    """Decodes uploaded .txt / .md character prompt files with UTF-8 and legacy encodings."""
+    for enc in ("utf-8-sig", "utf-8", "utf-16", "cp1258", "cp1252", "latin-1"):
+        try:
+            return raw_bytes.decode(enc)
+        except Exception:
+            continue
+    return raw_bytes.decode("utf-8", errors="replace")
 
 
 async def read_upload_limited(upload: UploadFile, max_bytes: int) -> bytes:
@@ -1492,6 +1518,98 @@ async def generate_draft_character_portrait(req: GenerateDraftCharacterPortraitR
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/characters/parse-import")
+async def parse_characters_import(req: ParseCharactersImportRequest):
+    """Uses AI (with smart text fallback) to parse character names and visual prompts from raw text."""
+    raw_text = (req.text or "").strip()
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Character prompt text is empty.")
+    agent = ScriptAgent(
+        api_key=req.api_key or pipeline.api_key,
+        provider=req.ai_provider or pipeline.ai_provider or "gemini",
+        model=req.ai_model or pipeline.ai_model,
+    )
+    res = await agent.parse_characters_from_text(raw_text)
+    if not res.get("characters"):
+        raise HTTPException(
+            status_code=422,
+            detail="Could not extract any characters from the provided text. Please include character names and descriptions."
+        )
+    return {
+        "status": "ok",
+        "characters": res["characters"],
+        "parser": res.get("parser", "ai"),
+        "parser_note": res.get("parser_note", ""),
+    }
+
+@app.post("/api/characters/import-txt")
+async def import_characters_txt(
+    file: UploadFile = File(...),
+    ai_provider: str = Form("gemini"),
+    ai_model: Optional[str] = Form(None),
+    api_key: Optional[str] = Form(None),
+):
+    """Uploads a .txt/.md file containing character prompts and parses them using AI."""
+    raw_bytes = await read_upload_limited(file, MAX_TEXT_UPLOAD_BYTES)
+    decoded_text = _decode_text_upload(raw_bytes).strip()
+    if not decoded_text:
+        raise HTTPException(status_code=400, detail="Uploaded text file is empty.")
+    agent = ScriptAgent(
+        api_key=api_key or pipeline.api_key,
+        provider=ai_provider or pipeline.ai_provider or "gemini",
+        model=ai_model or pipeline.ai_model,
+    )
+    res = await agent.parse_characters_from_text(decoded_text)
+    return {
+        "status": "ok",
+        "filename": file.filename or "characters.txt",
+        "raw_text": decoded_text,
+        "characters": res.get("characters", []),
+        "parser": res.get("parser", "ai"),
+        "parser_note": res.get("parser_note", ""),
+    }
+
+@app.post("/api/projects/{project_id}/characters/import")
+async def import_project_characters(project_id: str, req: BulkImportCharactersRequest):
+    """Bulk imports parsed characters (or parses text with AI first) into an existing project."""
+    project = pipeline.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    chars_to_import = req.characters or []
+    parser_used = "direct"
+    parser_note = ""
+    if not chars_to_import and (req.text or "").strip():
+        agent = ScriptAgent(
+            api_key=req.api_key or project.get("api_key") or pipeline.api_key,
+            provider=req.ai_provider or project.get("ai_provider") or pipeline.ai_provider or "gemini",
+            model=req.ai_model or pipeline.ai_model,
+        )
+        res = await agent.parse_characters_from_text(req.text)
+        chars_to_import = res.get("characters", [])
+        parser_used = res.get("parser", "ai")
+        parser_note = res.get("parser_note", "")
+
+    if not chars_to_import:
+        raise HTTPException(status_code=400, detail="No valid characters provided or extracted to import.")
+
+    try:
+        updated = pipeline.bulk_import_character_profiles(
+            project_id=project_id,
+            characters=chars_to_import,
+            replace=bool(req.replace),
+        )
+        return {
+            "status": "ok",
+            "imported_count": len(chars_to_import),
+            "parser": parser_used,
+            "parser_note": parser_note,
+            "character_profiles": updated.get("character_profiles", []),
+            "project": updated,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/projects/{project_id}/characters")
 async def list_project_characters(project_id: str):
     project = pipeline.get_project(project_id)
@@ -1572,9 +1690,15 @@ async def generate_all_project_character_images(project_id: str, req: Optional[G
             project["image_mode"] = req.image_mode
         pipeline.save_project(project)
     try:
-        updated = await pipeline.generate_all_character_portraits(project_id, force_all=bool(req.force_all if req else False))
+        updated = await pipeline.generate_all_character_portraits(
+            project_id,
+            force_all=bool(req.force_all if req else False),
+            char_ids=req.char_ids if req else None,
+        )
+        warnings = updated.pop("_batch_portrait_warnings", None)
         return {
             "status": "ok",
+            "warnings": warnings,
             "character_profiles": updated.get("character_profiles", []),
             "project": updated
         }

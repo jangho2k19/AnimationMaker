@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
-  <link rel="stylesheet" href="/css/style.css?v=14">
+  <link rel="stylesheet" href="/css/style.css?v=15">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -497,9 +497,15 @@
                     <strong style="font-size:12.5px; color:#f1f5f9;">Characters (Hình Ảnh &amp; Giọng Nói)</strong>
                     <span id="badgeStage1CharCount" class="tag-badge" style="background:rgba(16,185,129,0.16); color:#6ee7b7; font-size:11px;">0 characters (Optional)</span>
                   </div>
-                  <div style="display:flex; align-items:center; gap:6px;">
+                  <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                     <button id="btnStage1AddCharacter" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(16,185,129,0.45); color:#6ee7b7;" title="Thêm nhân vật với ảnh tham chiếu và giọng nói (nếu có)">
                       <span>➕ Thêm Nhân Vật</span>
+                    </button>
+                    <button id="btnStage1ImportCharacters" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(167,139,250,0.45); color:#c4b5fd;" title="Import danh sách tên & prompt nhân vật từ file .txt và dùng AI để parse tự động">
+                      <span>📄 Import .txt</span>
+                    </button>
+                    <button id="btnStage1PaintAllCharacters" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;" title="Batch create AI portrait images for all characters in this list">
+                      <span>🎨 Paint all Characters</span>
                     </button>
                     <button id="btnStage1ToggleCharacters" type="button" class="glass-btn secondary-btn mini-btn" style="padding:4px 8px; font-size:11px;" title="Mở rộng / Thu gọn danh sách nhân vật">
                       <span id="textStage1ToggleChar">▾ Show</span>
@@ -1060,8 +1066,11 @@
               <button id="btnAddProjectCharacter" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(16,185,129,0.45); color:#6ee7b7;" title="Thêm nhân vật mới (tên, mô tả ngoại hình, ảnh & giọng nói tùy chọn)">
                 <span>➕ Thêm Nhân Vật</span>
               </button>
-              <button id="btnGenerateAllCharacterImages" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(56,189,248,0.45); color:#7dd3fc;" title="Tạo ảnh chân dung tham chiếu AI lần lượt cho tất cả nhân vật chưa có ảnh">
-                <span>🎨 Tạo Ảnh Nhân Vật</span>
+              <button id="btnImportProjectCharacters" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(167,139,250,0.45); color:#c4b5fd;" title="Import prompt nhân vật từ file .txt và dùng AI phân tích tên & mô tả">
+                <span>📄 Import .txt</span>
+              </button>
+              <button id="btnGenerateAllCharacterImages" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;" title="Batch create AI character portraits for all characters (re-confirms if all already painted)">
+                <span>🎨 Paint all Characters</span>
               </button>
               <button id="btnAutoCastVoices" type="button" class="glass-btn secondary-btn compact-action-pill" title="Tự động gán giọng đọc phù hợp cho các nhân vật có thoại">
                 <span>🤖 Auto-Cast Voices</span>
@@ -1500,6 +1509,71 @@ Narration: The detective scanned the horizon for clues..."></textarea>
     </div>
   </div>
 
+  <!-- MODAL: Import Character Prompts from .txt (AI Parse Name & Prompt) -->
+  <div id="modalImportCharacters" class="modal-backdrop">
+    <div class="modal-card glass-panel wide-modal" style="max-width: 820px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:22px;">👥</span>
+          <div>
+            <h3 class="modal-title" style="margin-bottom:2px;">Import Character Prompts (.txt + AI Parser)</h3>
+            <p style="font-size:12px; color:var(--text-muted); margin:0;">Chọn file <code>.txt</code> hoặc dán prompt — AI sẽ tự động tách Tên nhân vật &amp; Prompt ngoại hình</p>
+          </div>
+        </div>
+        <button id="btnCloseCharImportModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <button id="btnChooseCharTxtFile" type="button" class="glass-btn secondary-btn compact-btn" style="padding:7px 14px; font-size:12.5px; border-color:rgba(167,139,250,0.5); color:#ddd6fe;">
+            <span>📂 Chọn File .txt</span>
+          </button>
+          <input id="inputCharImportFile" type="file" accept=".txt,.md,.csv,.json,text/plain" style="display:none;">
+          <span id="labelCharImportFileName" style="font-size:12px; color:var(--text-muted);">Chưa chọn file (hỗ trợ .txt, .md, JSON, hoặc dán trực tiếp bên dưới)</span>
+        </div>
+
+        <div class="form-group" style="margin-bottom:10px;">
+          <label for="inputCharImportText" class="input-label" style="font-size:12px;">Nội dung Character Prompts (.txt / Text):</label>
+          <textarea id="inputCharImportText" rows="6" class="styled-textarea" style="font-size:12.5px; line-height:1.45;" placeholder="Ví dụ nội dung file .txt:
+1. Tử Lộ: Chàng trai trẻ mặc áo vải xanh đậm, dáng người vạm vỡ, tóc búi cao, ánh mắt kiên nghị, anime Ghibli style
+2. Khổng Tử: Ông lão hiền hậu râu bạc dài, mặc áo bào cổ truyền trang nhã, cầm gậy trúc...
+
+Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '🤖 AI Parse' để AI tự tách tên & prompt!"></textarea>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <label style="display:inline-flex; align-items:center; gap:7px; font-size:12px; color:#cbd5e1; cursor:pointer;">
+            <input id="checkReplaceImportedChars" type="checkbox">
+            <span>Thay thế danh sách nhân vật hiện tại (bỏ chọn = gộp thêm vào danh sách)</span>
+          </label>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span id="badgeCharImportParser" class="tag-badge" style="display:none; font-size:11px;"></span>
+            <button id="btnParseCharImport" type="button" class="glass-btn secondary-btn compact-btn" style="padding:6px 14px; font-size:12.5px; border-color:rgba(56,189,248,0.55); color:#7dd3fc; font-weight:600;">
+              <span>🤖 AI Parse Tên &amp; Prompt</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="charImportPreviewWrap" style="display:none; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <strong id="charImportPreviewCount" style="font-size:12.5px; color:#6ee7b7;">Parsed Characters (0)</strong>
+            <span style="font-size:11px; color:var(--text-muted);">Bạn có thể chỉnh sửa tên/prompt trước khi import</span>
+          </div>
+          <div id="charImportPreviewList" class="char-import-preview-list">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+        <button id="btnConfirmCharImport" type="button" class="glass-btn secondary-btn compact-btn" style="padding:8px 16px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;">
+          <span>✓ Import Characters</span>
+        </button>
+        <button id="btnConfirmAndPaintCharImport" type="button" class="hero-action-btn compact-btn">
+          <span>🎨 Import &amp; Paint all Characters</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: Gemini Available Models Explorer -->
   <div id="modalModelExplorer" class="modal-backdrop">
     <div class="modal-card glass-panel wide-modal" style="max-width: 820px;">
@@ -1577,6 +1651,6 @@ Narration: The detective scanned the horizon for clues..."></textarea>
   <div id="toastNotification" class="toast-popup"></div>
 
   <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=3.5"></script>
+  <script src="/js/app.js?v=3.6"></script>
 </body>
 </html>

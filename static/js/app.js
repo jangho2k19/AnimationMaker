@@ -60,6 +60,8 @@ class AniStoryApp {
     this.stage1Characters = this.loadStage1CharactersFromStorage();
     this.isStage1CharsExpanded = this.stage1Characters.length > 0;
     this.useCharRefsInVideo = localStorage.getItem("anistory_cfg_video_char_refs") !== "false";
+    this._charImportTarget = "stage1";
+    this._parsedImportCharacters = [];
 
     this.initElements();
     this.enableImageCaptions = localStorage.getItem("anistory_cfg_enable_image_captions") !== "false";
@@ -471,6 +473,8 @@ class AniStoryApp {
     this.stage1CharactersPanel = document.getElementById("stage1CharactersPanel");
     this.badgeStage1CharCount = document.getElementById("badgeStage1CharCount");
     this.btnStage1AddCharacter = document.getElementById("btnStage1AddCharacter");
+    this.btnStage1ImportCharacters = document.getElementById("btnStage1ImportCharacters");
+    this.btnStage1PaintAllCharacters = document.getElementById("btnStage1PaintAllCharacters");
     this.btnStage1ToggleCharacters = document.getElementById("btnStage1ToggleCharacters");
     this.textStage1ToggleChar = document.getElementById("textStage1ToggleChar");
     this.stage1CharactersBody = document.getElementById("stage1CharactersBody");
@@ -491,7 +495,24 @@ class AniStoryApp {
     this.characterVoicesList = document.getElementById("characterVoicesList");
     this.btnAutoCastVoices = document.getElementById("btnAutoCastVoices");
     this.btnAddProjectCharacter = document.getElementById("btnAddProjectCharacter");
+    this.btnImportProjectCharacters = document.getElementById("btnImportProjectCharacters");
     this.btnGenerateAllCharacterImages = document.getElementById("btnGenerateAllCharacterImages");
+
+    // Modal: Import Character Prompts (.txt + AI Parse)
+    this.modalImportCharacters = document.getElementById("modalImportCharacters");
+    this.btnCloseCharImportModal = document.getElementById("btnCloseCharImportModal");
+    this.btnChooseCharTxtFile = document.getElementById("btnChooseCharTxtFile");
+    this.inputCharImportFile = document.getElementById("inputCharImportFile");
+    this.labelCharImportFileName = document.getElementById("labelCharImportFileName");
+    this.inputCharImportText = document.getElementById("inputCharImportText");
+    this.checkReplaceImportedChars = document.getElementById("checkReplaceImportedChars");
+    this.badgeCharImportParser = document.getElementById("badgeCharImportParser");
+    this.btnParseCharImport = document.getElementById("btnParseCharImport");
+    this.charImportPreviewWrap = document.getElementById("charImportPreviewWrap");
+    this.charImportPreviewCount = document.getElementById("charImportPreviewCount");
+    this.charImportPreviewList = document.getElementById("charImportPreviewList");
+    this.btnConfirmCharImport = document.getElementById("btnConfirmCharImport");
+    this.btnConfirmAndPaintCharImport = document.getElementById("btnConfirmAndPaintCharImport");
     this.inlineAddCharForm = document.getElementById("inlineAddCharForm");
     this.inputNewCharName = document.getElementById("inputNewCharName");
     this.inputNewCharDesc = document.getElementById("inputNewCharDesc");
@@ -1901,6 +1922,43 @@ class AniStoryApp {
       });
     }
 
+    if (this.btnStage1ImportCharacters) {
+      this.btnStage1ImportCharacters.addEventListener("click", () => this.openCharacterImportModal("stage1"));
+    }
+    if (this.btnStage1PaintAllCharacters) {
+      this.btnStage1PaintAllCharacters.addEventListener("click", () => this.paintAllStage1Characters(this.btnStage1PaintAllCharacters));
+    }
+    if (this.btnImportProjectCharacters) {
+      this.btnImportProjectCharacters.addEventListener("click", () => this.openCharacterImportModal("stage2"));
+    }
+
+    // Modal: Import Character Prompts from .txt + AI Parser
+    if (this.btnCloseCharImportModal) {
+      this.btnCloseCharImportModal.addEventListener("click", () => this.modalImportCharacters?.classList.remove("active"));
+    }
+    if (this.modalImportCharacters) {
+      this.modalImportCharacters.addEventListener("click", (e) => {
+        if (e.target === this.modalImportCharacters) this.modalImportCharacters.classList.remove("active");
+      });
+    }
+    if (this.btnChooseCharTxtFile && this.inputCharImportFile) {
+      this.btnChooseCharTxtFile.addEventListener("click", () => this.inputCharImportFile.click());
+      this.inputCharImportFile.addEventListener("change", () => {
+        if (this.inputCharImportFile.files && this.inputCharImportFile.files[0]) {
+          this.handleCharacterTxtFileSelected(this.inputCharImportFile.files[0]);
+        }
+      });
+    }
+    if (this.btnParseCharImport) {
+      this.btnParseCharImport.addEventListener("click", () => this.parseCharacterImportText());
+    }
+    if (this.btnConfirmCharImport) {
+      this.btnConfirmCharImport.addEventListener("click", () => this.confirmImportCharacters(false));
+    }
+    if (this.btnConfirmAndPaintCharImport) {
+      this.btnConfirmAndPaintCharImport.addEventListener("click", () => this.confirmImportCharacters(true));
+    }
+
     // Stage 2: Toggle Character Reference Images in Video Generation (FlowKit R2V / Scene Continuity)
     if (this.btnToggleVideoCharRefsStage2) {
       this.btnToggleVideoCharRefsStage2.addEventListener("click", async () => {
@@ -3222,38 +3280,430 @@ class AniStoryApp {
     }
   }
 
-  async generateAllProjectCharacterImages(btnEl) {
-    if (!this.currentProject) return;
+  async paintAllStage1Characters(btnEl) {
+    const valid = (this.stage1Characters || []).filter(
+      c => (c.name || "").trim() || (c.description || "").trim()
+    );
+    if (valid.length === 0) {
+      this.showToast("Thêm hoặc Import .txt nhân vật trước khi nhấn Paint all Characters!", true);
+      return;
+    }
+
+    this.isStage1CharsExpanded = true;
+    if (this.stage1CharactersBody) this.stage1CharactersBody.style.display = "block";
+    if (this.textStage1ToggleChar) this.textStage1ToggleChar.textContent = "▲ Collapse";
+
+    let targets = valid.filter(c => !(c.image_path || "").trim());
+    if (targets.length === 0) {
+      const okRepaint = window.confirm(`Tất cả ${valid.length} nhân vật đã có ảnh chân dung. Vẽ lại tất cả?`);
+      if (!okRepaint) return;
+      targets = valid;
+    }
+
     const oldHtml = btnEl ? btnEl.innerHTML : "";
     if (btnEl) {
       btnEl.disabled = true;
-      btnEl.innerHTML = `<span>⏳ Generating...</span>`;
+      btnEl.innerHTML = `<span>⏳ Painting (0/${targets.length})...</span>`;
     }
+
+    const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
+    const apiKey = this.getEffectiveApiKey(provider);
+    let paintedCount = 0;
+    let failedCount = 0;
+
     try {
-      const provider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
+      for (let i = 0; i < targets.length; i++) {
+        const char = targets[i];
+        if (btnEl) {
+          btnEl.innerHTML = `<span>⏳ Painting ${i + 1}/${targets.length}...</span>`;
+        }
+        try {
+          const resp = await fetch("/api/characters/generate-draft-portrait", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: char.id,
+              name: (char.name || `Character ${i + 1}`).trim(),
+              description: (char.description || "").trim(),
+              art_style: this.selectedStyleKey || "ghibli",
+              image_mode: this.imageMode || "gemini",
+              ai_provider: provider,
+              api_key: apiKey
+            })
+          });
+          if (!resp.ok) {
+            const msg = await AniStoryApp.parseErrorResponse(resp, "Portrait generation failed");
+            throw new Error(msg);
+          }
+          const data = await resp.json();
+          char.image_path = data.image_path || "";
+          this.saveStage1CharactersToStorage();
+          this.renderStage1Characters();
+          paintedCount++;
+        } catch (err) {
+          failedCount++;
+          console.warn(`Stage 1 portrait fail for ${char.name}:`, err);
+        }
+      }
+      if (paintedCount > 0 && failedCount === 0) {
+        this.showToast(`🎨 Đã tạo chân dung cho ${paintedCount} nhân vật!`);
+      } else if (paintedCount > 0) {
+        this.showToast(`🎨 Đã tạo ${paintedCount}/${targets.length} chân dung (${failedCount} lỗi).`, true);
+      } else {
+        this.showToast(`Không thể tạo ảnh nhân vật (${failedCount} lỗi). Kiểm tra API key / chế độ vẽ.`, true);
+      }
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = oldHtml;
+      }
+    }
+  }
+
+  openCharacterImportModal(target = "stage1") {
+    this._charImportTarget = target;
+    this._parsedImportCharacters = [];
+    if (this.inputCharImportFile) this.inputCharImportFile.value = "";
+    if (this.labelCharImportFileName) {
+      this.labelCharImportFileName.textContent = "Chưa chọn file (hỗ trợ .txt, .md, JSON, hoặc dán trực tiếp bên dưới)";
+    }
+    if (this.inputCharImportText) this.inputCharImportText.value = "";
+    if (this.checkReplaceImportedChars) this.checkReplaceImportedChars.checked = false;
+    if (this.badgeCharImportParser) {
+      this.badgeCharImportParser.style.display = "none";
+      this.badgeCharImportParser.textContent = "";
+    }
+    if (this.charImportPreviewWrap) this.charImportPreviewWrap.style.display = "none";
+    if (this.charImportPreviewList) this.charImportPreviewList.innerHTML = "";
+    if (this.modalImportCharacters) this.modalImportCharacters.classList.add("active");
+    setTimeout(() => this.inputCharImportText?.focus(), 60);
+  }
+
+  async handleCharacterTxtFileSelected(file) {
+    if (!file) return;
+    if (this.labelCharImportFileName) {
+      this.labelCharImportFileName.textContent = `⏳ Đang đọc & AI parse "${file.name}"...`;
+    }
+    if (this.btnParseCharImport) this.btnParseCharImport.disabled = true;
+    try {
+      const provider = this._charImportTarget === "stage2" && this.currentProject?.ai_provider
+        ? this.currentProject.ai_provider
+        : (this.selectAiProvider ? this.selectAiProvider.value : "gemini");
+      const model = this.selectAiModel ? this.selectAiModel.value : "";
       const apiKey = this.getEffectiveApiKey(provider);
-      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/generate-all-images`, {
+
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("ai_provider", provider || "gemini");
+      if (model) fd.append("ai_model", model);
+      if (apiKey) fd.append("api_key", apiKey);
+
+      const resp = await fetch("/api/characters/import-txt", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          force_all: false,
-          api_key: apiKey,
-          ai_provider: provider,
-          image_mode: this.imageMode || this.currentProject.image_mode || "gemini"
-        })
+        body: fd
       });
       if (!resp.ok) {
-        const msg = await AniStoryApp.parseErrorResponse(resp, "Batch character portrait generation failed");
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to read .txt file");
         throw new Error(msg);
       }
       const data = await resp.json();
-      if (data.project) {
-        this.currentProject = data.project;
-        this.saveActiveProjectState();
+      if (this.inputCharImportText) this.inputCharImportText.value = data.raw_text || "";
+      if (this.labelCharImportFileName) {
+        this.labelCharImportFileName.textContent = `📄 ${data.filename || file.name} (${(data.characters || []).length} nhân vật)`;
+      }
+      this._parsedImportCharacters = Array.isArray(data.characters) ? data.characters : [];
+      this.renderCharImportPreview(data.parser, data.parser_note);
+      this.showToast(`🤖 Đã đọc "${data.filename}" & tách ${this._parsedImportCharacters.length} nhân vật!`);
+    } catch (e) {
+      if (this.labelCharImportFileName) {
+        this.labelCharImportFileName.textContent = `❌ Lỗi đọc file: ${e.message}`;
+      }
+      this.showToast(e.message, true);
+    } finally {
+      if (this.btnParseCharImport) this.btnParseCharImport.disabled = false;
+    }
+  }
+
+  async parseCharacterImportText() {
+    const rawText = (this.inputCharImportText?.value || "").trim();
+    if (!rawText) {
+      this.showToast("Vui lòng chọn file .txt hoặc dán nội dung prompt nhân vật trước.", true);
+      this.inputCharImportText?.focus();
+      return [];
+    }
+    const oldHtml = this.btnParseCharImport ? this.btnParseCharImport.innerHTML : "";
+    if (this.btnParseCharImport) {
+      this.btnParseCharImport.disabled = true;
+      this.btnParseCharImport.innerHTML = `<span>⏳ Đang phân tích bằng AI...</span>`;
+    }
+    try {
+      const provider = this._charImportTarget === "stage2" && this.currentProject?.ai_provider
+        ? this.currentProject.ai_provider
+        : (this.selectAiProvider ? this.selectAiProvider.value : "gemini");
+      const model = this.selectAiModel ? this.selectAiModel.value : "";
+      const apiKey = this.getEffectiveApiKey(provider);
+
+      const resp = await fetch("/api/characters/parse-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: rawText,
+          ai_provider: provider || "gemini",
+          ai_model: model || null,
+          api_key: apiKey || null
+        })
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Character AI parse failed");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      this._parsedImportCharacters = Array.isArray(data.characters) ? data.characters : [];
+      this.renderCharImportPreview(data.parser, data.parser_note);
+      this.showToast(`✓ Đã tách ${this._parsedImportCharacters.length} nhân vật (${data.parser === "ai" ? "AI Parse" : "Smart Parser"})!`);
+      return this._parsedImportCharacters;
+    } catch (e) {
+      this.showToast(e.message, true);
+      return [];
+    } finally {
+      if (this.btnParseCharImport) {
+        this.btnParseCharImport.disabled = false;
+        this.btnParseCharImport.innerHTML = oldHtml;
+      }
+    }
+  }
+
+  renderCharImportPreview(parser = "ai", parserNote = "") {
+    if (!this.charImportPreviewWrap || !this.charImportPreviewList) return;
+    const list = this._parsedImportCharacters || [];
+    if (this.badgeCharImportParser) {
+      this.badgeCharImportParser.style.display = "inline-flex";
+      if (parser === "ai") {
+        this.badgeCharImportParser.textContent = "🤖 AI Parsed";
+        this.badgeCharImportParser.style.background = "rgba(16,185,129,0.2)";
+        this.badgeCharImportParser.style.color = "#6ee7b7";
+      } else {
+        this.badgeCharImportParser.textContent = parserNote ? "📝 Text Parser (AI Fallback)" : "📝 Smart Text Parser";
+        this.badgeCharImportParser.style.background = "rgba(245,158,11,0.2)";
+        this.badgeCharImportParser.style.color = "#fbbf24";
+      }
+    }
+    this.charImportPreviewWrap.style.display = "block";
+    if (this.charImportPreviewCount) {
+      this.charImportPreviewCount.textContent = `Parsed Characters (${list.length})`;
+    }
+
+    this.charImportPreviewList.innerHTML = "";
+    list.forEach((c, idx) => {
+      const row = document.createElement("div");
+      row.className = "char-import-preview-item";
+      row.innerHTML = `
+        <div class="char-import-preview-top">
+          <span style="font-size:11px; color:var(--text-muted); font-weight:600; min-width:22px;">#${idx + 1}</span>
+          <input type="text" class="styled-input import-char-name" value="${this.escapeHtml(c.name || "")}" placeholder="Tên nhân vật..." style="flex:1; padding:4px 8px; font-size:12.5px; font-weight:600;">
+          <select class="styled-select import-char-role" style="width:120px; padding:4px 6px; font-size:11px;">
+            <option value="lead" ${c.role === "lead" ? "selected" : ""}>⭐ Lead</option>
+            <option value="supporting" ${c.role !== "lead" ? "selected" : ""}>👤 Supporting</option>
+          </select>
+          <button type="button" class="glass-btn secondary-btn btn-remove-import-char" style="padding:3px 8px; font-size:11px; color:#fca5a5;" title="Loại bỏ nhân vật này">✕</button>
+        </div>
+        <textarea class="styled-input import-char-desc" rows="2" placeholder="Prompt ngoại hình nhân vật..." style="padding:5px 8px; font-size:11.5px; resize:vertical;">${this.escapeHtml(c.description || "")}</textarea>
+      `;
+
+      const nameIn = row.querySelector(".import-char-name");
+      const roleIn = row.querySelector(".import-char-role");
+      const descIn = row.querySelector(".import-char-desc");
+      const btnDel = row.querySelector(".btn-remove-import-char");
+
+      nameIn.addEventListener("input", () => { this._parsedImportCharacters[idx].name = nameIn.value; });
+      roleIn.addEventListener("change", () => { this._parsedImportCharacters[idx].role = roleIn.value; });
+      descIn.addEventListener("input", () => { this._parsedImportCharacters[idx].description = descIn.value; });
+      btnDel.addEventListener("click", () => {
+        this._parsedImportCharacters.splice(idx, 1);
+        this.renderCharImportPreview(parser, parserNote);
+      });
+
+      this.charImportPreviewList.appendChild(row);
+    });
+  }
+
+  async confirmImportCharacters(andPaintAll = false) {
+    let chars = (this._parsedImportCharacters || [])
+      .map(c => ({
+        name: (c.name || "").trim(),
+        description: (c.description || "").trim(),
+        role: c.role || "supporting",
+        voice_id: c.voice_id || ""
+      }))
+      .filter(c => c.name);
+
+    if (chars.length === 0 && (this.inputCharImportText?.value || "").trim()) {
+      await this.parseCharacterImportText();
+      chars = (this._parsedImportCharacters || [])
+        .map(c => ({
+          name: (c.name || "").trim(),
+          description: (c.description || "").trim(),
+          role: c.role || "supporting",
+          voice_id: c.voice_id || ""
+        }))
+        .filter(c => c.name);
+    }
+
+    if (chars.length === 0) {
+      this.showToast("Chưa có nhân vật nào hợp lệ để Import.", true);
+      return;
+    }
+
+    const replaceExisting = Boolean(this.checkReplaceImportedChars?.checked);
+
+    if (this._charImportTarget === "stage2" && this.currentProject) {
+      if (this.btnConfirmCharImport) this.btnConfirmCharImport.disabled = true;
+      if (this.btnConfirmAndPaintCharImport) this.btnConfirmAndPaintCharImport.disabled = true;
+      try {
+        const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/import`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ characters: chars, replace: replaceExisting })
+        });
+        if (!resp.ok) {
+          const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to import characters into project");
+          throw new Error(msg);
+        }
+        const data = await resp.json();
+        if (data.project) {
+          this.currentProject = data.project;
+          this.saveActiveProjectState();
+        }
+        if (this.inputCharacterConsistency) {
+          this.inputCharacterConsistency.value = this.currentProject.characters || "";
+        }
+        this.modalImportCharacters?.classList.remove("active");
         this.renderCharacterVoiceCasting();
         this.renderStoryboardView();
-        const countImgs = (this.currentProject.character_profiles || []).filter(c => c.image_path).length;
-        this.showToast(`🎨 Character Portraits Ready (${countImgs} active)!`);
+        this.showToast(`👥 Đã import ${chars.length} nhân vật vào Character Studio!`);
+        if (andPaintAll) {
+          await this.generateAllProjectCharacterImages(this.btnGenerateAllCharacterImages);
+        }
+      } catch (e) {
+        this.showToast(e.message, true);
+      } finally {
+        if (this.btnConfirmCharImport) this.btnConfirmCharImport.disabled = false;
+        if (this.btnConfirmAndPaintCharImport) this.btnConfirmAndPaintCharImport.disabled = false;
+      }
+      return;
+    }
+
+    // Stage 1 import / merge into stage1Characters
+    if (replaceExisting) {
+      this.stage1Characters = [];
+    }
+    const existingByName = new Map();
+    (this.stage1Characters || []).forEach((c) => {
+      const k = (c.name || "").trim().toLowerCase();
+      if (k) existingByName.set(k, c);
+    });
+
+    chars.forEach((c) => {
+      const k = c.name.toLowerCase();
+      if (existingByName.has(k)) {
+        const target = existingByName.get(k);
+        if (c.description) target.description = c.description;
+        if (c.role) target.role = c.role;
+      } else {
+        const item = {
+          id: `char_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: c.name,
+          description: c.description,
+          voice_id: c.voice_id || "",
+          image_path: "",
+          role: c.role || "supporting"
+        };
+        this.stage1Characters.push(item);
+        existingByName.set(k, item);
+      }
+    });
+
+    this.isStage1CharsExpanded = true;
+    this.saveStage1CharactersToStorage();
+    this.renderStage1Characters();
+    this.modalImportCharacters?.classList.remove("active");
+    this.showToast(`👥 Đã import ${chars.length} nhân vật vào Stage 1!`);
+
+    if (andPaintAll) {
+      await this.paintAllStage1Characters(this.btnStage1PaintAllCharacters);
+    }
+  }
+
+  async generateAllProjectCharacterImages(btnEl) {
+    if (!this.currentProject) return;
+    const profiles = Array.isArray(this.currentProject.character_profiles)
+      ? this.currentProject.character_profiles
+      : [];
+    if (profiles.length === 0) {
+      this.showToast("Chưa có nhân vật nào trong Character Studio. Thêm hoặc Import .txt trước!", true);
+      return;
+    }
+
+    let targets = profiles.filter(p => !(p.image_path || "").trim());
+    if (targets.length === 0) {
+      const okRepaint = window.confirm(`Tất cả ${profiles.length} nhân vật đã có ảnh chân dung. Paint lại toàn bộ?`);
+      if (!okRepaint) return;
+      targets = profiles;
+    }
+
+    const oldHtml = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = `<span>⏳ Painting (0/${targets.length})...</span>`;
+    }
+
+    const provider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
+    const apiKey = this.getEffectiveApiKey(provider);
+    const activeImageMode = this.imageMode || this.currentProject.image_mode || "gemini";
+    let paintedCount = 0;
+    let failedCount = 0;
+
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const char = targets[i];
+        if (btnEl) {
+          btnEl.innerHTML = `<span>⏳ Painting ${i + 1}/${targets.length}...</span>`;
+        }
+        try {
+          const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(char.id)}/generate-image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              api_key: apiKey,
+              ai_provider: provider,
+              image_mode: activeImageMode
+            })
+          });
+          if (!resp.ok) {
+            const msg = await AniStoryApp.parseErrorResponse(resp, `Failed portrait for ${char.name}`);
+            throw new Error(msg);
+          }
+          const data = await resp.json();
+          if (data.project) {
+            this.currentProject = data.project;
+            this.saveActiveProjectState();
+            this.renderCharacterVoiceCasting();
+          }
+          paintedCount++;
+        } catch (err) {
+          failedCount++;
+          console.warn(`Batch portrait error for ${char.name}:`, err);
+        }
+      }
+
+      this.renderCharacterVoiceCasting();
+      this.renderStoryboardView();
+      if (paintedCount > 0 && failedCount === 0) {
+        this.showToast(`🎨 Đã Paint ${paintedCount} chân dung nhân vật! Đã kích hoạt cho Tạo Cảnh & Video.`);
+      } else if (paintedCount > 0) {
+        this.showToast(`🎨 Đã Paint ${paintedCount}/${targets.length} nhân vật (${failedCount} lỗi).`, true);
+      } else {
+        this.showToast(`Paint all Characters thất bại (${failedCount} lỗi). Vui lòng kiểm tra API key / FlowKit.`, true);
       }
     } catch (err) {
       this.showToast(err.message, true);
