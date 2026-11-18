@@ -2,6 +2,7 @@ import os
 import re
 import json
 import random
+import difflib
 import httpx
 from typing import Dict, Any, List
 
@@ -2316,13 +2317,21 @@ Return ONLY raw JSON matching this structure:
         }
 
         character_voices: Dict[str, str] = {}
+        seen_voice_low = set()
         for k, v in (existing_voices or {}).items():
             k_clean = (k or "").strip()
-            if not k_clean or k_clean.lower() in invalid_speaker_keys:
+            if (
+                not k_clean
+                or k_clean.lower() in invalid_speaker_keys
+                or ScriptAgent.is_non_character_label(k_clean)
+            ):
                 continue
             # Filter out any speaker key that matches a narrative verb clause
-            if len(k_clean.split()) > 4 or re.search(r'\b(?:đi qua nói|ba chê|báo mộng|sang chơi hỏi)\b', k_clean.lower()):
+            if len(k_clean.split()) > 5 or re.search(r'\b(?:đi qua nói|ba chê|báo mộng|sang chơi hỏi)\b', k_clean.lower()):
                 continue
+            if k_clean.lower() in seen_voice_low:
+                continue
+            seen_voice_low.add(k_clean.lower())
             character_voices[k_clean] = v
 
         # Default narrator voice (ensure language consistency: never use an en-* voice for a Vietnamese project)
@@ -2335,39 +2344,47 @@ Return ONLY raw JSON matching this structure:
             character_voices["Narrator"] = curr_narr_v
 
         char_names = []
-        if characters_str:
-            parts = re.split(r'[|\n]+', characters_str)
-            for p in parts:
-                p_strip = p.strip()
-                if not p_strip:
-                    continue
-                generic_role_labels = {
-                    "protagonist", "nhân vật chính", "companion", "creature", "antagonist",
-                    "hero", "heroine", "villain", "sidekick", "mentor", "vai chính", "vai phụ"
-                }
-                c_name = ""
-                if ":" in p_strip:
-                    before_col, after_col = p_strip.split(":", 1)
-                    before_col = before_col.strip()
-                    after_col = after_col.strip()
-                    if before_col.lower() in generic_role_labels or re.match(r'^(?:character|nhân vật)\s*\d+$', before_col, re.IGNORECASE):
-                        m_after = re.match(r'^([^,:\(\)\-]+)', after_col)
-                        c_name = m_after.group(1).strip() if m_after else after_col
+        char_desc_by_name: Dict[str, str] = {}
+        chunks = ScriptAgent.split_characters_summary(characters_str or "")
+        for p_strip in chunks:
+            generic_role_labels = {
+                "protagonist", "nhân vật chính", "companion", "creature", "antagonist",
+                "hero", "heroine", "villain", "sidekick", "mentor", "vai chính", "vai phụ"
+            }
+            c_name = ""
+            c_desc = ""
+            if ":" in p_strip:
+                before_col, after_col = p_strip.split(":", 1)
+                before_col = before_col.strip()
+                after_col = after_col.strip()
+                if before_col.lower() in generic_role_labels or re.match(r'^(?:character|nhân vật)\s*\d+$', before_col, re.IGNORECASE):
+                    m_after = re.match(r'^([^,:\(\)\-]+)(?:[,:\-]\s*(.*))?$', after_col)
+                    if m_after:
+                        c_name = m_after.group(1).strip()
+                        c_desc = (m_after.group(2) or "").strip()
                     else:
-                        c_name = before_col
+                        c_name = after_col
                 else:
-                    m = re.match(r'^([^,:\(\)\-]+)', p_strip)
-                    c_name = m.group(1).strip() if m else p_strip
+                    c_name = before_col
+                    c_desc = after_col
+            else:
+                m = re.match(r'^([^,:\(\)\-]+)(?:[,:\-]\s*(.*))?$', p_strip)
+                if m:
+                    c_name = m.group(1).strip()
+                    c_desc = (m.group(2) or "").strip()
+                else:
+                    c_name = p_strip
 
-                c_name = re.sub(r'^[\[\(]|[\)\]]$', '', c_name).strip()
-                if (
-                    c_name
-                    and c_name.lower() not in ("narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character")
-                    and c_name.lower() not in invalid_speaker_keys
-                    and len(c_name.split()) <= 4
-                ):
-                    if c_name not in char_names:
-                        char_names.append(c_name)
+            c_name = re.sub(r'^[\[\(]|[\)\]]$', '', c_name).strip()
+            if (
+                c_name
+                and not ScriptAgent.is_non_character_label(c_name)
+                and c_name.lower() not in invalid_speaker_keys
+                and len(c_name.split()) <= 5
+            ):
+                if not any(ScriptAgent.is_same_character_alias(c_name, ex, char_desc_by_name.get(ex, "")) for ex in char_names):
+                    char_names.append(c_name)
+                    char_desc_by_name[c_name] = c_desc
 
         if scenes:
             for sc in scenes:
@@ -2376,10 +2393,10 @@ Return ONLY raw JSON matching this structure:
                     spk = (d.get("speaker") or "").strip()
                     if (
                         spk
-                        and spk.lower() not in ("narrator", "người kể chuyện", "none", "", "character")
+                        and not ScriptAgent.is_non_character_label(spk)
                         and spk.lower() not in invalid_speaker_keys
-                        and len(spk.split()) <= 4
-                        and spk not in char_names
+                        and len(spk.split()) <= 5
+                        and not any(ScriptAgent.is_same_character_alias(spk, ex, char_desc_by_name.get(ex, "")) for ex in char_names)
                     ):
                         char_names.append(spk)
 
@@ -2419,11 +2436,12 @@ Return ONLY raw JSON matching this structure:
             return pool[0]
 
         for name in char_names:
-            if name in character_voices and character_voices[name]:
+            existing_k = next((k for k in character_voices.keys() if ScriptAgent.is_same_character_alias(name, k, char_desc_by_name.get(k, ""))), None)
+            if existing_k and character_voices.get(existing_k):
                 continue
 
             context = ""
-            for p in re.split(r'[|\n]+', characters_str or ""):
+            for p in ScriptAgent.split_characters_summary(characters_str or ""):
                 if name.lower() in p.lower():
                     context = p.lower()
                     break
@@ -3603,6 +3621,92 @@ Return ONLY raw JSON matching this structure:
 
         return {"title": "Imported Story", "logline": "", "scenes": []}
 
+    _NON_CHARACTER_EXACT_LABELS = {
+        "narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character", "nhân vật",
+        "none", "n/a", "chi tiết", "miêu tả", "mô tả", "đặc điểm", "thông tin",
+        "ngoại hình", "hình dáng", "dáng vẻ", "dáng người", "tính cách", "thần thái", "ấn tượng",
+        "cảm giác", "phong cách", "trang phục", "phụ kiện", "vũ khí", "sức mạnh",
+        "đầu", "đầu và mặt", "mặt", "khuôn mặt", "gương mặt", "mắt", "đôi mắt", "mũi",
+        "mõm", "miệng", "răng", "tai", "tóc", "mái tóc", "thân", "thân hình", "thân thể",
+        "thân người", "tay", "chân", "lưng", "ngực", "bụng", "da", "lông", "bộ lông",
+        "bờm", "bờm và đuôi", "đuôi", "yên cương", "dây cương", "váy", "áo", "mũ", "giày",
+        "details", "description", "appearance", "outfit", "clothing", "weapon", "weapons",
+        "accessories", "personality", "impression", "demeanor", "aura", "head", "face",
+        "eyes", "hair", "body", "fur", "mane", "tail", "saddle", "build", "physique",
+    }
+
+    _NON_CHARACTER_PREFIX_RE = re.compile(
+        r'^(?:thân\s+(?:lông|hình|người|trên|dưới)|đầu\s+(?:lợn|tròn|và)|'
+        r'mặt\s+(?:đen|đầy|khỉ)|răng\s+nanh|bộ\s+lông|bờm\s+và|đầu\s+và|'
+        r'yên\s+cương|vũ\s+khí|ấn\s+tượng|thần\s+thái|miêu\s+tả|đặc\s+điểm|'
+        r'chi\s+tiết|ngoại\s+hình|thường\s+mang|mắt\s+có)\b',
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def is_non_character_label(cls, name: str) -> bool:
+        """Returns True if `name` is an anatomical/visual section header or table cell rather than a character."""
+        raw = (name or "").strip()
+        if not raw or "\t" in raw:
+            return True
+        low = re.sub(r'\s+', ' ', raw).strip().lower()
+        if low in cls._NON_CHARACTER_EXACT_LABELS:
+            return True
+        if cls._NON_CHARACTER_PREFIX_RE.match(low):
+            return True
+        if len(low.split()) > 5:
+            return True
+        return False
+
+    @staticmethod
+    def split_characters_summary(characters_str: str) -> List[str]:
+        """
+        Splits a `characters` summary string safely into per-character entries.
+        If pipe delimiters (`|`) are present, splits strictly on `|` so internal newlines
+        inside rich multi-line character descriptions never spawn fake fragment characters.
+        """
+        text = (characters_str or "").strip()
+        if not text:
+            return []
+        if "|" in text:
+            return [chunk.strip() for chunk in text.split("|") if chunk.strip()]
+        return [chunk.strip() for chunk in text.splitlines() if chunk.strip()]
+
+    @staticmethod
+    def format_characters_summary(profiles: List[Dict[str, Any]]) -> str:
+        """Builds a single-line pipe-delimited summary string safe from internal newline/pipe splitting."""
+        parts = []
+        for p in (profiles or []):
+            if not isinstance(p, dict):
+                continue
+            name = re.sub(r'\s+', ' ', str(p.get("name") or "")).replace("|", "/").strip()
+            if not name:
+                continue
+            desc = re.sub(r'\s+', ' ', str(p.get("description") or "")).replace("|", ";").strip()
+            parts.append(f"{name}: {desc}" if desc else name)
+        return " | ".join(parts)
+
+    @staticmethod
+    def is_same_character_alias(name_a: str, name_b: str, desc_b: str = "") -> bool:
+        """Checks whether two character names refer to the same character (case, spelling typo, or leading subject alias)."""
+        a = re.sub(r'\s+', ' ', (name_a or "")).strip().lower()
+        b = re.sub(r'\s+', ' ', (name_b or "")).strip().lower()
+        if not a or not b:
+            return False
+        if a == b:
+            return True
+        if len(a) >= 4 and len(b) >= 4 and (a in b or b in a):
+            return True
+        if desc_b and len(a) >= 4:
+            # Check if `name_a` is the grammatical subject opening `desc_b` (e.g. "Trư Bát Giới có đầu lợn...")
+            norm_desc_head = re.sub(r'\s+', ' ', desc_b[:80]).strip().lower()
+            if re.match(rf'^(?:nhân vật\s+)?{re.escape(a)}(?:$|\W)', norm_desc_head):
+                return True
+        if len(a.split()) == len(b.split()) and min(len(a), len(b)) >= 5:
+            if difflib.SequenceMatcher(None, a, b).ratio() >= 0.84:
+                return True
+        return False
+
     @staticmethod
     def _normalize_parsed_character(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Normalizes a character dict extracted by AI or heuristic parsers."""
@@ -3798,6 +3902,18 @@ Return ONLY raw JSON matching this structure:
                     desc_parts.append(ln)
 
             if c_name:
+                if cls.is_non_character_label(c_name) or (desc_parts and len(c_name.split()) > 4 and results):
+                    if results:
+                        extra_text = f"{c_name}: {' '.join(desc_parts)}".strip(": ") if desc_parts else c_name
+                        prev_desc = results[-1].get("description") or ""
+                        results[-1]["description"] = f"{prev_desc} {extra_text}".strip()
+                    continue
+                if len(blk) == 1 and not desc_parts and ":" not in blk[0] and "|" not in blk[0] and results and (
+                    c_name.endswith(".") or len(c_name.split()) >= 4
+                ):
+                    prev_desc = results[-1].get("description") or ""
+                    results[-1]["description"] = f"{prev_desc} {blk[0]}".strip()
+                    continue
                 _push(cls._normalize_parsed_character({
                     "name": c_name,
                     "description": " ".join(desc_parts).strip(),
@@ -3805,7 +3921,7 @@ Return ONLY raw JSON matching this structure:
                     "role": c_role,
                 }))
 
-        return results
+        return [r for r in results if not cls.is_non_character_label(r["name"])]
 
     async def parse_characters_from_text(self, raw_text: str) -> Dict[str, Any]:
         """

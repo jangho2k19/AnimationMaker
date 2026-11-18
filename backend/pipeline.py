@@ -100,7 +100,7 @@ class AnimationPipeline:
 
     @staticmethod
     def _parse_character_entries(characters_str: str) -> list:
-        """Parses a `Name: visual description | ...` string into structured dicts."""
+        """Parses a `Name: visual description | ...` string into structured dicts without splitting multi-line descriptions."""
         entries = []
         if not characters_str or not isinstance(characters_str, str):
             return entries
@@ -108,9 +108,7 @@ class AnimationPipeline:
             "protagonist", "nhân vật chính", "companion", "creature", "antagonist",
             "hero", "heroine", "villain", "sidekick", "mentor", "vai chính", "vai phụ"
         }
-        ignored = {"narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character", "nhân vật", "none", ""}
-        for chunk in re.split(r'[|\n]+', characters_str):
-            raw = chunk.strip()
+        for raw in ScriptAgent.split_characters_summary(characters_str):
             if not raw:
                 continue
             name = ""
@@ -137,16 +135,40 @@ class AnimationPipeline:
                 else:
                     name = raw
             name = re.sub(r'^[\[\(]|[\)\]]$', '', name).strip()
-            if not name or name.lower() in ignored or len(name.split()) > 5:
+            if not name or ScriptAgent.is_non_character_label(name):
                 continue
             entries.append({"name": name, "description": desc})
         return entries
+
+    @staticmethod
+    def _is_fragment_of_other_descriptions(name: str, desc: str, other_norm_descs: list) -> bool:
+        """Detects bogus pseudo-characters extracted from inside another character's multi-line description."""
+        if not other_norm_descs:
+            return False
+        norm_name = re.sub(r'\s+', ' ', (name or "")).strip().lower()
+        norm_desc = re.sub(r'\s+', ' ', (desc or "")).strip().lower()
+        candidates = []
+        if len(norm_desc) >= 12:
+            candidates.append(norm_desc)
+        if norm_name and norm_desc:
+            candidates.append(f"{norm_name}: {norm_desc}")
+            candidates.append(f"{norm_name} {norm_desc}")
+            candidates.append(f"{norm_name}, {norm_desc}")
+        if not candidates and len(norm_name) >= 6:
+            candidates.append(norm_name)
+        for cand in candidates:
+            if len(cand) < 10:
+                continue
+            for o_desc in other_norm_descs:
+                if cand in o_desc and len(o_desc) > len(cand) + 12:
+                    return True
+        return False
 
     def sync_character_profiles(self, project: Dict[str, Any], sync_back_string: bool = True) -> list:
         """
         Reconciles `project["character_profiles"]` with `characters`, `scenes[].dialogues`,
         and `character_voices`, preserving any existing images, descriptions, and optional voices.
-        Also auto-recovers character portrait images stored in `projects/<id>/characters/`.
+        Heals multi-line fragment pseudo-characters, attribute/table rows, and case/spelling duplicates.
         """
         pid = project.get("id")
         p_dir = safe_project_dir(pid) if pid else None
@@ -156,9 +178,23 @@ class AnimationPipeline:
         if not isinstance(existing_profiles, list):
             existing_profiles = []
 
+        spoken_low = {
+            (d.get("speaker") or "").strip().lower()
+            for sc in project.get("scenes", [])
+            for d in (sc.get("dialogues") or [])
+            if isinstance(d, dict) and (d.get("speaker") or "").strip()
+        }
+
+        norm_descs_all = [
+            (idx, re.sub(r'\s+', ' ', (prof.get("description") or "")).strip().lower())
+            for idx, prof in enumerate(existing_profiles)
+            if isinstance(prof, dict) and (prof.get("description") or "").strip()
+        ]
+
         by_key = {}
         ordered_profiles = []
         used_ids = set()
+        dropped_names_low = set()
 
         def _make_unique_id(base_name: str, preferred_id: str = None) -> str:
             cand = (preferred_id or f"char_{self._char_slug(base_name)}").strip()
@@ -173,16 +209,41 @@ class AnimationPipeline:
             used_ids.add(uniq)
             return uniq
 
-        for prof in existing_profiles:
+        for idx, prof in enumerate(existing_profiles):
             if not isinstance(prof, dict) or not (prof.get("name") or "").strip():
                 continue
             p_name = prof["name"].strip()
-            if p_name.lower() in ("narrator", "người kể chuyện", "character"):
-                continue
-            cid = _make_unique_id(p_name, prof.get("id"))
+            p_desc = (prof.get("description") or "").strip()
             img_rel = (prof.get("image_path") or "").replace("\\", "/").strip()
             if img_rel and not (PROJECTS_DIR.parent / img_rel).exists():
                 img_rel = ""
+
+            if ScriptAgent.is_non_character_label(p_name) and not img_rel:
+                dropped_names_low.add(p_name.lower())
+                continue
+
+            if not img_rel and p_name.lower() not in spoken_low:
+                other_descs = [od for o_idx, od in norm_descs_all if o_idx != idx]
+                if self._is_fragment_of_other_descriptions(p_name, p_desc, other_descs):
+                    dropped_names_low.add(p_name.lower())
+                    continue
+
+            alias_target = next(
+                (ex for ex in ordered_profiles if ScriptAgent.is_same_character_alias(p_name, ex["name"], ex.get("description", ""))),
+                None
+            )
+            if alias_target:
+                if len(p_desc) > len(alias_target.get("description") or ""):
+                    alias_target["description"] = p_desc
+                if img_rel and not alias_target.get("image_path"):
+                    alias_target["image_path"] = img_rel
+                if (prof.get("voice_id") or "").strip() and not (alias_target.get("voice_id") or "").strip():
+                    alias_target["voice_id"] = str(prof["voice_id"]).strip()
+                if p_name.lower() != alias_target["name"].lower():
+                    dropped_names_low.add(p_name.lower())
+                continue
+
+            cid = _make_unique_id(p_name, prof.get("id"))
             if not img_rel and chars_dir and chars_dir.exists():
                 for ext in (".jpg", ".png", ".jpeg", ".webp"):
                     cand_f = chars_dir / f"{cid}{ext}"
@@ -192,7 +253,7 @@ class AnimationPipeline:
             item = {
                 "id": cid,
                 "name": p_name,
-                "description": (prof.get("description") or "").strip(),
+                "description": p_desc,
                 "voice_id": (prof.get("voice_id") if prof.get("voice_id") is not None else ""),
                 "image_path": img_rel,
                 "role": prof.get("role") or "character"
@@ -201,14 +262,26 @@ class AnimationPipeline:
             ordered_profiles.append(item)
 
         voices_map = project.get("character_voices") or {}
+        existing_norm_descs = [
+            re.sub(r'\s+', ' ', (p.get("description") or "")).strip().lower()
+            for p in ordered_profiles
+            if (p.get("description") or "").strip()
+        ]
 
         # Merge from `characters` description string
         for parsed in self._parse_character_entries(project.get("characters") or ""):
-            key = parsed["name"].lower()
-            if key in by_key:
-                if parsed["description"] and not by_key[key]["description"]:
-                    by_key[key]["description"] = parsed["description"]
+            if self._is_fragment_of_other_descriptions(parsed["name"], parsed["description"], existing_norm_descs):
+                dropped_names_low.add(parsed["name"].lower())
+                continue
+            alias_target = next(
+                (ex for ex in ordered_profiles if ScriptAgent.is_same_character_alias(parsed["name"], ex["name"], ex.get("description", ""))),
+                None
+            )
+            if alias_target:
+                if parsed["description"] and not alias_target["description"]:
+                    alias_target["description"] = parsed["description"]
             else:
+                key = parsed["name"].lower()
                 cid = _make_unique_id(parsed["name"])
                 img_rel = ""
                 if chars_dir and chars_dir.exists():
@@ -227,8 +300,10 @@ class AnimationPipeline:
                 }
                 by_key[key] = item
                 ordered_profiles.append(item)
+                if item["description"]:
+                    existing_norm_descs.append(re.sub(r'\s+', ' ', item["description"]).strip().lower())
 
-        # Merge speakers from scenes[].dialogues & character_voices keys
+        # Merge speakers from scenes[].dialogues & valid non-attribute character_voices keys
         speaker_names = []
         for sc in project.get("scenes", []):
             for d in (sc.get("dialogues") or []):
@@ -236,15 +311,26 @@ class AnimationPipeline:
                     speaker_names.append(d["speaker"].strip())
         for k in voices_map.keys():
             if k and isinstance(k, str):
-                speaker_names.append(k.strip())
+                k_s = k.strip()
+                if k_s.lower() not in dropped_names_low and not ScriptAgent.is_non_character_label(k_s):
+                    speaker_names.append(k_s)
 
         for spk in speaker_names:
+            if ScriptAgent.is_non_character_label(spk):
+                continue
             low = spk.lower()
-            if low in ("narrator", "người kể chuyện", "character", "nhân vật", "none", ""):
+            if low in dropped_names_low:
                 continue
-            if any(k_low == low or k_low in low or low in k_low for k_low in by_key.keys()):
-                continue
-            if len(spk.split()) > 4:
+            alias_target = next(
+                (ex for ex in ordered_profiles if ScriptAgent.is_same_character_alias(spk, ex["name"], ex.get("description", ""))),
+                None
+            )
+            if alias_target:
+                # Migrate any orphaned voice assigned to the alias onto the canonical profile
+                if not (alias_target.get("voice_id") or "").strip() and (voices_map.get(spk) or "").strip():
+                    alias_target["voice_id"] = str(voices_map[spk]).strip()
+                if spk != alias_target["name"]:
+                    dropped_names_low.add(low)
                 continue
             cid = _make_unique_id(spk)
             img_rel = ""
@@ -265,9 +351,28 @@ class AnimationPipeline:
             by_key[low] = item
             ordered_profiles.append(item)
 
-        # Sync voice_id <-> character_voices
+        # Clean & sync character_voices
         if not isinstance(project.get("character_voices"), dict):
             project["character_voices"] = {"Narrator": project.get("voice") or "en-US-ChristopherNeural"}
+        else:
+            canonical_by_low = {p["name"].lower(): p["name"] for p in ordered_profiles}
+            cleaned_voices = {}
+            for vk, vv in project["character_voices"].items():
+                vk_s = (vk or "").strip()
+                if not vk_s:
+                    continue
+                if vk_s.lower() == "narrator":
+                    cleaned_voices["Narrator"] = vv
+                    continue
+                if vk_s.lower() in dropped_names_low or ScriptAgent.is_non_character_label(vk_s):
+                    continue
+                canon_name = canonical_by_low.get(vk_s.lower()) or vk_s
+                if canon_name not in cleaned_voices:
+                    cleaned_voices[canon_name] = vv
+            if "Narrator" not in cleaned_voices:
+                cleaned_voices["Narrator"] = project.get("voice") or "en-US-ChristopherNeural"
+            project["character_voices"] = cleaned_voices
+
         for item in ordered_profiles:
             nm = item["name"]
             if item.get("voice_id") not in (None, ""):
@@ -276,12 +381,9 @@ class AnimationPipeline:
                 item["voice_id"] = project["character_voices"][nm]
 
         project["character_profiles"] = ordered_profiles
-        if sync_back_string and ordered_profiles:
-            desc_parts = [
-                f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
-                for p in ordered_profiles
-            ]
-            project["characters"] = " | ".join(desc_parts)
+        raw_chars_str = project.get("characters") or ""
+        if ordered_profiles and (sync_back_string or "\n" in raw_chars_str or "\t" in raw_chars_str or bool(dropped_names_low)):
+            project["characters"] = ScriptAgent.format_characters_summary(ordered_profiles)
         return ordered_profiles
 
     def resolve_scene_character_references(self, project: Dict[str, Any], scene_idx: int) -> list:
@@ -310,16 +412,23 @@ class AnimationPipeline:
             matched = [p for p in with_images if p["id"] in pin_set]
 
         if not matched:
+            scene_speakers = [
+                str(d.get("speaker") or "").strip()
+                for d in (scene.get("dialogues") or [])
+                if isinstance(d, dict) and (d.get("speaker") or "").strip()
+            ]
             haystack = " ".join([
                 str(scene.get("title") or ""),
                 str(scene.get("narration") or ""),
                 str(scene.get("visual_prompt") or ""),
                 str(scene.get("acting_prompt") or ""),
-                " ".join(str(d.get("speaker") or "") for d in (scene.get("dialogues") or []) if isinstance(d, dict))
+                " ".join(scene_speakers)
             ]).lower()
             for p in with_images:
                 c_name = p["name"].strip().lower()
                 if c_name and c_name in haystack:
+                    matched.append(p)
+                elif any(ScriptAgent.is_same_character_alias(spk, p["name"], p.get("description", "")) for spk in scene_speakers):
                     matched.append(p)
                 else:
                     tokens = [t for t in re.split(r'\s+', c_name) if len(t) >= 3]
@@ -467,10 +576,7 @@ class AnimationPipeline:
                     project_data["character_voices"][cp_name] = cp_voice
             project_data["character_profiles"] = norm_profiles
             if norm_profiles:
-                project_data["characters"] = " | ".join(
-                    f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
-                    for p in norm_profiles
-                )
+                project_data["characters"] = ScriptAgent.format_characters_summary(norm_profiles)
 
         self.save_project(project_data)
         return project_data
@@ -520,9 +626,12 @@ class AnimationPipeline:
             if "use_char_refs_in_video" not in data:
                 data["use_char_refs_in_video"] = True
             before_profiles = json.dumps(data.get("character_profiles", []), ensure_ascii=False, sort_keys=True)
+            before_chars = data.get("characters", "")
+            before_voices = json.dumps(data.get("character_voices", {}), ensure_ascii=False, sort_keys=True)
             self.sync_character_profiles(data, sync_back_string=False)
             after_profiles = json.dumps(data.get("character_profiles", []), ensure_ascii=False, sort_keys=True)
-            if before_profiles != after_profiles:
+            after_voices = json.dumps(data.get("character_voices", {}), ensure_ascii=False, sort_keys=True)
+            if before_profiles != after_profiles or data.get("characters", "") != before_chars or before_voices != after_voices:
                 changed = True
             if changed:
                 try:
@@ -1584,10 +1693,7 @@ class AnimationPipeline:
             del project["character_voices"][c_name]
 
         project["character_profiles"] = profiles
-        project["characters"] = " | ".join(
-            f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
-            for p in profiles
-        )
+        project["characters"] = ScriptAgent.format_characters_summary(profiles)
         self.save_project(project)
         return self.get_project(project_id) or project
 
@@ -1606,10 +1712,7 @@ class AnimationPipeline:
                 if isinstance(sc.get("character_ids"), list) and char_id in sc["character_ids"]:
                     sc["character_ids"] = [x for x in sc["character_ids"] if x != char_id]
         project["character_profiles"] = profiles
-        project["characters"] = " | ".join(
-            f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
-            for p in profiles
-        )
+        project["characters"] = ScriptAgent.format_characters_summary(profiles)
         self.save_project(project)
         return self.get_project(project_id) or project
 
@@ -1726,10 +1829,7 @@ class AnimationPipeline:
                     project["character_voices"][c_name] = c_voice
 
         project["character_profiles"] = profiles
-        project["characters"] = " | ".join(
-            f"{p['name']}: {p['description']}" if p.get("description") else p["name"]
-            for p in profiles
-        )
+        project["characters"] = ScriptAgent.format_characters_summary(profiles)
         self.save_project(project)
         return self.get_project(project_id) or project
 

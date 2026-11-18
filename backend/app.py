@@ -1094,6 +1094,7 @@ async def update_scenes(project_id: str, req: UpdateScenesRequest):
                             pass
 
     project["scenes"] = req.scenes
+    pipeline.sync_character_profiles(project, sync_back_string=True)
     pipeline.save_project(project)
     if is_comic_style(project.get("art_style", "ghibli")):
         pipeline.refresh_project_comic_images(project_id)
