@@ -417,29 +417,34 @@ class AnimationPipeline:
                 for d in (scene.get("dialogues") or [])
                 if isinstance(d, dict) and (d.get("speaker") or "").strip()
             ]
-            haystack = " ".join([
+            # Prioritize visual fields + dialogue speakers (who is actually visible on-screen in this shot)
+            visual_haystack = " ".join([
                 str(scene.get("title") or ""),
-                str(scene.get("narration") or ""),
                 str(scene.get("visual_prompt") or ""),
-                str(scene.get("acting_prompt") or ""),
-                " ".join(scene_speakers)
-            ]).lower()
+                " ".join(scene_speakers),
+            ])
             for p in with_images:
-                c_name = p["name"].strip().lower()
-                if c_name and c_name in haystack:
+                if (
+                    ScriptAgent.character_appears_in_text(p["name"], p.get("description", ""), visual_haystack)
+                    or any(ScriptAgent.is_same_character_alias(spk, p["name"], p.get("description", "")) for spk in scene_speakers)
+                ):
                     matched.append(p)
-                elif any(ScriptAgent.is_same_character_alias(spk, p["name"], p.get("description", "")) for spk in scene_speakers):
-                    matched.append(p)
-                else:
-                    tokens = [t for t in re.split(r'\s+', c_name) if len(t) >= 3]
-                    if tokens and all(t in haystack for t in tokens):
+
+            # Fallback to narration / acting_prompt only if visual fields named no characters
+            if not matched:
+                fallback_haystack = " ".join([
+                    str(scene.get("narration") or ""),
+                    str(scene.get("acting_prompt") or ""),
+                ])
+                for p in with_images:
+                    if ScriptAgent.character_appears_in_text(p["name"], p.get("description", ""), fallback_haystack):
                         matched.append(p)
 
         if not matched:
-            matched = with_images[:3]
+            matched = with_images[:4]
 
         refs = []
-        for p in matched[:4]:
+        for p in matched[:6]:
             full_p = PROJECTS_DIR.parent / p["image_path"]
             if full_p.exists():
                 refs.append({
@@ -881,19 +886,24 @@ class AnimationPipeline:
         # Resolve matched character portrait reference sheets for this scene
         char_refs = self.resolve_scene_character_references(project, scene_idx)
 
-        # Also check prior rendered scene image for world/lighting continuity
+        # Only attach prior rendered scene_1.jpg when NO dedicated character portrait refs are available;
+        # otherwise prior wide shots with smaller/varied headwear or faces override Character Studio portraits.
         ref_img_path = None
-        for i in range(scene_idx):
-            candidate = p_dir / f"scene_{i + 1}.jpg"
-            if candidate.exists():
-                ref_img_path = str(candidate)
-                break
-        if not ref_img_path and not char_refs:
-            char_portrait = p_dir / "character_ref.jpg"
-            if char_portrait.exists():
-                ref_img_path = str(char_portrait)
+        if not char_refs:
+            for i in range(scene_idx):
+                candidate = p_dir / f"scene_{i + 1}.jpg"
+                if candidate.exists():
+                    ref_img_path = str(candidate)
+                    break
+            if not ref_img_path:
+                char_portrait = p_dir / "character_ref.jpg"
+                if char_portrait.exists():
+                    ref_img_path = str(char_portrait)
 
-        character_desc = (project.get("characters") or "").strip()
+        if char_refs:
+            character_desc = ScriptAgent.format_characters_summary(char_refs)
+        else:
+            character_desc = (project.get("characters") or "").strip()
         # Stable project character seed anchor for visual consistency across scenes
         char_seed = self.stable_seed(project_id + (character_desc or project.get("idea", "")))
         scene_seed = (char_seed + (scene_idx * 17)) % 999999

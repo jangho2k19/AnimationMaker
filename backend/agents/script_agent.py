@@ -3707,6 +3707,51 @@ Return ONLY raw JSON matching this structure:
                 return True
         return False
 
+    @classmethod
+    def character_appears_in_text(cls, profile_name: str, profile_desc: str, text: str) -> bool:
+        """
+        Determines whether a character profile appears in a scene text (`visual_prompt`, `dialogues`, etc.),
+        accounting for case variants, minor spelling typos (e.g. 'Trư Bác Giới' vs 'Trư Bát Giới'),
+        and leading subject aliases from `profile_desc` (e.g. 'Đường Tăng' inside 'Đường Tam Tạng').
+        """
+        p_raw = re.sub(r'\s+', ' ', (profile_name or "")).strip().lower()
+        t_raw = re.sub(r'\s+', ' ', (text or "")).strip().lower()
+        if not p_raw or not t_raw:
+            return False
+        if p_raw in t_raw:
+            return True
+
+        # Leading subject alias from description (first 2-4 words before a verb/comma/colon)
+        if profile_desc:
+            desc_head = re.sub(r'\s+', ' ', profile_desc[:90]).strip().lower()
+            m_subj = re.match(
+                r'^([^\.,:\(\)\-]{4,35}?)\s+(?:là|có|thường|được|mang|mặc|đội|cầm|cưỡi|is|has|wears|always)\b',
+                desc_head,
+            )
+            if m_subj:
+                alias = m_subj.group(1).strip()
+                if len(alias.split()) >= 2 and alias in t_raw:
+                    return True
+
+        # Exact all-tokens presence (len >= 3)
+        p_tokens = [tok for tok in re.findall(r'\w+', p_raw) if len(tok) >= 2]
+        t_words = re.findall(r'\w+', t_raw)
+        if p_tokens and all(tok in t_words for tok in p_tokens):
+            return True
+
+        # Sliding k-word window fuzzy similarity for spelling/tone typos
+        k = len(p_tokens)
+        if k >= 2 and len(t_words) >= k and len(p_raw) >= 5:
+            for i in range(len(t_words) - k + 1):
+                win_str = " ".join(t_words[i:i + k])
+                if difflib.SequenceMatcher(None, p_raw, win_str).ratio() >= 0.84:
+                    return True
+        elif k == 1 and len(p_raw) >= 5:
+            for tw in t_words:
+                if len(tw) >= 5 and difflib.SequenceMatcher(None, p_raw, tw).ratio() >= 0.84:
+                    return True
+        return False
+
     @staticmethod
     def _normalize_parsed_character(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Normalizes a character dict extracted by AI or heuristic parsers."""

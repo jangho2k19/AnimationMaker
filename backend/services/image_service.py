@@ -754,12 +754,13 @@ class ImageService:
         full_prompt: str,
         character_references: list = None,
         reference_image_path: str = None,
-        max_refs: int = 4
+        max_refs: int = 6,
+        scene_only_prompt: str = None,
     ) -> tuple:
         """
         Builds a deduplicated ordered list of valid reference image paths (character portraits
-        first, then optional scene continuity frame) and a clear instruction mapping each
-        attached image to its named character.
+        first, then optional scene continuity frame) and a strong identity-locking instruction
+        binding each attached reference image to its character's exact face, headwear, outfit, and props.
         """
         req_files = []
         seen_paths = set()
@@ -779,16 +780,18 @@ class ImageService:
             seen_paths.add(abs_p)
             req_files.append(resolved)
             c_name = (ref.get("name") or "").strip() or f"Character {len(req_files)}"
-            c_desc = (ref.get("description") or "").strip()
-            note = f"Reference Image {len(req_files)} depicts character '{c_name}'"
-            if c_desc:
-                note += f" ({c_desc[:140]})"
+            c_desc = re.sub(r'\s+', ' ', str(ref.get("description") or "")).strip()
+            note = (
+                f"Reference Image {len(req_files)} = CHARACTER '{c_name}'"
+                + (f" ({c_desc[:320]})" if c_desc else "")
+                + f" — KEEP the exact face, headwear/crown/hat/headband, hairstyle, outfit/armor colors & details, and weapon shown in Reference Image {len(req_files)}."
+            )
             char_map_notes.append(note)
             if len(req_files) >= max_refs:
                 break
 
         has_scene_continuity_ref = False
-        if reference_image_path and len(req_files) < max_refs:
+        if reference_image_path and not char_map_notes and len(req_files) < max_refs:
             ref_base = self.get_base_image_path(reference_image_path)
             cand_scene_ref = ref_base if os.path.exists(ref_base) else str(reference_image_path)
             if os.path.exists(cand_scene_ref):
@@ -804,17 +807,18 @@ class ImageService:
 
         parts = []
         if char_map_notes:
-            parts.append("CHARACTER REFERENCE SHEETS ATTACHED: " + "; ".join(char_map_notes) + ".")
+            parts.append("CHARACTER REFERENCE BINDINGS (DO NOT ALTER CHARACTER DESIGNS):\n- " + "\n- ".join(char_map_notes))
         if has_scene_continuity_ref:
             parts.append(
-                f"Reference Image {len(req_files)} is a prior scene frame for art-style & world lighting continuity ONLY (do NOT copy its pose or composition)."
+                f"Reference Image {len(req_files)} is a prior scene frame for art-style & lighting continuity ONLY (do NOT copy its pose or composition)."
             )
+        target_scene_text = (scene_only_prompt or full_prompt)[:2400]
         parts.append(
-            f"Generate a brand-new scene illustration strictly depicting: {full_prompt[:2600]}. "
-            f"Strictly preserve each attached character's exact facial features, hairstyle, proportions, and signature outfit while rendering the new scene pose, action, camera framing, and background. "
-            f"Clean illustration without text, no speech bubbles, no words."
+            "MANDATORY VISUAL IDENTITY LOCK: For every character listed above, draw their EXACT face, headwear (keep hats, crowns, or headbands shown in their Reference Image — NEVER make a hatted character bareheaded), hairstyle, facial hair, armor/robe pattern & colors, and signature weapon from their attached Reference Image. Adapt ONLY pose, expression, camera framing, and environment.\n\n"
+            f"NEW SCENE TO GENERATE:\n{target_scene_text}\n\n"
+            "OUTPUT REQUIREMENT: Clean illustration without text, no speech bubbles, no words, no watermarks."
         )
-        return req_files, " ".join(parts)
+        return req_files, "\n\n".join(parts)
 
     async def _generate_raw_ai_image(
         self,
@@ -1233,11 +1237,18 @@ class ImageService:
         if image_mode == "puter":
             raise RuntimeError("In-Browser Puter image generation runs directly in the browser client. Please use the 'Repaint with Puter' button in the Storyboard.")
 
+        scene_only_prompt = self.craft_full_prompt(
+            prompt,
+            style_key=style_key,
+            character_desc=None,
+            camera_on_speaker=camera_on_speaker
+        )
         req_files, mm_prompt = self._collect_reference_files_and_instruction(
             full_prompt=full_prompt,
             character_references=character_references,
             reference_image_path=reference_image_path,
-            max_refs=4
+            max_refs=6,
+            scene_only_prompt=scene_only_prompt,
         )
         await self._generate_raw_ai_image(
             full_prompt=full_prompt,

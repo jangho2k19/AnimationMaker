@@ -5392,18 +5392,42 @@ ${isAutoScenes
       if (Array.isArray(sceneObj.character_ids) && sceneObj.character_ids.length > 0) {
         return sceneObj.character_ids;
       }
-      const haystack = `${sceneObj.visual_prompt || ""} ${sceneObj.acting_prompt || ""} ${sceneObj.narration || ""} ${JSON.stringify(sceneObj.dialogues || [])}`.toLowerCase();
-      const matched = [];
-      charProfilesWithImg.forEach(p => {
-        const pname = (p.name || "").trim().toLowerCase();
-        if (!pname) return;
-        const tokens = pname.split(/\s+/).filter(t => t.length >= 2);
-        if (haystack.includes(pname) || tokens.some(t => haystack.includes(t))) {
-          matched.push(p.id);
-        }
-      });
+      const speakerStr = (sceneObj.dialogues || []).map(d => d?.speaker || "").join(" ");
+      const primaryHay = `${sceneObj.title || ""} ${sceneObj.visual_prompt || ""} ${speakerStr}`.toLowerCase();
+      const fallbackHay = `${sceneObj.narration || ""} ${sceneObj.acting_prompt || ""}`.toLowerCase();
+
+      const matchAgainst = (hay) => {
+        const res = [];
+        charProfilesWithImg.forEach(p => {
+          const pname = (p.name || "").trim().toLowerCase();
+          if (!pname) return;
+          if (hay.includes(pname)) {
+            res.push(p.id);
+            return;
+          }
+          // Check leading alias from description (e.g. "Đường Tăng" inside "Đường Tam Tạng" desc)
+          const dHead = (p.description || "").slice(0, 90).trim().toLowerCase();
+          const mSubj = dHead.match(/^([^\.,:\(\)\-]{4,35}?)\s+(?:là|có|thường|được|mang|mặc|đội|cầm|cưỡi|is|has|wears|always)\b/);
+          if (mSubj && hay.includes(mSubj[1].trim())) {
+            res.push(p.id);
+            return;
+          }
+          const tokens = pname.split(/\s+/).filter(t => t.length >= 2);
+          const minHits = tokens.length <= 2 ? tokens.length : (tokens.length - 1);
+          const hits = tokens.filter(t => hay.includes(t)).length;
+          if (tokens.length > 0 && hits >= minHits) {
+            res.push(p.id);
+          }
+        });
+        return res;
+      };
+
+      let matched = matchAgainst(primaryHay);
       if (matched.length === 0) {
-        matched.push(charProfilesWithImg[0].id);
+        matched = matchAgainst(fallbackHay);
+      }
+      if (matched.length === 0) {
+        matched = charProfilesWithImg.slice(0, 4).map(p => p.id);
       }
       return matched;
     };
