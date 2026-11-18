@@ -3243,7 +3243,7 @@ class AniStoryApp {
         source_project_id: this.currentProject?.id || ""
       }, btnSaveLib);
     });
-    btnDelete.addEventListener("click", () => this.deleteProjectCharacterProfile(charId, nameEl.value || charName));
+    btnDelete.addEventListener("click", () => this.deleteProjectCharacterProfile(charId, nameEl.value || charName, btnDelete));
 
     return card;
   }
@@ -3275,8 +3275,13 @@ class AniStoryApp {
     }
   }
 
-  async deleteProjectCharacterProfile(charId, charName) {
+  async deleteProjectCharacterProfile(charId, charName, btnEl = null) {
     if (!this.currentProject || !charId) return;
+    const oldText = btnEl ? btnEl.textContent : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = "⏳";
+    }
     try {
       const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(charId)}`, {
         method: "DELETE"
@@ -3298,6 +3303,11 @@ class AniStoryApp {
       }
     } catch (err) {
       this.showToast(err.message, true);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = oldText;
+      }
     }
   }
 

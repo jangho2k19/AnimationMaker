@@ -1794,6 +1794,27 @@ Return ONLY raw JSON matching this structure:
                     pos_full = low_full.rfind(c.lower())
                     if pos_full != -1:
                         matched_chars.append((pos_full, c))
+            if not matched_chars:
+                # Match unique 2-word core aliases (e.g. "Bát Giới" -> "Trư Bát Giới", "Nữ Vương" -> "Nữ vương Tây Lương Nữ Quốc")
+                for c in clean_chars:
+                    c_words = [w for w in re.findall(r'\w+', c.lower()) if w not in ("nhóm", "các", "ông", "bà", "cô", "anh", "chị")]
+                    core_cands = []
+                    if len(c_words) >= 3:
+                        core_cands.append(" ".join(c_words[:2]))
+                        core_cands.append(" ".join(c_words[-2:]))
+                    for core in core_cands:
+                        if len(core) < 5:
+                            continue
+                        # Ensure core uniquely refers to this character among clean_chars
+                        if sum(1 for other in clean_chars if core in other.lower()) == 1:
+                            pos = subj_clause.rfind(core)
+                            if pos != -1:
+                                matched_chars.append((pos + 900, c))
+                                break
+                            pos_full = low_full.rfind(core)
+                            if pos_full != -1:
+                                matched_chars.append((pos_full, c))
+                                break
             if matched_chars:
                 matched_chars.sort(key=lambda x: x[0], reverse=True)
                 return matched_chars[0][1]
@@ -1849,9 +1870,9 @@ Return ONLY raw JSON matching this structure:
         if m_spk:
             cand = m_spk.group(1).strip(' ,:-')
             cand = re.sub(r'^(?:một|các|những)\s+', '', cand, flags=re.IGNORECASE).strip()
-            cand = re.sub(r'\b(?:liền|bèn|vội|hớt hải|ngơ ngác|sợ hãi|tức giận|đi qua|sang chơi|hiện lên)\b.*$', '', cand, flags=re.IGNORECASE).strip()
-            if cand and cand.lower() not in invalid_speakers and len(cand.split()) <= 4:
-                return cand.title()
+            cand = ScriptAgent.clean_speaker_name(cand, clean_chars)
+            if cand and cand.lower() not in invalid_speakers and not ScriptAgent.is_non_character_label(cand) and len(cand.split()) <= 4:
+                return cand
 
         if len(clean_chars) == 1:
             return clean_chars[0]
@@ -2390,7 +2411,8 @@ Return ONLY raw JSON matching this structure:
             for sc in scenes:
                 d_list = sc.get("dialogues") or []
                 for d in d_list:
-                    spk = (d.get("speaker") or "").strip()
+                    spk_raw = (d.get("speaker") or "").strip()
+                    spk = ScriptAgent.clean_speaker_name(spk_raw, char_names)
                     if (
                         spk
                         and not ScriptAgent.is_non_character_label(spk)
@@ -3654,7 +3676,7 @@ Return ONLY raw JSON matching this structure:
             return True
         if cls._NON_CHARACTER_PREFIX_RE.match(low):
             return True
-        if len(low.split()) > 5:
+        if len(low.split()) > 10:
             return True
         return False
 
@@ -3706,6 +3728,56 @@ Return ONLY raw JSON matching this structure:
             if difflib.SequenceMatcher(None, a, b).ratio() >= 0.84:
                 return True
         return False
+
+    _SPEAKER_TRAILING_MODIFIERS_RE = re.compile(
+        r'\s+(?:liền|bèn|bật(?:\s+cười|\s+khóc|\s+dậy|\s+nói)?|vội(?:\s+vàng)?|bỗng(?:\s+nhiên)?|chợt|khẽ|thầm|'
+        r'nghiêm\s+trang|dịu\s+dàng|thong\s+thả|từ\s+tốn|hớt\s+hải|hốt\s+hoảng|hoảng\s+hốt|sợ\s+hãi|'
+        r'mừng\s+rỡ|vui\s+mừng|cau\s+mày|mỉm\s+cười|phì\s+cười|nheo\s+mắt|lẩm\s+bẩm|sốt\s+ruột|'
+        r'giật\s+mình|vỗ\s+ngực|xoa\s+tay|ngơ\s+ngác|tức\s+giận|gật\s+đầu|lắc\s+đầu|ngạc\s+nhiên|'
+        r'tái\s+mặt|tái\s+mét|thở\s+dài|chớp\s+mắt|gãi\s+đầu|nhún\s+vai|bước\s+tới|quay\s+lại|'
+        r'đi\s+qua|sang\s+chơi|hiện\s+lên)\b.*$',
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def clean_speaker_name(cls, speaker: str, known_chars: List[str] = None) -> str:
+        """
+        Strips stray trailing action verbs/adjectives mistakenly captured during narration parsing
+        (e.g. 'Nữ Vương Bật' -> 'Nữ Vương', 'Bát Giới Nghiêm Trang' -> 'Bát Giới') and snaps
+        unambiguous partial cores back onto their canonical character name in `known_chars`.
+        """
+        cand = re.sub(r'\s+', ' ', (speaker or "")).strip(' ,:-')
+        if not cand:
+            return ""
+        stripped = cls._SPEAKER_TRAILING_MODIFIERS_RE.sub('', cand).strip(' ,:-')
+        if stripped and len(stripped) >= 2:
+            cand = stripped
+
+        c_low = cand.lower()
+        roster = [str(k).strip() for k in (known_chars or []) if k and str(k).strip()]
+        if roster:
+            for kc in roster:
+                if kc.lower() == c_low:
+                    return kc
+            # Exact token substring match (e.g. "Bát Giới" inside "Trư Bát Giới", "Nữ Vương" inside "Nữ vương Tây Lương Nữ Quốc")
+            c_words = re.findall(r'\w+', c_low)
+            if len(c_words) >= 2:
+                matches = [
+                    kc for kc in roster
+                    if re.search(rf'(?:^|\W){re.escape(c_low)}(?:$|\W)', kc.lower())
+                ]
+                if len(matches) == 1:
+                    return matches[0]
+            # Prefix-core fallback if an action word wasn't in the static modifier list
+            if len(c_words) >= 3:
+                prefix2 = " ".join(c_words[:2])
+                matches2 = [
+                    kc for kc in roster
+                    if re.search(rf'(?:^|\W){re.escape(prefix2)}(?:$|\W)', kc.lower())
+                ]
+                if len(matches2) == 1:
+                    return matches2[0]
+        return cand.title() if cand.islower() or cand.istitle() else cand
 
     @classmethod
     def character_appears_in_text(cls, profile_name: str, profile_desc: str, text: str) -> bool:

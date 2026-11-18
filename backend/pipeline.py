@@ -194,7 +194,23 @@ class AnimationPipeline:
         by_key = {}
         ordered_profiles = []
         used_ids = set()
-        dropped_names_low = set()
+        suppressed_low = {
+            str(x).strip().lower()
+            for x in (project.get("deleted_character_names") or [])
+            if str(x).strip()
+        }
+        dropped_names_low = set(suppressed_low)
+
+        # Collect canonical character names (those with portraits or written descriptions) to clean empty action-polluted duplicates
+        canonical_seed_names = [
+            prof["name"].strip()
+            for prof in existing_profiles
+            if isinstance(prof, dict)
+            and (prof.get("name") or "").strip()
+            and not ScriptAgent.is_non_character_label(prof["name"].strip())
+            and ((prof.get("description") or "").strip() or (prof.get("image_path") or "").strip())
+            and prof["name"].strip().lower() not in suppressed_low
+        ]
 
         def _make_unique_id(base_name: str, preferred_id: str = None) -> str:
             cand = (preferred_id or f"char_{self._char_slug(base_name)}").strip()
@@ -218,9 +234,24 @@ class AnimationPipeline:
             if img_rel and not (PROJECTS_DIR.parent / img_rel).exists():
                 img_rel = ""
 
+            if p_name.lower() in suppressed_low:
+                dropped_names_low.add(p_name.lower())
+                continue
+
             if ScriptAgent.is_non_character_label(p_name) and not img_rel:
                 dropped_names_low.add(p_name.lower())
                 continue
+
+            # Auto-heal action-polluted empty speakers like "Nữ Vương Bật" -> "Nữ vương Tây Lương Nữ Quốc", "Bát Giới Nghiêm Trang" -> "Trư Bát Giới"
+            if not img_rel and not p_desc and canonical_seed_names:
+                cleaned_p = ScriptAgent.clean_speaker_name(p_name, canonical_seed_names)
+                if cleaned_p and cleaned_p.lower() != p_name.lower() and any(c.lower() == cleaned_p.lower() for c in canonical_seed_names):
+                    dropped_names_low.add(p_name.lower())
+                    for sc in project.get("scenes", []):
+                        for d in (sc.get("dialogues") or []):
+                            if isinstance(d, dict) and (d.get("speaker") or "").strip().lower() == p_name.lower():
+                                d["speaker"] = cleaned_p
+                    continue
 
             if not img_rel and p_name.lower() not in spoken_low:
                 other_descs = [od for o_idx, od in norm_descs_all if o_idx != idx]
@@ -270,6 +301,8 @@ class AnimationPipeline:
 
         # Merge from `characters` description string
         for parsed in self._parse_character_entries(project.get("characters") or ""):
+            if parsed["name"].lower() in suppressed_low:
+                continue
             if self._is_fragment_of_other_descriptions(parsed["name"], parsed["description"], existing_norm_descs):
                 dropped_names_low.add(parsed["name"].lower())
                 continue
@@ -304,16 +337,27 @@ class AnimationPipeline:
                     existing_norm_descs.append(re.sub(r'\s+', ' ', item["description"]).strip().lower())
 
         # Merge speakers from scenes[].dialogues & valid non-attribute character_voices keys
+        known_canon_names = [ex["name"] for ex in ordered_profiles]
         speaker_names = []
         for sc in project.get("scenes", []):
             for d in (sc.get("dialogues") or []):
                 if isinstance(d, dict) and (d.get("speaker") or "").strip():
-                    speaker_names.append(d["speaker"].strip())
+                    raw_spk = d["speaker"].strip()
+                    if raw_spk.lower() in dropped_names_low:
+                        continue
+                    cleaned_spk = ScriptAgent.clean_speaker_name(raw_spk, known_canon_names)
+                    if cleaned_spk and cleaned_spk != raw_spk:
+                        if cleaned_spk.lower() in dropped_names_low:
+                            continue
+                        d["speaker"] = cleaned_spk
+                    speaker_names.append(cleaned_spk or raw_spk)
         for k in voices_map.keys():
             if k and isinstance(k, str):
                 k_s = k.strip()
                 if k_s.lower() not in dropped_names_low and not ScriptAgent.is_non_character_label(k_s):
-                    speaker_names.append(k_s)
+                    cleaned_k = ScriptAgent.clean_speaker_name(k_s, known_canon_names)
+                    if cleaned_k and cleaned_k.lower() not in dropped_names_low:
+                        speaker_names.append(cleaned_k)
 
         for spk in speaker_names:
             if ScriptAgent.is_non_character_label(spk):
@@ -1697,25 +1741,77 @@ class AnimationPipeline:
         elif c_name in project["character_voices"] and "voice_id" in char_data and c_voice == "":
             del project["character_voices"][c_name]
 
+        if isinstance(project.get("deleted_character_names"), list):
+            project["deleted_character_names"] = [
+                n for n in project["deleted_character_names"]
+                if str(n).strip().lower() != c_name.lower()
+            ]
         project["character_profiles"] = profiles
         project["characters"] = ScriptAgent.format_characters_summary(profiles)
         self.save_project(project)
         return self.get_project(project_id) or project
 
     def delete_character_profile(self, project_id: str, char_id: str) -> Dict[str, Any]:
-        """Removes a character profile and cleans up its voice/scene pins."""
+        """Permanently removes a character profile, suppresses auto-resurrection from old dialogues, and cleans pins/voices."""
         project = self.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
         profiles = self.sync_character_profiles(project, sync_back_string=False)
         removed = next((p for p in profiles if p["id"] == char_id), None)
-        profiles = [p for p in profiles if p["id"] != char_id]
+        if not removed:
+            # Also match case-insensitively on ID or URL-decoded name just in case
+            removed = next((p for p in profiles if p["id"].lower() == char_id.lower() or p["name"].lower() == char_id.lower()), None)
+        removed_ids = {char_id}
+        removed_names_low = set()
         if removed:
-            if isinstance(project.get("character_voices"), dict) and removed["name"] in project["character_voices"]:
-                del project["character_voices"][removed["name"]]
-            for sc in project.get("scenes", []):
-                if isinstance(sc.get("character_ids"), list) and char_id in sc["character_ids"]:
-                    sc["character_ids"] = [x for x in sc["character_ids"] if x != char_id]
+            removed_ids.add(removed["id"])
+            removed_names_low.add(removed["name"].strip().lower())
+            if removed.get("image_path"):
+                img_p = PROJECTS_DIR.parent / removed["image_path"]
+                still_used = any(
+                    p.get("id") not in removed_ids and p.get("image_path") == removed["image_path"]
+                    for p in profiles
+                )
+                if img_p.exists() and not still_used and str(img_p).replace("\\", "/").startswith(str(PROJECTS_DIR / project_id).replace("\\", "/")):
+                    try:
+                        img_p.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
+        profiles = [
+            p for p in profiles
+            if p["id"] not in removed_ids and p["name"].strip().lower() not in removed_names_low
+        ]
+
+        # Record deleted names so sync_character_profiles never resurrects them from existing dialogue lines
+        del_list = [str(x).strip().lower() for x in (project.get("deleted_character_names") or []) if str(x).strip()]
+        for rn in removed_names_low:
+            if rn not in del_list:
+                del_list.append(rn)
+        project["deleted_character_names"] = del_list
+
+        # Clean voices map & scene dialogue speaker references + pins
+        if isinstance(project.get("character_voices"), dict):
+            for k in list(project["character_voices"].keys()):
+                if k.strip().lower() in removed_names_low:
+                    del project["character_voices"][k]
+
+        remaining_names = [p["name"] for p in profiles]
+        for sc in project.get("scenes", []):
+            if isinstance(sc.get("character_ids"), list):
+                sc["character_ids"] = [x for x in sc["character_ids"] if x not in removed_ids]
+            if isinstance(sc.get("used_character_ids"), list):
+                sc["used_character_ids"] = [x for x in sc["used_character_ids"] if x not in removed_ids]
+            for d in (sc.get("dialogues") or []):
+                if isinstance(d, dict):
+                    spk = (d.get("speaker") or "").strip()
+                    if spk.lower() in removed_names_low:
+                        remapped = ScriptAgent.clean_speaker_name(spk, remaining_names)
+                        if remapped and any(rn.lower() == remapped.lower() for rn in remaining_names):
+                            d["speaker"] = remapped
+                        else:
+                            d["speaker"] = "Character"
+
         project["character_profiles"] = profiles
         project["characters"] = ScriptAgent.format_characters_summary(profiles)
         self.save_project(project)
@@ -1858,6 +1954,12 @@ class AnimationPipeline:
                 if c_voice:
                     project["character_voices"][c_name] = c_voice
 
+        imported_low = {p["name"].strip().lower() for p in profiles if p.get("name")}
+        if isinstance(project.get("deleted_character_names"), list):
+            project["deleted_character_names"] = [
+                n for n in project["deleted_character_names"]
+                if str(n).strip().lower() not in imported_low
+            ]
         project["character_profiles"] = profiles
         project["characters"] = ScriptAgent.format_characters_summary(profiles)
         self.save_project(project)
