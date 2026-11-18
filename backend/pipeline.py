@@ -300,14 +300,19 @@ class AnimationPipeline:
         ]
 
         # Merge from `characters` description string
+        known_from_step1 = [ex["name"] for ex in ordered_profiles]
         for parsed in self._parse_character_entries(project.get("characters") or ""):
-            if parsed["name"].lower() in suppressed_low:
+            p_low_step2 = parsed["name"].lower()
+            if p_low_step2 in dropped_names_low:
+                continue
+            cleaned_step2 = ScriptAgent.clean_speaker_name(parsed["name"], known_from_step1)
+            if cleaned_step2 and cleaned_step2.lower() in dropped_names_low:
                 continue
             if self._is_fragment_of_other_descriptions(parsed["name"], parsed["description"], existing_norm_descs):
-                dropped_names_low.add(parsed["name"].lower())
+                dropped_names_low.add(p_low_step2)
                 continue
             alias_target = next(
-                (ex for ex in ordered_profiles if ScriptAgent.is_same_character_alias(parsed["name"], ex["name"], ex.get("description", ""))),
+                (ex for ex in ordered_profiles if ScriptAgent.is_same_character_alias(cleaned_step2 or parsed["name"], ex["name"], ex.get("description", ""))),
                 None
             )
             if alias_target:
