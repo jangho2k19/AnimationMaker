@@ -62,6 +62,9 @@ class AniStoryApp {
     this.useCharRefsInVideo = localStorage.getItem("anistory_cfg_video_char_refs") !== "false";
     this._charImportTarget = "stage1";
     this._parsedImportCharacters = [];
+    this._charLibraryTarget = "stage1";
+    this._charLibraryItems = [];
+    this._selectedLibraryIds = new Set();
 
     this.initElements();
     this.enableImageCaptions = localStorage.getItem("anistory_cfg_enable_image_captions") !== "false";
@@ -474,6 +477,8 @@ class AniStoryApp {
     this.badgeStage1CharCount = document.getElementById("badgeStage1CharCount");
     this.btnStage1AddCharacter = document.getElementById("btnStage1AddCharacter");
     this.btnStage1ImportCharacters = document.getElementById("btnStage1ImportCharacters");
+    this.btnStage1OpenCharLibrary = document.getElementById("btnStage1OpenCharLibrary");
+    this.btnStage1SaveAllToLibrary = document.getElementById("btnStage1SaveAllToLibrary");
     this.btnStage1PaintAllCharacters = document.getElementById("btnStage1PaintAllCharacters");
     this.btnStage1ToggleCharacters = document.getElementById("btnStage1ToggleCharacters");
     this.textStage1ToggleChar = document.getElementById("textStage1ToggleChar");
@@ -496,6 +501,8 @@ class AniStoryApp {
     this.btnAutoCastVoices = document.getElementById("btnAutoCastVoices");
     this.btnAddProjectCharacter = document.getElementById("btnAddProjectCharacter");
     this.btnImportProjectCharacters = document.getElementById("btnImportProjectCharacters");
+    this.btnOpenProjectCharLibrary = document.getElementById("btnOpenProjectCharLibrary");
+    this.btnSaveProjectCharsToLibrary = document.getElementById("btnSaveProjectCharsToLibrary");
     this.btnGenerateAllCharacterImages = document.getElementById("btnGenerateAllCharacterImages");
 
     // Modal: Import Character Prompts (.txt + AI Parse)
@@ -513,6 +520,17 @@ class AniStoryApp {
     this.charImportPreviewList = document.getElementById("charImportPreviewList");
     this.btnConfirmCharImport = document.getElementById("btnConfirmCharImport");
     this.btnConfirmAndPaintCharImport = document.getElementById("btnConfirmAndPaintCharImport");
+
+    // Modal: Shared Reusable Character Library
+    this.modalCharacterLibrary = document.getElementById("modalCharacterLibrary");
+    this.btnCloseCharLibraryModal = document.getElementById("btnCloseCharLibraryModal");
+    this.labelCharLibraryDir = document.getElementById("labelCharLibraryDir");
+    this.inputCharLibrarySearch = document.getElementById("inputCharLibrarySearch");
+    this.btnSelectAllLibraryChars = document.getElementById("btnSelectAllLibraryChars");
+    this.btnRefreshCharLibrary = document.getElementById("btnRefreshCharLibrary");
+    this.charLibraryGrid = document.getElementById("charLibraryGrid");
+    this.checkReplaceLibraryChars = document.getElementById("checkReplaceLibraryChars");
+    this.btnApplySelectedLibraryChars = document.getElementById("btnApplySelectedLibraryChars");
     this.inlineAddCharForm = document.getElementById("inlineAddCharForm");
     this.inputNewCharName = document.getElementById("inputNewCharName");
     this.inputNewCharDesc = document.getElementById("inputNewCharDesc");
@@ -1925,11 +1943,54 @@ class AniStoryApp {
     if (this.btnStage1ImportCharacters) {
       this.btnStage1ImportCharacters.addEventListener("click", () => this.openCharacterImportModal("stage1"));
     }
+    if (this.btnStage1OpenCharLibrary) {
+      this.btnStage1OpenCharLibrary.addEventListener("click", () => this.openCharacterLibraryModal("stage1"));
+    }
+    if (this.btnStage1SaveAllToLibrary) {
+      this.btnStage1SaveAllToLibrary.addEventListener("click", () => this.saveAllStage1CharactersToLibrary(this.btnStage1SaveAllToLibrary));
+    }
     if (this.btnStage1PaintAllCharacters) {
       this.btnStage1PaintAllCharacters.addEventListener("click", () => this.paintAllStage1Characters(this.btnStage1PaintAllCharacters));
     }
     if (this.btnImportProjectCharacters) {
       this.btnImportProjectCharacters.addEventListener("click", () => this.openCharacterImportModal("stage2"));
+    }
+    if (this.btnOpenProjectCharLibrary) {
+      this.btnOpenProjectCharLibrary.addEventListener("click", () => this.openCharacterLibraryModal("stage2"));
+    }
+    if (this.btnSaveProjectCharsToLibrary) {
+      this.btnSaveProjectCharsToLibrary.addEventListener("click", () => this.saveAllProjectCharactersToLibrary(this.btnSaveProjectCharsToLibrary));
+    }
+
+    // Modal: Shared Reusable Character Library
+    if (this.btnCloseCharLibraryModal) {
+      this.btnCloseCharLibraryModal.addEventListener("click", () => this.modalCharacterLibrary?.classList.remove("active"));
+    }
+    if (this.modalCharacterLibrary) {
+      this.modalCharacterLibrary.addEventListener("click", (e) => {
+        if (e.target === this.modalCharacterLibrary) this.modalCharacterLibrary.classList.remove("active");
+      });
+    }
+    if (this.inputCharLibrarySearch) {
+      this.inputCharLibrarySearch.addEventListener("input", () => this.renderFilteredCharLibrary());
+    }
+    if (this.btnRefreshCharLibrary) {
+      this.btnRefreshCharLibrary.addEventListener("click", () => this.loadAndRenderCharacterLibrary());
+    }
+    if (this.btnSelectAllLibraryChars) {
+      this.btnSelectAllLibraryChars.addEventListener("click", () => {
+        const items = this._charLibraryItems || [];
+        const allSelected = items.length > 0 && items.every(it => this._selectedLibraryIds.has(it.id));
+        if (allSelected) {
+          this._selectedLibraryIds.clear();
+        } else {
+          items.forEach(it => this._selectedLibraryIds.add(it.id));
+        }
+        this.renderFilteredCharLibrary();
+      });
+    }
+    if (this.btnApplySelectedLibraryChars) {
+      this.btnApplySelectedLibraryChars.addEventListener("click", () => this.applySelectedLibraryCharacters());
     }
 
     // Modal: Import Character Prompts from .txt + AI Parser
@@ -2867,6 +2928,7 @@ class AniStoryApp {
           <div style="flex:1; display:flex; flex-direction:column; gap:6px; min-width:0;">
             <div style="display:flex; gap:6px; align-items:center;">
               <input type="text" class="styled-input stage1-char-name" value="${this.escapeHtml(char.name || "")}" placeholder="Tên nhân vật (VD: Tôn Ngộ Không, Bé An...)" style="flex:1; padding:6px 10px; font-size:12.5px; font-weight:600;">
+              <button type="button" class="glass-btn secondary-btn btn-s1-save-lib" style="padding:4px 8px; font-size:11px; color:#fcd34d;" title="Lưu nhân vật vào Thư Viện dùng chung">💾</button>
               <button type="button" class="glass-btn secondary-btn btn-s1-remove-char" style="padding:4px 8px; font-size:11px; color:#fca5a5;" title="Xóa nhân vật">🗑️</button>
             </div>
             <textarea class="styled-input stage1-char-desc" rows="2" placeholder="Mô tả ngoại hình (tóc, trang phục, độ tuổi, phụ kiện)..." style="padding:6px 10px; font-size:11.5px; resize:vertical;">${this.escapeHtml(char.description || "")}</textarea>
@@ -2887,6 +2949,7 @@ class AniStoryApp {
       const btnUpload = card.querySelector(".btn-s1-upload-img");
       const fileInput = card.querySelector(".input-s1-upload-img");
       const btnAudition = card.querySelector(".btn-s1-audition");
+      const btnSaveLib = card.querySelector(".btn-s1-save-lib");
       const btnRemove = card.querySelector(".btn-s1-remove-char");
 
       nameInput.addEventListener("input", () => {
@@ -2909,6 +2972,17 @@ class AniStoryApp {
         }
         const effectiveId = vId || this.selectVoice?.value || "vi-VN-HoaiMyNeural-story";
         this.playCharacterVoiceAudition(effectiveId, nameInput.value || `Character ${idx + 1}`);
+      });
+      btnSaveLib.addEventListener("click", () => {
+        this.saveSingleCharacterToLibrary({
+          id: char.id,
+          name: nameInput.value.trim(),
+          description: descInput.value.trim(),
+          voice_id: voiceSel.value,
+          image_path: char.image_path || "",
+          role: char.role || "character",
+          art_style: this.selectedStyleKey || "ghibli"
+        }, btnSaveLib);
       });
       btnRemove.addEventListener("click", () => {
         this.stage1Characters.splice(idx, 1);
@@ -3102,6 +3176,7 @@ class AniStoryApp {
           <div style="display:flex; gap:6px; align-items:center;">
             <input type="text" class="styled-input studio-char-name" value="${this.escapeHtml(charName)}" placeholder="Character Name" style="flex:1; padding:5px 9px; font-size:12.5px; font-weight:600;">
             <span class="tag-badge" style="font-size:10px; padding:2px 6px; ${cleanImg ? 'background:rgba(16,185,129,0.2); color:#6ee7b7;' : 'background:rgba(255,255,255,0.08); color:var(--text-muted);'}">${cleanImg ? "✓ Ref" : "No Ref"}</span>
+            <button type="button" class="glass-btn secondary-btn btn-studio-save-lib" style="padding:4px 7px; font-size:11px; color:#fcd34d;" title="Lưu nhân vật vào Thư Viện dùng chung để tái sử dụng">💾</button>
             <button type="button" class="glass-btn secondary-btn btn-studio-delete-char" style="padding:4px 7px; font-size:11px; color:#fca5a5;" title="Delete Character">🗑️</button>
           </div>
           <textarea class="styled-input studio-char-desc" rows="2" placeholder="Visual description for consistent Image & Video prompts..." style="padding:5px 9px; font-size:11.5px; line-height:1.35; resize:vertical;">${this.escapeHtml(charDesc)}</textarea>
@@ -3123,6 +3198,7 @@ class AniStoryApp {
     const btnUpload = card.querySelector(".btn-studio-upload-img");
     const fileInput = card.querySelector(".input-studio-upload-img");
     const btnAudition = card.querySelector(".btn-studio-audition");
+    const btnSaveLib = card.querySelector(".btn-studio-save-lib");
     const btnDelete = card.querySelector(".btn-studio-delete-char");
 
     const syncUpdate = () => {
@@ -3154,6 +3230,18 @@ class AniStoryApp {
         return;
       }
       this.playCharacterVoiceAudition(vId || this.currentProject?.voice || "vi-VN-HoaiMyNeural-story", nameEl.value || charName);
+    });
+    btnSaveLib.addEventListener("click", () => {
+      this.saveSingleCharacterToLibrary({
+        id: charId,
+        name: nameEl.value.trim() || charName,
+        description: descEl.value.trim(),
+        voice_id: voiceEl.value,
+        image_path: charProfile.image_path || "",
+        role: charProfile.role || "character",
+        art_style: this.currentProject?.art_style || "ghibli",
+        source_project_id: this.currentProject?.id || ""
+      }, btnSaveLib);
     });
     btnDelete.addEventListener("click", () => this.deleteProjectCharacterProfile(charId, nameEl.value || charName));
 
@@ -3632,6 +3720,309 @@ class AniStoryApp {
     if (andPaintAll) {
       await this.paintAllStage1Characters(this.btnStage1PaintAllCharacters);
     }
+  }
+
+  async saveSingleCharacterToLibrary(charPayload, btnEl) {
+    if (!charPayload || !(charPayload.name || "").trim()) {
+      this.showToast("Vui lòng nhập tên nhân vật trước khi lưu vào thư viện.", true);
+      return;
+    }
+    const oldText = btnEl ? btnEl.textContent : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = "⏳";
+    }
+    try {
+      const resp = await fetch("/api/characters/library/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(charPayload)
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Save to character library failed");
+        throw new Error(msg);
+      }
+      this.showToast(`💾 Đã lưu "${charPayload.name}" vào thư mục chung (Thư Viện Nhân Vật)!`);
+    } catch (e) {
+      this.showToast(e.message, true);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = oldText;
+      }
+    }
+  }
+
+  async saveAllStage1CharactersToLibrary(btnEl) {
+    const valid = (this.stage1Characters || []).filter(c => (c.name || "").trim());
+    if (valid.length === 0) {
+      this.showToast("Chưa có nhân vật hợp lệ trong Stage 1 để lưu vào thư viện.", true);
+      return;
+    }
+    const oldHtml = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = `<span>⏳ Saving...</span>`;
+    }
+    try {
+      const resp = await fetch("/api/characters/library/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          characters: valid,
+          art_style: this.selectedStyleKey || "ghibli"
+        })
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Batch save to library failed");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      this.showToast(`💾 Đã lưu ${data.saved_count} nhân vật vào thư mục chung!`);
+    } catch (e) {
+      this.showToast(e.message, true);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = oldHtml;
+      }
+    }
+  }
+
+  async saveAllProjectCharactersToLibrary(btnEl) {
+    if (!this.currentProject) return;
+    const oldHtml = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = `<span>⏳ Saving...</span>`;
+    }
+    try {
+      const resp = await fetch(`/api/characters/library/save-project/${encodeURIComponent(this.currentProject.id)}`, {
+        method: "POST"
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Save project characters to library failed");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      this.showToast(`💾 Đã lưu ${data.saved_count} nhân vật vào thư mục chung (${data.library_dir || "output/characters_library"})!`);
+    } catch (e) {
+      this.showToast(e.message, true);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = oldHtml;
+      }
+    }
+  }
+
+  async openCharacterLibraryModal(target = "stage1") {
+    this._charLibraryTarget = target;
+    this._selectedLibraryIds = new Set();
+    if (this.inputCharLibrarySearch) this.inputCharLibrarySearch.value = "";
+    if (this.checkReplaceLibraryChars) this.checkReplaceLibraryChars.checked = false;
+    this.updateApplyLibraryBtnLabel();
+    if (this.modalCharacterLibrary) this.modalCharacterLibrary.classList.add("active");
+    await this.loadAndRenderCharacterLibrary();
+  }
+
+  updateApplyLibraryBtnLabel() {
+    if (this.btnApplySelectedLibraryChars) {
+      const cnt = this._selectedLibraryIds.size;
+      this.btnApplySelectedLibraryChars.innerHTML = `<span>✓ Dùng Nhân Vật Đã Chọn (${cnt})</span>`;
+      this.btnApplySelectedLibraryChars.disabled = cnt === 0;
+    }
+  }
+
+  async loadAndRenderCharacterLibrary() {
+    if (!this.charLibraryGrid) return;
+    this.charLibraryGrid.innerHTML = `<div style="padding:18px; color:var(--text-muted); text-align:center;">⏳ Đang tải Thư Viện Nhân Vật...</div>`;
+    try {
+      const resp = await fetch("/api/characters/library");
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Failed to load character library");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      this._charLibraryItems = Array.isArray(data.characters) ? data.characters : [];
+      if (this.labelCharLibraryDir && data.library_dir) {
+        this.labelCharLibraryDir.textContent = `📁 ${data.library_dir} (${this._charLibraryItems.length} nhân vật đã lưu)`;
+      }
+      this.renderFilteredCharLibrary();
+    } catch (e) {
+      this.charLibraryGrid.innerHTML = `<div style="padding:18px; color:#fca5a5;">❌ ${this.escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  renderFilteredCharLibrary() {
+    if (!this.charLibraryGrid) return;
+    const q = (this.inputCharLibrarySearch?.value || "").trim().toLowerCase();
+    const list = (this._charLibraryItems || []).filter(it => {
+      if (!q) return true;
+      return (it.name || "").toLowerCase().includes(q)
+        || (it.description || "").toLowerCase().includes(q)
+        || (it.art_style || "").toLowerCase().includes(q);
+    });
+
+    this.charLibraryGrid.innerHTML = "";
+    if (list.length === 0) {
+      this.charLibraryGrid.innerHTML = `
+        <div style="grid-column:1/-1; padding:24px; text-align:center; color:var(--text-muted); border:1px dashed rgba(255,255,255,0.16); border-radius:10px;">
+          ${(this._charLibraryItems || []).length === 0
+            ? "Thư viện trống. Hãy bấm 💾 trên từng nhân vật hoặc nút <strong>💾 Lưu Thư Viện</strong> để lưu nhân vật dùng chung!"
+            : "Không tìm thấy nhân vật nào khớp với từ khóa."}
+        </div>`;
+      this.updateApplyLibraryBtnLabel();
+      return;
+    }
+
+    list.forEach(item => {
+      const isSelected = this._selectedLibraryIds.has(item.id);
+      const card = document.createElement("div");
+      card.className = `char-library-card ${isSelected ? "selected" : ""}`;
+      const cleanImg = item.image_path ? item.image_path.replace(/\\/g, "/") : "";
+      const imgHtml = cleanImg
+        ? `<img src="/media/${encodeURI(cleanImg)}?t=${Date.now()}" alt="${this.escapeHtml(item.name)}" style="width:68px; height:90px; object-fit:cover; border-radius:8px; flex-shrink:0; border:1px solid rgba(255,255,255,0.16);">`
+        : `<div style="width:68px; height:90px; border-radius:8px; border:1px dashed rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0;">👤</div>`;
+
+      const voiceText = item.voice_id === "none" ? "🔇 Silent" : (item.voice_id ? `🎙️ ${item.voice_id}` : "🎙️ Auto Voice");
+
+      card.innerHTML = `
+        ${imgHtml}
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; align-items:center; gap:6px; justify-content:space-between;">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:700; font-size:13px; color:#f8fafc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              <input type="checkbox" class="lib-char-checkbox" ${isSelected ? "checked" : ""}>
+              <span>${this.escapeHtml(item.name)}</span>
+            </label>
+            <button type="button" class="glass-btn secondary-btn btn-lib-delete" style="padding:2px 6px; font-size:10.5px; color:#fca5a5;" title="Xóa khỏi Thư Viện chung">🗑️</button>
+          </div>
+          <div style="font-size:11px; color:#cbd5e1; line-height:1.35; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;" title="${this.escapeHtml(item.description || "")}">
+            ${this.escapeHtml(item.description || "(Chưa có mô tả)")}
+          </div>
+          <div style="font-size:10px; color:#94a3b8; margin-top:auto;">${this.escapeHtml(voiceText)}</div>
+        </div>
+      `;
+
+      const checkbox = card.querySelector(".lib-char-checkbox");
+      const toggleSelect = () => {
+        if (this._selectedLibraryIds.has(item.id)) {
+          this._selectedLibraryIds.delete(item.id);
+        } else {
+          this._selectedLibraryIds.add(item.id);
+        }
+        this.renderFilteredCharLibrary();
+      };
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".btn-lib-delete")) return;
+        if (e.target === checkbox) {
+          if (checkbox.checked) this._selectedLibraryIds.add(item.id);
+          else this._selectedLibraryIds.delete(item.id);
+          card.classList.toggle("selected", checkbox.checked);
+          this.updateApplyLibraryBtnLabel();
+          return;
+        }
+        toggleSelect();
+      });
+
+      const btnDel = card.querySelector(".btn-lib-delete");
+      btnDel.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!window.confirm(`Xóa nhân vật "${item.name}" khỏi Thư Viện chung?`)) return;
+        try {
+          const resp = await fetch(`/api/characters/library/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+          if (resp.ok) {
+            this._selectedLibraryIds.delete(item.id);
+            await this.loadAndRenderCharacterLibrary();
+            this.showToast(`🗑️ Đã xóa "${item.name}" khỏi Thư Viện.`);
+          }
+        } catch (err) {
+          this.showToast("Xóa thất bại: " + err.message, true);
+        }
+      });
+
+      this.charLibraryGrid.appendChild(card);
+    });
+    this.updateApplyLibraryBtnLabel();
+  }
+
+  async applySelectedLibraryCharacters() {
+    const libIds = Array.from(this._selectedLibraryIds || []);
+    if (libIds.length === 0) {
+      this.showToast("Vui lòng chọn ít nhất 1 nhân vật trong thư viện.", true);
+      return;
+    }
+    const replace = Boolean(this.checkReplaceLibraryChars?.checked);
+    const chosen = (this._charLibraryItems || []).filter(it => this._selectedLibraryIds.has(it.id));
+
+    if (this._charLibraryTarget === "stage2" && this.currentProject) {
+      if (this.btnApplySelectedLibraryChars) this.btnApplySelectedLibraryChars.disabled = true;
+      try {
+        const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/import-from-library`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lib_ids: libIds, replace })
+        });
+        if (!resp.ok) {
+          const msg = await AniStoryApp.parseErrorResponse(resp, "Import from character library failed");
+          throw new Error(msg);
+        }
+        const data = await resp.json();
+        if (data.project) {
+          this.currentProject = data.project;
+          this.saveActiveProjectState();
+        }
+        if (this.inputCharacterConsistency) {
+          this.inputCharacterConsistency.value = this.currentProject.characters || "";
+        }
+        this.modalCharacterLibrary?.classList.remove("active");
+        this.renderCharacterVoiceCasting();
+        this.renderStoryboardView();
+        this.showToast(`📚 Đã nạp ${chosen.length} nhân vật (kèm ảnh chân dung) từ Thư Viện!`);
+      } catch (e) {
+        this.showToast(e.message, true);
+      } finally {
+        this.updateApplyLibraryBtnLabel();
+      }
+      return;
+    }
+
+    // Stage 1 merge/replace
+    if (replace) {
+      this.stage1Characters = [];
+    }
+    const byName = new Map();
+    (this.stage1Characters || []).forEach(c => {
+      const k = (c.name || "").trim().toLowerCase();
+      if (k) byName.set(k, c);
+    });
+    chosen.forEach(it => {
+      const k = (it.name || "").trim().toLowerCase();
+      if (byName.has(k)) {
+        const existing = byName.get(k);
+        if (it.description) existing.description = it.description;
+        if (it.voice_id !== undefined) existing.voice_id = it.voice_id;
+        if (it.image_path) existing.image_path = it.image_path;
+        existing.role = it.role || existing.role || "character";
+      } else {
+        const item = {
+          id: `char_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: it.name,
+          description: it.description || "",
+          voice_id: it.voice_id || "",
+          image_path: it.image_path || "",
+          role: it.role || "character"
+        };
+        this.stage1Characters.push(item);
+        byName.set(k, item);
+      }
+    });
+
+    this.isStage1CharsExpanded = true;
+    this.saveStage1CharactersToStorage();
+    this.renderStage1Characters();
+    this.modalCharacterLibrary?.classList.remove("active");
+    this.showToast(`📚 Đã nạp ${chosen.length} nhân vật từ Thư Viện vào Stage 1!`);
   }
 
   async generateAllProjectCharacterImages(btnEl) {

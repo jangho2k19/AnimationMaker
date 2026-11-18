@@ -8,10 +8,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 PROJECTS_DIR = OUTPUT_DIR / "projects"
 CACHE_DIR = OUTPUT_DIR / "cache"
+CHARACTER_LIBRARY_DIR = OUTPUT_DIR / "characters_library"
 CREDENTIALS_FILE = OUTPUT_DIR / "credentials.json"
 
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(CHARACTER_LIBRARY_DIR, exist_ok=True)
 
 def get_server_credentials() -> dict:
     if CREDENTIALS_FILE.exists():

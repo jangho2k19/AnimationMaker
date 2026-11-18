@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
-  <link rel="stylesheet" href="/css/style.css?v=15">
+  <link rel="stylesheet" href="/css/style.css?v=16">
 </head>
 <body>
   <!-- Ambient background glow elements -->
@@ -503,6 +503,12 @@
                     </button>
                     <button id="btnStage1ImportCharacters" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(167,139,250,0.45); color:#c4b5fd;" title="Import danh sách tên & prompt nhân vật từ file .txt và dùng AI để parse tự động">
                       <span>📄 Import .txt</span>
+                    </button>
+                    <button id="btnStage1OpenCharLibrary" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(251,191,36,0.45); color:#fcd34d;" title="Mở Thư Viện Nhân Vật dùng chung để chọn nhân vật tái sử dụng">
+                      <span>📚 Thư Viện</span>
+                    </button>
+                    <button id="btnStage1SaveAllToLibrary" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(52,211,153,0.45); color:#6ee7b7;" title="Lưu tất cả nhân vật hiện tại vào thư mục dùng chung (output/characters_library)">
+                      <span>💾 Lưu Thư Viện</span>
                     </button>
                     <button id="btnStage1PaintAllCharacters" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;" title="Batch create AI portrait images for all characters in this list">
                       <span>🎨 Paint all Characters</span>
@@ -1069,6 +1075,12 @@
               <button id="btnImportProjectCharacters" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(167,139,250,0.45); color:#c4b5fd;" title="Import prompt nhân vật từ file .txt và dùng AI phân tích tên & mô tả">
                 <span>📄 Import .txt</span>
               </button>
+              <button id="btnOpenProjectCharLibrary" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(251,191,36,0.45); color:#fcd34d;" title="Chọn nhân vật từ Thư Viện dùng chung để tái sử dụng cho phim này">
+                <span>📚 Thư Viện</span>
+              </button>
+              <button id="btnSaveProjectCharsToLibrary" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(52,211,153,0.45); color:#6ee7b7;" title="Lưu toàn bộ nhân vật (ảnh chân dung, mô tả, giọng nói) vào thư mục chung để tái sử dụng">
+                <span>💾 Lưu Thư Viện</span>
+              </button>
               <button id="btnGenerateAllCharacterImages" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;" title="Batch create AI character portraits for all characters (re-confirms if all already painted)">
                 <span>🎨 Paint all Characters</span>
               </button>
@@ -1574,6 +1586,45 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
     </div>
   </div>
 
+  <!-- MODAL: Shared Reusable Character Library -->
+  <div id="modalCharacterLibrary" class="modal-backdrop">
+    <div class="modal-card glass-panel wide-modal" style="max-width: 880px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:22px;">📚</span>
+          <div>
+            <h3 class="modal-title" style="margin-bottom:2px;">Thư Viện Nhân Vật Dùng Chung (Character Library)</h3>
+            <p id="labelCharLibraryDir" style="font-size:11.5px; color:var(--text-muted); margin:0;">📁 output/characters_library — chọn nhân vật đã lưu để tái sử dụng cho kịch bản hiện tại</p>
+          </div>
+        </div>
+        <button id="btnCloseCharLibraryModal" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height: 68vh; overflow-y: auto;">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+          <input id="inputCharLibrarySearch" type="text" class="styled-input" placeholder="🔍 Tìm nhân vật theo tên, ngoại hình, phong cách..." style="flex:1; min-width:220px; padding:7px 12px; font-size:12.5px;">
+          <button id="btnSelectAllLibraryChars" type="button" class="glass-btn secondary-btn compact-btn" style="padding:6px 12px; font-size:12px;">
+            <span>☑️ Chọn tất cả</span>
+          </button>
+          <button id="btnRefreshCharLibrary" type="button" class="glass-btn secondary-btn compact-btn" style="padding:6px 12px; font-size:12px;">
+            <span>🔄 Làm mới</span>
+          </button>
+        </div>
+        <div id="charLibraryGrid" class="char-library-grid">
+          <!-- Rendered dynamically via app.js -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <label style="display:inline-flex; align-items:center; gap:7px; font-size:12px; color:#cbd5e1; cursor:pointer;">
+          <input id="checkReplaceLibraryChars" type="checkbox">
+          <span>Thay thế danh sách nhân vật hiện tại (bỏ chọn = thêm/gộp)</span>
+        </label>
+        <button id="btnApplySelectedLibraryChars" type="button" class="hero-action-btn compact-btn">
+          <span>✓ Dùng Nhân Vật Đã Chọn (0)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: Gemini Available Models Explorer -->
   <div id="modalModelExplorer" class="modal-backdrop">
     <div class="modal-card glass-panel wide-modal" style="max-width: 820px;">
@@ -1651,6 +1702,6 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
   <div id="toastNotification" class="toast-popup"></div>
 
   <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=3.7"></script>
+  <script src="/js/app.js?v=3.8"></script>
 </body>
 </html>

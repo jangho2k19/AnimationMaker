@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from PIL import Image
 
-from backend.config import BASE_DIR, OUTPUT_DIR, ART_STYLES, VOICES, CAMERA_MOTIONS, AI_PROVIDERS, IMAGE_MODES, DURATION_PRESETS, VIDEO_DIMENSIONS, STORYBOARD_SKILLS, is_comic_style
+from backend.config import BASE_DIR, OUTPUT_DIR, CHARACTER_LIBRARY_DIR, ART_STYLES, VOICES, CAMERA_MOTIONS, AI_PROVIDERS, IMAGE_MODES, DURATION_PRESETS, VIDEO_DIMENSIONS, STORYBOARD_SKILLS, is_comic_style
 from backend.pipeline import AnimationPipeline
 from backend.agents.script_agent import ScriptAgent
 
@@ -138,6 +138,22 @@ class BulkImportCharactersRequest(BaseModel):
     ai_provider: Optional[str] = "gemini"
     ai_model: Optional[str] = None
     api_key: Optional[str] = None
+
+class SaveCharacterLibraryRequest(BaseModel):
+    lib_id: Optional[str] = None
+    id: Optional[str] = None
+    name: Optional[str] = ""
+    description: Optional[str] = ""
+    voice_id: Optional[str] = ""
+    image_path: Optional[str] = ""
+    role: Optional[str] = "character"
+    art_style: Optional[str] = ""
+    source_project_id: Optional[str] = None
+    characters: Optional[List[Dict[str, Any]]] = None
+
+class ImportLibraryCharactersRequest(BaseModel):
+    lib_ids: List[str]
+    replace: bool = False
 
 class SetSceneCharactersRequest(BaseModel):
     character_ids: List[str]
@@ -1608,6 +1624,95 @@ async def import_project_characters(project_id: str, req: BulkImportCharactersRe
             "character_profiles": updated.get("character_profiles", []),
             "project": updated,
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/characters/library")
+async def list_shared_character_library(query: str = ""):
+    """Lists reusable characters saved in the shared `output/characters_library/` folder."""
+    items = pipeline.list_character_library(query=query)
+    return {
+        "status": "ok",
+        "library_dir": str(CHARACTER_LIBRARY_DIR),
+        "characters": items,
+    }
+
+@app.post("/api/characters/library/save")
+async def save_to_shared_character_library(req: SaveCharacterLibraryRequest):
+    """Saves one character or a batch of Stage 1 characters into the shared character library folder."""
+    try:
+        saved_items = []
+        if req.characters and isinstance(req.characters, list):
+            for entry in req.characters:
+                if not isinstance(entry, dict) or not (entry.get("name") or "").strip():
+                    continue
+                c_payload = dict(entry)
+                if req.art_style and not c_payload.get("art_style"):
+                    c_payload["art_style"] = req.art_style
+                saved_items.append(
+                    pipeline.save_character_to_library(
+                        c_payload,
+                        source_project_id=req.source_project_id or c_payload.get("source_project_id"),
+                    )
+                )
+        else:
+            if not (req.name or "").strip():
+                raise HTTPException(status_code=400, detail="Character name is required.")
+            saved_items.append(
+                pipeline.save_character_to_library(
+                    req.model_dump(exclude={"characters"}),
+                    source_project_id=req.source_project_id,
+                )
+            )
+        if not saved_items:
+            raise HTTPException(status_code=400, detail="No valid characters to save.")
+        return {
+            "status": "ok",
+            "saved_count": len(saved_items),
+            "items": saved_items,
+            "library_dir": str(CHARACTER_LIBRARY_DIR),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/characters/library/save-project/{project_id}")
+async def save_project_characters_to_library(project_id: str):
+    """Batch-saves all characters (including portraits & optional voices) from a project into shared library."""
+    try:
+        res = pipeline.save_all_project_characters_to_library(project_id)
+        return {"status": "ok", **res}
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/characters/library/{lib_id}")
+async def delete_shared_character(lib_id: str):
+    """Deletes a reusable character from the shared character library."""
+    ok = pipeline.delete_character_from_library(lib_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Library character not found")
+    return {"status": "ok", "deleted_id": lib_id}
+
+@app.post("/api/projects/{project_id}/characters/import-from-library")
+async def import_project_characters_from_library(project_id: str, req: ImportLibraryCharactersRequest):
+    """Imports selected characters (including portraits & optional voices) from shared library into a project."""
+    try:
+        updated = pipeline.import_library_characters_to_project(
+            project_id=project_id,
+            lib_ids=req.lib_ids,
+            replace=bool(req.replace),
+        )
+        return {
+            "status": "ok",
+            "imported_count": len(req.lib_ids),
+            "character_profiles": updated.get("character_profiles", []),
+            "project": updated,
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

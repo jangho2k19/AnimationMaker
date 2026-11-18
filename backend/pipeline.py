@@ -9,7 +9,7 @@ import hashlib
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional
 
-from backend.config import PROJECTS_DIR, ART_STYLES, VOICES, VIDEO_DIMENSIONS, is_comic_style
+from backend.config import PROJECTS_DIR, CHARACTER_LIBRARY_DIR, ART_STYLES, VOICES, VIDEO_DIMENSIONS, is_comic_style
 from backend.agents.script_agent import ScriptAgent
 from backend.agents.voice_agent import VoiceAgent
 from backend.services.image_service import ImageService
@@ -1673,16 +1673,11 @@ class AnimationPipeline:
             existing_ids = {p["id"] for p in profiles}
             if new_cid in existing_ids:
                 new_cid = f"{new_cid}_{uuid.uuid4().hex[:4]}"
-            img_rel = str(char_data.get("image_path") or "").replace("\\", "/")
-            if img_rel and img_rel.startswith("character_staging/"):
-                p_dir = PROJECTS_DIR / project_id
-                chars_dir = p_dir / "characters"
-                chars_dir.mkdir(parents=True, exist_ok=True)
-                src_p = PROJECTS_DIR.parent / img_rel
-                if src_p.exists():
-                    dest_p = chars_dir / f"{new_cid}.jpg"
-                    shutil.copy2(src_p, dest_p)
-                    img_rel = str(dest_p.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+            img_rel = self._copy_portrait_to_project(
+                project_id,
+                new_cid,
+                str(char_data.get("image_path") or "").replace("\\", "/")
+            )
             target = {
                 "id": new_cid,
                 "name": c_name,
@@ -1769,11 +1764,35 @@ class AnimationPipeline:
             self.save_project(project)
         return self.get_project(project_id) or project
 
+    def _copy_portrait_to_project(self, project_id: str, char_id: str, img_rel: str) -> str:
+        """Copies a staging/library/external portrait into `projects/<id>/characters/<char_id>.<ext>`."""
+        clean_rel = str(img_rel or "").replace("\\", "/").strip()
+        if not clean_rel:
+            return ""
+        src_p = PROJECTS_DIR.parent / clean_rel
+        if not src_p.exists():
+            return clean_rel
+        proj_prefix = f"projects/{project_id}/characters/"
+        if clean_rel.startswith(proj_prefix):
+            return clean_rel
+        p_dir = PROJECTS_DIR / project_id
+        chars_dir = p_dir / "characters"
+        chars_dir.mkdir(parents=True, exist_ok=True)
+        ext = src_p.suffix.lower() if src_p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp") else ".jpg"
+        dest_p = chars_dir / f"{char_id}{ext}"
+        try:
+            if src_p.resolve() != dest_p.resolve():
+                shutil.copy2(src_p, dest_p)
+            return str(dest_p.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+        except Exception:
+            return clean_rel
+
     def bulk_import_character_profiles(
         self,
         project_id: str,
         characters: list,
         replace: bool = False,
+        overwrite_images: bool = False,
     ) -> Dict[str, Any]:
         """Bulk imports/merges parsed character definitions into a project's character_profiles."""
         project = self.get_project(project_id)
@@ -1802,7 +1821,7 @@ class AnimationPipeline:
             c_desc = (entry.get("description") or "").strip()
             c_role = (entry.get("role") or "supporting").strip() or "supporting"
             c_voice = str(entry.get("voice_id") or "").strip()
-            c_img = str(entry.get("image_path") or "").replace("\\", "/").strip()
+            raw_img = str(entry.get("image_path") or "").replace("\\", "/").strip()
 
             key = c_name.lower()
             if key in by_name:
@@ -1814,8 +1833,8 @@ class AnimationPipeline:
                 if c_voice:
                     target["voice_id"] = c_voice
                     project["character_voices"][target["name"]] = c_voice
-                if c_img and not target.get("image_path"):
-                    target["image_path"] = c_img
+                if raw_img and (overwrite_images or not target.get("image_path")):
+                    target["image_path"] = self._copy_portrait_to_project(project_id, target["id"], raw_img)
             else:
                 new_cid = (entry.get("id") or f"char_{self._char_slug(c_name)}").strip()
                 new_cid = re.sub(r'[^a-zA-Z0-9_\-]', '_', new_cid) or f"char_{uuid.uuid4().hex[:6]}"
@@ -1825,12 +1844,13 @@ class AnimationPipeline:
                         n += 1
                     new_cid = f"{new_cid}_{n}"
                 existing_ids.add(new_cid)
+                copied_img = self._copy_portrait_to_project(project_id, new_cid, raw_img) if raw_img else ""
                 item = {
                     "id": new_cid,
                     "name": c_name,
                     "description": c_desc,
                     "voice_id": c_voice,
-                    "image_path": c_img,
+                    "image_path": copied_img,
                     "role": c_role,
                 }
                 profiles.append(item)
@@ -1889,5 +1909,240 @@ class AnimationPipeline:
         scenes[scene_idx]["character_ids"] = [str(cid) for cid in (character_ids or []) if cid]
         self.save_project(project)
         return self.get_project(project_id) or project
+
+    # ================================================================
+    # Shared Reusable Character Library (`output/characters_library/`)
+    # ================================================================
+
+    @staticmethod
+    def _safe_library_id(lib_id: str) -> Optional[str]:
+        cand = str(lib_id or "").strip()
+        if not cand or cand in (".", "..") or any(sep in cand for sep in ("/", "\\", "\x00")):
+            return None
+        clean = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', cand)
+        return clean if clean == cand else None
+
+    def list_character_library(self, query: str = "") -> list:
+        """
+        Lists all reusable characters stored in the shared `output/characters_library/` folder.
+        Supports JSON+portrait pairs created via UI and standalone image files placed in the folder.
+        """
+        CHARACTER_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+        items = []
+        seen_stems = set()
+        img_exts = (".jpg", ".jpeg", ".png", ".webp")
+
+        for meta_path in sorted(CHARACTER_LIBRARY_DIR.glob("*.json")):
+            if meta_path.name.startswith("."):
+                continue
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if not isinstance(data, dict) or not (data.get("name") or "").strip():
+                    continue
+                stem = meta_path.stem
+                seen_stems.add(stem.lower())
+                img_rel = (data.get("image_path") or "").replace("\\", "/").strip()
+                if not img_rel or not (PROJECTS_DIR.parent / img_rel).exists():
+                    img_rel = ""
+                    for ext in img_exts:
+                        cand_img = CHARACTER_LIBRARY_DIR / f"{stem}{ext}"
+                        if cand_img.exists():
+                            img_rel = str(cand_img.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+                            break
+                items.append({
+                    "id": data.get("id") or stem,
+                    "name": data["name"].strip(),
+                    "description": (data.get("description") or "").strip(),
+                    "voice_id": str(data.get("voice_id") or "").strip(),
+                    "role": data.get("role") or "character",
+                    "art_style": data.get("art_style") or "",
+                    "image_path": img_rel,
+                    "source_project_id": data.get("source_project_id") or "",
+                    "created_at": data.get("created_at") or meta_path.stat().st_mtime,
+                    "updated_at": data.get("updated_at") or meta_path.stat().st_mtime,
+                })
+            except Exception as e:
+                print(f"[library] Skipping malformed character file {meta_path.name}: {e}")
+
+        # Auto-discover standalone portrait images dropped directly into characters_library/
+        for ext in img_exts:
+            for img_p in sorted(CHARACTER_LIBRARY_DIR.glob(f"*{ext}")):
+                stem = img_p.stem
+                if stem.lower() in seen_stems:
+                    continue
+                seen_stems.add(stem.lower())
+                items.append({
+                    "id": stem,
+                    "name": re.sub(r'[_\-]+', ' ', stem).strip() or stem,
+                    "description": "",
+                    "voice_id": "",
+                    "role": "character",
+                    "art_style": "",
+                    "image_path": str(img_p.relative_to(PROJECTS_DIR.parent)).replace("\\", "/"),
+                    "source_project_id": "",
+                    "created_at": img_p.stat().st_mtime,
+                    "updated_at": img_p.stat().st_mtime,
+                })
+
+        q = (query or "").strip().lower()
+        if q:
+            items = [
+                it for it in items
+                if q in it["name"].lower() or q in (it.get("description") or "").lower() or q in (it.get("art_style") or "").lower()
+            ]
+
+        items.sort(key=lambda it: float(it.get("updated_at") or 0), reverse=True)
+        return items
+
+    def save_character_to_library(
+        self,
+        char_data: Dict[str, Any],
+        source_project_id: Optional[str] = None,
+        overwrite: bool = True,
+    ) -> Dict[str, Any]:
+        """Saves or updates a character (metadata + cloned portrait) into `output/characters_library/`."""
+        CHARACTER_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+        c_name = (char_data.get("name") or "").strip()
+        if not c_name:
+            raise ValueError("Character name is required to save to library")
+
+        # Look up matching existing character in source_project_id if image_path wasn't supplied
+        raw_img = str(char_data.get("image_path") or "").replace("\\", "/").strip()
+        if source_project_id and not raw_img:
+            proj = self.get_project(source_project_id)
+            if proj:
+                cid_lookup = (char_data.get("id") or "").strip()
+                matched = next(
+                    (p for p in (proj.get("character_profiles") or [])
+                     if (cid_lookup and p.get("id") == cid_lookup) or (p.get("name") or "").strip().lower() == c_name.lower()),
+                    None
+                )
+                if matched:
+                    raw_img = str(matched.get("image_path") or "").replace("\\", "/").strip()
+                    if not (char_data.get("description") or "").strip() and matched.get("description"):
+                        char_data = dict(char_data)
+                        char_data["description"] = matched["description"]
+                    if not char_data.get("voice_id") and matched.get("voice_id"):
+                        char_data = dict(char_data)
+                        char_data["voice_id"] = matched["voice_id"]
+
+        existing_items = self.list_character_library()
+        existing_match = None
+        req_lib_id = self._safe_library_id(char_data.get("lib_id") or "")
+        if req_lib_id:
+            existing_match = next((it for it in existing_items if it["id"] == req_lib_id), None)
+        if not existing_match and overwrite:
+            existing_match = next((it for it in existing_items if it["name"].lower() == c_name.lower()), None)
+
+        lib_id = (existing_match["id"] if existing_match else req_lib_id) or (self._char_slug(c_name) or f"char_{uuid.uuid4().hex[:6]}")
+        lib_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', lib_id)
+        if not existing_match and (CHARACTER_LIBRARY_DIR / f"{lib_id}.json").exists():
+            n = 2
+            while (CHARACTER_LIBRARY_DIR / f"{lib_id}_{n}.json").exists():
+                n += 1
+            lib_id = f"{lib_id}_{n}"
+
+        img_rel = existing_match.get("image_path", "") if existing_match else ""
+        if raw_img:
+            src_img = PROJECTS_DIR.parent / raw_img
+            if src_img.exists():
+                ext = src_img.suffix.lower() if src_img.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp") else ".jpg"
+                dest_img = CHARACTER_LIBRARY_DIR / f"{lib_id}{ext}"
+                if src_img.resolve() != dest_img.resolve():
+                    shutil.copy2(src_img, dest_img)
+                img_rel = str(dest_img.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
+
+        now = time.time()
+        record = {
+            "id": lib_id,
+            "name": c_name,
+            "description": (char_data.get("description") or "").strip(),
+            "voice_id": str(char_data.get("voice_id") or "").strip(),
+            "role": char_data.get("role") or "character",
+            "art_style": (char_data.get("art_style") or (existing_match.get("art_style") if existing_match else "") or "").strip(),
+            "image_path": img_rel,
+            "source_project_id": source_project_id or (existing_match.get("source_project_id") if existing_match else "") or "",
+            "created_at": existing_match.get("created_at", now) if existing_match else now,
+            "updated_at": now,
+        }
+        self._atomic_write_json(CHARACTER_LIBRARY_DIR / f"{lib_id}.json", record)
+        return record
+
+    def save_all_project_characters_to_library(self, project_id: str) -> Dict[str, Any]:
+        """Saves every character in a project into the shared reusable character library."""
+        project = self.get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+        profiles = self.sync_character_profiles(project, sync_back_string=False)
+        saved = []
+        for p in profiles:
+            if not (p.get("name") or "").strip():
+                continue
+            saved.append(
+                self.save_character_to_library(
+                    {
+                        "id": p.get("id"),
+                        "name": p["name"],
+                        "description": p.get("description", ""),
+                        "voice_id": p.get("voice_id", ""),
+                        "image_path": p.get("image_path", ""),
+                        "role": p.get("role", "character"),
+                        "art_style": project.get("art_style", ""),
+                    },
+                    source_project_id=project_id,
+                )
+            )
+        return {
+            "saved_count": len(saved),
+            "items": saved,
+            "library_dir": str(CHARACTER_LIBRARY_DIR),
+        }
+
+    def delete_character_from_library(self, lib_id: str) -> bool:
+        """Removes a character JSON and its portrait image from `output/characters_library/`."""
+        safe_id = self._safe_library_id(lib_id)
+        if not safe_id:
+            return False
+        removed = False
+        meta_p = CHARACTER_LIBRARY_DIR / f"{safe_id}.json"
+        if meta_p.exists():
+            meta_p.unlink(missing_ok=True)
+            removed = True
+        for ext in (".jpg", ".jpeg", ".png", ".webp"):
+            img_p = CHARACTER_LIBRARY_DIR / f"{safe_id}{ext}"
+            if img_p.exists():
+                img_p.unlink(missing_ok=True)
+                removed = True
+        return removed
+
+    def import_library_characters_to_project(
+        self,
+        project_id: str,
+        lib_ids: list,
+        replace: bool = False,
+    ) -> Dict[str, Any]:
+        """Imports selected characters from the shared library into an existing project."""
+        all_items = {it["id"]: it for it in self.list_character_library()}
+        chosen = [all_items[lid] for lid in (lib_ids or []) if lid in all_items]
+        if not chosen:
+            raise ValueError("No valid library characters selected")
+        payload = [
+            {
+                "name": it["name"],
+                "description": it.get("description", ""),
+                "voice_id": it.get("voice_id", ""),
+                "image_path": it.get("image_path", ""),
+                "role": it.get("role", "character"),
+            }
+            for it in chosen
+        ]
+        return self.bulk_import_character_profiles(
+            project_id=project_id,
+            characters=payload,
+            replace=replace,
+            overwrite_images=True,
+        )
+
 
 
