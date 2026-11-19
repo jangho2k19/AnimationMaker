@@ -164,6 +164,9 @@ class ToggleVideoCharRefsRequest(BaseModel):
 class ToggleMultivoiceRequest(BaseModel):
     enable: Optional[bool] = None
 
+class DeleteDraftPortraitRequest(BaseModel):
+    image_path: str
+
 class ToggleSpeakerCameraRequest(BaseModel):
     enable: Optional[bool] = None
 
@@ -1535,6 +1538,25 @@ async def generate_draft_character_portrait(req: GenerateDraftCharacterPortraitR
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/characters/delete-draft-portrait")
+async def delete_draft_character_portrait(req: DeleteDraftPortraitRequest):
+    """Deletes a temporary Stage 1 draft portrait inside character_staging/ only (never touches characters_library/)."""
+    raw_rel = (req.image_path or "").strip()
+    if raw_rel.startswith("/media/"):
+        raw_rel = raw_rel[len("/media/"):]
+    raw_rel = raw_rel.lstrip("/\\")
+    if not raw_rel:
+        return {"status": "ok", "deleted": False}
+    staging_root = (Path(OUTPUT_DIR) / "character_staging").resolve()
+    target = (Path(OUTPUT_DIR) / raw_rel).resolve()
+    if not target.is_relative_to(staging_root) or target == staging_root:
+        raise HTTPException(status_code=403, detail="Only draft portraits inside character_staging can be deleted.")
+    deleted = False
+    if target.exists() and target.is_file():
+        target.unlink(missing_ok=True)
+        deleted = True
+    return {"status": "ok", "deleted": deleted}
+
 @app.post("/api/characters/parse-import")
 async def parse_characters_import(req: ParseCharactersImportRequest):
     """Uses AI (with smart text fallback) to parse character names and visual prompts from raw text."""
@@ -1744,9 +1766,9 @@ async def upsert_project_character(project_id: str, req: UpsertCharacterProfileR
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/projects/{project_id}/characters/{char_id}")
-async def delete_project_character(project_id: str, char_id: str):
+async def delete_project_character(project_id: str, char_id: str, keep_files: bool = False):
     try:
-        updated = pipeline.delete_character_profile(project_id, char_id)
+        updated = pipeline.delete_character_profile(project_id, char_id, delete_files=not keep_files)
         return {
             "status": "ok",
             "character_profiles": updated.get("character_profiles", []),

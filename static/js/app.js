@@ -480,6 +480,7 @@ class AniStoryApp {
     this.btnStage1OpenCharLibrary = document.getElementById("btnStage1OpenCharLibrary");
     this.btnStage1SaveAllToLibrary = document.getElementById("btnStage1SaveAllToLibrary");
     this.btnStage1PaintAllCharacters = document.getElementById("btnStage1PaintAllCharacters");
+    this.btnStage1ClearCharacters = document.getElementById("btnStage1ClearCharacters");
     this.btnStage1ToggleCharacters = document.getElementById("btnStage1ToggleCharacters");
     this.textStage1ToggleChar = document.getElementById("textStage1ToggleChar");
     this.stage1CharactersBody = document.getElementById("stage1CharactersBody");
@@ -701,6 +702,7 @@ class AniStoryApp {
     if (this.btnNewStoryFromStage2) {
       this.btnNewStoryFromStage2.addEventListener("click", () => {
         this.clearActiveProjectState();
+        this.resetStage1CharactersForNewStory();
         if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         this.inputIdeaPrompt.value = "";
         localStorage.removeItem("anistory_draft_prompt");
@@ -745,6 +747,7 @@ class AniStoryApp {
           this.trackedRenderIds.add(this.currentProject.id);
         }
         this.clearActiveProjectState();
+        this.resetStage1CharactersForNewStory();
         if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
         localStorage.removeItem("anistory_draft_prompt");
@@ -1458,6 +1461,7 @@ class AniStoryApp {
     // Cinema restart
     this.btnStartNewStory.addEventListener("click", () => {
       this.clearActiveProjectState();
+      this.resetStage1CharactersForNewStory();
       if (this.inputProjectTitle) this.inputProjectTitle.value = "";
       this.inputIdeaPrompt.value = "";
       localStorage.removeItem("anistory_draft_prompt");
@@ -1952,6 +1956,16 @@ class AniStoryApp {
     if (this.btnStage1PaintAllCharacters) {
       this.btnStage1PaintAllCharacters.addEventListener("click", () => this.paintAllStage1Characters(this.btnStage1PaintAllCharacters));
     }
+    if (this.btnStage1ClearCharacters) {
+      this.btnStage1ClearCharacters.addEventListener("click", () => {
+        if (!this.stage1Characters || this.stage1Characters.length === 0) {
+          this.showToast("Character list is already empty.");
+          return;
+        }
+        this.resetStage1CharactersForNewStory();
+        this.showToast("➖ Cleared characters from this story (Library items preserved)");
+      });
+    }
     if (this.btnImportProjectCharacters) {
       this.btnImportProjectCharacters.addEventListener("click", () => this.openCharacterImportModal("stage2"));
     }
@@ -2260,8 +2274,10 @@ class AniStoryApp {
       this.btnNewFilmFromModal.addEventListener("click", () => {
         this.modalProjects.classList.remove("active");
         this.clearActiveProjectState();
+        this.resetStage1CharactersForNewStory();
         if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         this.inputIdeaPrompt.value = "";
+        localStorage.removeItem("anistory_draft_prompt");
         this.switchStage(1);
         this.showToast("Ready to create a new animated story! 🎬");
       });
@@ -2871,6 +2887,17 @@ class AniStoryApp {
     }
   }
 
+  resetStage1CharactersForNewStory() {
+    this.stage1Characters = [];
+    this.isStage1CharsExpanded = false;
+    try {
+      localStorage.removeItem("anistory_stage1_characters");
+    } catch (e) {
+      console.warn("Could not clear stage1Characters from storage:", e);
+    }
+    this.renderStage1Characters();
+  }
+
   buildOptionalVoiceOptionsHtml(selectedVoiceId = "") {
     const selVal = selectedVoiceId === null || selectedVoiceId === undefined ? "" : String(selectedVoiceId);
     const voices = this.getAvailableVoices();
@@ -2929,7 +2956,8 @@ class AniStoryApp {
             <div style="display:flex; gap:6px; align-items:center;">
               <input type="text" class="styled-input stage1-char-name" value="${this.escapeHtml(char.name || "")}" placeholder="Tên nhân vật (VD: Tôn Ngộ Không, Bé An...)" style="flex:1; padding:6px 10px; font-size:12.5px; font-weight:600;">
               <button type="button" class="glass-btn secondary-btn btn-s1-save-lib" style="padding:4px 8px; font-size:11px; color:#fcd34d;" title="Lưu nhân vật vào Thư Viện dùng chung">💾</button>
-              <button type="button" class="glass-btn secondary-btn btn-s1-remove-char" style="padding:4px 8px; font-size:11px; color:#fca5a5;" title="Xóa nhân vật">🗑️</button>
+              <button type="button" class="glass-btn secondary-btn btn-s1-remove-char" style="padding:4px 9px; font-size:12px; font-weight:700; color:#fdba74;" title="Remove character from this story only (keeps Library & saved files)">−</button>
+              <button type="button" class="glass-btn secondary-btn btn-s1-delete-char" style="padding:4px 8px; font-size:11px; color:#fca5a5;" title="Delete character (also deletes temporary draft portrait)">🗑️</button>
             </div>
             <textarea class="styled-input stage1-char-desc" rows="2" placeholder="Mô tả ngoại hình (tóc, trang phục, độ tuổi, phụ kiện)..." style="padding:6px 10px; font-size:11.5px; resize:vertical;">${this.escapeHtml(char.description || "")}</textarea>
             <div style="display:flex; gap:6px; align-items:center;">
@@ -2951,6 +2979,7 @@ class AniStoryApp {
       const btnAudition = card.querySelector(".btn-s1-audition");
       const btnSaveLib = card.querySelector(".btn-s1-save-lib");
       const btnRemove = card.querySelector(".btn-s1-remove-char");
+      const btnDelete = card.querySelector(".btn-s1-delete-char");
 
       nameInput.addEventListener("input", () => {
         this.stage1Characters[idx].name = nameInput.value;
@@ -2985,9 +3014,35 @@ class AniStoryApp {
         }, btnSaveLib);
       });
       btnRemove.addEventListener("click", () => {
+        const removedName = nameInput.value.trim() || char.name || "Character";
         this.stage1Characters.splice(idx, 1);
         this.saveStage1CharactersToStorage();
         this.renderStage1Characters();
+        this.showToast(`➖ Removed "${removedName}" from this story`);
+      });
+      btnDelete.addEventListener("click", async () => {
+        const deletedName = nameInput.value.trim() || char.name || `Character ${idx + 1}`;
+        const imgPath = (char.image_path || "").replace(/\\/g, "/");
+        const isStagingFile = imgPath.includes("character_staging/");
+        const warnExtra = isStagingFile
+          ? "\n\nThis will also delete its temporary draft portrait file. (Shared Library characters are NOT affected.)"
+          : "\n\n(Shared Library characters are NOT affected.)";
+        if (!window.confirm(`Delete "${deletedName}"?${warnExtra}`)) return;
+        if (isStagingFile) {
+          try {
+            await fetch("/api/characters/delete-draft-portrait", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ image_path: imgPath })
+            });
+          } catch (e) {
+            console.warn("Draft portrait cleanup failed:", e);
+          }
+        }
+        this.stage1Characters.splice(idx, 1);
+        this.saveStage1CharactersToStorage();
+        this.renderStage1Characters();
+        this.showToast(`🗑️ Deleted "${deletedName}"`);
       });
       btnGen.addEventListener("click", () => this.generateStage1CharPortrait(idx, btnGen));
       btnUpload.addEventListener("click", () => fileInput.click());
@@ -3177,7 +3232,8 @@ class AniStoryApp {
             <input type="text" class="styled-input studio-char-name" value="${this.escapeHtml(charName)}" placeholder="Character Name" style="flex:1; padding:5px 9px; font-size:12.5px; font-weight:600;">
             <span class="tag-badge" style="font-size:10px; padding:2px 6px; ${cleanImg ? 'background:rgba(16,185,129,0.2); color:#6ee7b7;' : 'background:rgba(255,255,255,0.08); color:var(--text-muted);'}">${cleanImg ? "✓ Ref" : "No Ref"}</span>
             <button type="button" class="glass-btn secondary-btn btn-studio-save-lib" style="padding:4px 7px; font-size:11px; color:#fcd34d;" title="Lưu nhân vật vào Thư Viện dùng chung để tái sử dụng">💾</button>
-            <button type="button" class="glass-btn secondary-btn btn-studio-delete-char" style="padding:4px 7px; font-size:11px; color:#fca5a5;" title="Delete Character">🗑️</button>
+            <button type="button" class="glass-btn secondary-btn btn-studio-remove-char" style="padding:4px 8px; font-size:12px; font-weight:700; color:#fdba74;" title="Remove from this story (keeps portrait file &amp; Library)">−</button>
+            <button type="button" class="glass-btn secondary-btn btn-studio-delete-char" style="padding:4px 7px; font-size:11px; color:#fca5a5;" title="Delete character and its project portrait file">🗑️</button>
           </div>
           <textarea class="styled-input studio-char-desc" rows="2" placeholder="Visual description for consistent Image & Video prompts..." style="padding:5px 9px; font-size:11.5px; line-height:1.35; resize:vertical;">${this.escapeHtml(charDesc)}</textarea>
           <div style="display:flex; gap:6px; align-items:center;">
@@ -3199,6 +3255,7 @@ class AniStoryApp {
     const fileInput = card.querySelector(".input-studio-upload-img");
     const btnAudition = card.querySelector(".btn-studio-audition");
     const btnSaveLib = card.querySelector(".btn-studio-save-lib");
+    const btnRemove = card.querySelector(".btn-studio-remove-char");
     const btnDelete = card.querySelector(".btn-studio-delete-char");
 
     const syncUpdate = () => {
@@ -3243,7 +3300,12 @@ class AniStoryApp {
         source_project_id: this.currentProject?.id || ""
       }, btnSaveLib);
     });
-    btnDelete.addEventListener("click", () => this.deleteProjectCharacterProfile(charId, nameEl.value || charName, btnDelete));
+    btnRemove.addEventListener("click", () => this.deleteProjectCharacterProfile(charId, nameEl.value || charName, btnRemove, true));
+    btnDelete.addEventListener("click", () => {
+      const displayName = nameEl.value.trim() || charName;
+      if (!window.confirm(`Delete "${displayName}" from this project and remove its project portrait file?\n\n(Shared Library characters remain untouched.)`)) return;
+      this.deleteProjectCharacterProfile(charId, displayName, btnDelete, false);
+    });
 
     return card;
   }
@@ -3275,7 +3337,7 @@ class AniStoryApp {
     }
   }
 
-  async deleteProjectCharacterProfile(charId, charName, btnEl = null) {
+  async deleteProjectCharacterProfile(charId, charName, btnEl = null, keepFiles = false) {
     if (!this.currentProject || !charId) return;
     const oldText = btnEl ? btnEl.textContent : "";
     if (btnEl) {
@@ -3283,7 +3345,7 @@ class AniStoryApp {
       btnEl.textContent = "⏳";
     }
     try {
-      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(charId)}`, {
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(charId)}?keep_files=${keepFiles ? "true" : "false"}`, {
         method: "DELETE"
       });
       if (!resp.ok) {
@@ -3299,7 +3361,7 @@ class AniStoryApp {
         }
         this.renderCharacterVoiceCasting();
         this.renderStoryboardView();
-        this.showToast(`🗑️ Removed character "${charName}"`);
+        this.showToast(keepFiles ? `➖ Removed "${charName}" from this story (files kept)` : `🗑️ Deleted "${charName}"`);
       }
     } catch (err) {
       this.showToast(err.message, true);

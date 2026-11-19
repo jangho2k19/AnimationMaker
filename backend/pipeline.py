@@ -1756,8 +1756,8 @@ class AnimationPipeline:
         self.save_project(project)
         return self.get_project(project_id) or project
 
-    def delete_character_profile(self, project_id: str, char_id: str) -> Dict[str, Any]:
-        """Permanently removes a character profile, suppresses auto-resurrection from old dialogues, and cleans pins/voices."""
+    def delete_character_profile(self, project_id: str, char_id: str, delete_files: bool = True) -> Dict[str, Any]:
+        """Removes a character profile from the project story, suppresses auto-resurrection from old dialogues, and cleans pins/voices."""
         project = self.get_project(project_id)
         if not project:
             raise ValueError("Project not found")
@@ -1771,7 +1771,7 @@ class AnimationPipeline:
         if removed:
             removed_ids.add(removed["id"])
             removed_names_low.add(removed["name"].strip().lower())
-            if removed.get("image_path"):
+            if delete_files and removed.get("image_path"):
                 img_p = PROJECTS_DIR.parent / removed["image_path"]
                 still_used = any(
                     p.get("id") not in removed_ids and p.get("image_path") == removed["image_path"]
