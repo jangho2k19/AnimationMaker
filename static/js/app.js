@@ -428,6 +428,7 @@ class AniStoryApp {
     // Global Navigation Elements
     this.brandHomeLink = document.getElementById("brandHomeLink");
     this.btnNavHome = document.getElementById("btnNavHome");
+    this.btnNavNewStory = document.getElementById("btnNavNewStory");
     this.btnBackToHomeFromStage2 = document.getElementById("btnBackToHomeFromStage2");
     this.btnNewStoryFromStage2 = document.getElementById("btnNewStoryFromStage2");
     this.btnBackToBoardFromStage3 = document.getElementById("btnBackToBoardFromStage3");
@@ -695,19 +696,19 @@ class AniStoryApp {
       this.btnNavHome.addEventListener("click", returnHome);
     }
 
+    if (this.btnNavNewStory) {
+      this.btnNavNewStory.addEventListener("click", () => {
+        this.startNewStory("✨ Ready for a new story! Title, idea & characters cleared.");
+      });
+    }
+
     if (this.btnBackToHomeFromStage2) {
       this.btnBackToHomeFromStage2.addEventListener("click", returnHome);
     }
 
     if (this.btnNewStoryFromStage2) {
       this.btnNewStoryFromStage2.addEventListener("click", () => {
-        this.clearActiveProjectState();
-        this.resetStage1CharactersForNewStory();
-        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
-        this.inputIdeaPrompt.value = "";
-        localStorage.removeItem("anistory_draft_prompt");
-        this.switchStage(1);
-        this.showToast("Ready for a new story concept! 💡");
+        this.startNewStory("Ready for a new story concept! 💡");
       });
     }
 
@@ -746,13 +747,7 @@ class AniStoryApp {
         if (this.currentProject?.id) {
           this.trackedRenderIds.add(this.currentProject.id);
         }
-        this.clearActiveProjectState();
-        this.resetStage1CharactersForNewStory();
-        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
-        if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
-        localStorage.removeItem("anistory_draft_prompt");
-        this.switchStage(1);
-        this.showToast(`🚀 Film "${runningTitle}" is rendering in background! Starting fresh canvas.`);
+        this.startNewStory(`🚀 Film "${runningTitle}" is rendering in background! Starting fresh canvas.`);
         this.refreshActiveTasks();
       });
     }
@@ -1460,12 +1455,7 @@ class AniStoryApp {
 
     // Cinema restart
     this.btnStartNewStory.addEventListener("click", () => {
-      this.clearActiveProjectState();
-      this.resetStage1CharactersForNewStory();
-      if (this.inputProjectTitle) this.inputProjectTitle.value = "";
-      this.inputIdeaPrompt.value = "";
-      localStorage.removeItem("anistory_draft_prompt");
-      this.switchStage(1);
+      this.startNewStory("Ready for a new story concept! 💡");
     });
 
     // Settings Modal
@@ -2273,13 +2263,7 @@ class AniStoryApp {
     if (this.btnNewFilmFromModal) {
       this.btnNewFilmFromModal.addEventListener("click", () => {
         this.modalProjects.classList.remove("active");
-        this.clearActiveProjectState();
-        this.resetStage1CharactersForNewStory();
-        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
-        this.inputIdeaPrompt.value = "";
-        localStorage.removeItem("anistory_draft_prompt");
-        this.switchStage(1);
-        this.showToast("Ready to create a new animated story! 🎬");
+        this.startNewStory("Ready to create a new animated story! 🎬");
       });
     }
 
@@ -2896,6 +2880,29 @@ class AniStoryApp {
       console.warn("Could not clear stage1Characters from storage:", e);
     }
     this.renderStage1Characters();
+  }
+
+  startNewStory(toastMessage = "✨ Ready for a new story! Canvas & characters cleared.", { switchToPromptMode = true } = {}) {
+    this.clearActiveProjectState();
+    this.resetStage1CharactersForNewStory();
+    if (this.inputProjectTitle) this.inputProjectTitle.value = "";
+    if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
+    if (this.inputDirectPasteText) this.inputDirectPasteText.value = "";
+    localStorage.removeItem("anistory_draft_prompt");
+    if (this.promptMultiStoryBanner) this.promptMultiStoryBanner.style.display = "none";
+    if (this.pasteMultiStoryBanner) this.pasteMultiStoryBanner.style.display = "none";
+    if (this.deepAnalysisPreviewCard) this.deepAnalysisPreviewCard.style.display = "none";
+    this.lastDeepAnalysis = null;
+    this.switchStage(1);
+    if (switchToPromptMode && this.tabModePrompt) {
+      this.tabModePrompt.click();
+    }
+    if (this.inputIdeaPrompt && this.inputIdeaPrompt.offsetParent !== null) {
+      this.inputIdeaPrompt.focus();
+    }
+    if (toastMessage) {
+      this.showToast(toastMessage);
+    }
   }
 
   buildOptionalVoiceOptionsHtml(selectedVoiceId = "") {
