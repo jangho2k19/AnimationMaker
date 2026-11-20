@@ -2102,6 +2102,58 @@ class AnimationPipeline:
         items.sort(key=lambda it: float(it.get("updated_at") or 0), reverse=True)
         return items
 
+    def match_characters_with_library(self, characters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Matches analyzed character entries against `output/characters_library/` so existing
+        portraits, descriptions, and voices are reused automatically before creating new portraits.
+        """
+        lib_items = self.list_character_library()
+        if not characters:
+            return []
+
+        def _has_existing_img(item: Dict[str, Any]) -> bool:
+            rel = (item.get("image_path") or "").replace("\\", "/").strip()
+            return bool(rel and (PROJECTS_DIR.parent / rel).exists())
+
+        enriched: List[Dict[str, Any]] = []
+        for ch in characters:
+            if not isinstance(ch, dict) or not (ch.get("name") or "").strip():
+                continue
+            item = dict(ch)
+            c_name = item["name"].strip()
+            c_low = c_name.lower()
+
+            exact_hits = [it for it in lib_items if (it.get("name") or "").strip().lower() == c_low]
+            alias_hits = exact_hits or [
+                it for it in lib_items
+                if ScriptAgent.is_same_character_alias(c_name, it.get("name") or "", it.get("description") or "")
+            ]
+
+            matched = None
+            if alias_hits:
+                with_img = [it for it in alias_hits if _has_existing_img(it)]
+                matched = (with_img or alias_hits)[0]
+
+            if matched:
+                item["from_library"] = True
+                item["library_id"] = matched.get("id") or ""
+                if _has_existing_img(matched):
+                    item["image_path"] = matched["image_path"]
+                    if (matched.get("description") or "").strip():
+                        item["description"] = matched["description"].strip()
+                elif not (item.get("description") or "").strip() and (matched.get("description") or "").strip():
+                    item["description"] = matched["description"].strip()
+                if (matched.get("voice_id") or "").strip() and item.get("voice_id") != "none":
+                    item["voice_id"] = matched["voice_id"].strip()
+            else:
+                item["from_library"] = False
+                item["library_id"] = ""
+                item["image_path"] = (item.get("image_path") or "").strip()
+
+            enriched.append(item)
+
+        return enriched
+
     def save_character_to_library(
         self,
         char_data: Dict[str, Any],

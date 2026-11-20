@@ -167,6 +167,19 @@ class ToggleMultivoiceRequest(BaseModel):
 class DeleteDraftPortraitRequest(BaseModel):
     image_path: str
 
+class AnalyzeStoryCharactersRequest(BaseModel):
+    title: Optional[str] = ""
+    idea: Optional[str] = ""
+    art_style: Optional[str] = "ghibli"
+    language: Optional[str] = "auto"
+    narrator_voice: Optional[str] = ""
+    existing_characters: Optional[List[Dict[str, Any]]] = None
+    match_library: bool = True
+    max_characters: int = 8
+    ai_provider: Optional[str] = "gemini"
+    ai_model: Optional[str] = None
+    api_key: Optional[str] = None
+
 class ToggleSpeakerCameraRequest(BaseModel):
     enable: Optional[bool] = None
 
@@ -1579,6 +1592,47 @@ async def parse_characters_import(req: ParseCharactersImportRequest):
         "characters": res["characters"],
         "parser": res.get("parser", "ai"),
         "parser_note": res.get("parser_note", ""),
+    }
+
+@app.post("/api/characters/analyze-from-story")
+async def analyze_characters_from_story(req: AnalyzeStoryCharactersRequest):
+    """Analyzes the current Story Idea or Pasted Script, matches Shared Library characters, and casts optional voices."""
+    raw_idea = (req.idea or "").strip()
+    raw_title = (req.title or "").strip()
+    if not raw_idea and not raw_title:
+        raise HTTPException(status_code=400, detail="Please enter a Story Idea, Title, or Script first.")
+
+    agent = ScriptAgent(
+        api_key=req.api_key or pipeline.api_key,
+        provider=req.ai_provider or pipeline.ai_provider or "gemini",
+        model=req.ai_model or pipeline.ai_model,
+    )
+    res = await agent.analyze_characters_from_story(
+        idea=raw_idea,
+        title=raw_title,
+        art_style=req.art_style or "ghibli",
+        language=req.language or "auto",
+        narrator_voice=req.narrator_voice or "",
+        existing_characters=req.existing_characters,
+        max_characters=max(1, min(int(req.max_characters or 8), 16)),
+    )
+    chars = res.get("characters", [])
+    if not chars:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not identify characters from the provided story text."
+        )
+    if req.match_library:
+        chars = pipeline.match_characters_with_library(chars)
+
+    matched_lib_count = sum(1 for c in chars if c.get("from_library"))
+    return {
+        "status": "ok",
+        "characters": chars,
+        "parser": res.get("parser", "ai"),
+        "parser_note": res.get("parser_note", ""),
+        "language": res.get("language", "en"),
+        "matched_library_count": matched_lib_count,
     }
 
 @app.post("/api/characters/import-txt")

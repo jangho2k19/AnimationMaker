@@ -476,6 +476,7 @@ class AniStoryApp {
     this.textMultivoiceStage2 = document.getElementById("textMultivoiceStage2");
     this.stage1CharactersPanel = document.getElementById("stage1CharactersPanel");
     this.badgeStage1CharCount = document.getElementById("badgeStage1CharCount");
+    this.btnStage1AnalyzeCreateCharacters = document.getElementById("btnStage1AnalyzeCreateCharacters");
     this.btnStage1AddCharacter = document.getElementById("btnStage1AddCharacter");
     this.btnStage1ImportCharacters = document.getElementById("btnStage1ImportCharacters");
     this.btnStage1OpenCharLibrary = document.getElementById("btnStage1OpenCharLibrary");
@@ -1862,6 +1863,10 @@ class AniStoryApp {
           this.textStage1ToggleChar.textContent = this.isStage1CharsExpanded ? "▲ Collapse" : "▼ Expand";
         }
       });
+    }
+
+    if (this.btnStage1AnalyzeCreateCharacters) {
+      this.btnStage1AnalyzeCreateCharacters.addEventListener("click", () => this.analyzeAndCreateStage1Characters(this.btnStage1AnalyzeCreateCharacters));
     }
 
     if (this.btnStage1AddCharacter) {
@@ -3468,6 +3473,188 @@ class AniStoryApp {
       } else {
         this.showToast(`Không thể tạo ảnh nhân vật (${failedCount} lỗi). Kiểm tra API key / chế độ vẽ.`, true);
       }
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = oldHtml;
+      }
+    }
+  }
+
+  async analyzeAndCreateStage1Characters(btnEl) {
+    const isPasteMode = this.tabModePaste?.classList.contains("active");
+    const isAdMode = this.tabModeAd?.classList.contains("active");
+
+    let titleText = (this.inputProjectTitle?.value || "").trim();
+    let ideaText = "";
+    if (isPasteMode) {
+      ideaText = (this.inputDirectPasteText?.value || "").trim();
+    } else if (isAdMode) {
+      const pName = (this.inputAdProductName?.value || "").trim();
+      const pBrand = (this.inputAdBrand?.value || "").trim();
+      const pDesc = (this.textareaAdDesc?.value || "").trim();
+      const pAudience = (this.selectAdAudience?.value || "").trim();
+      titleText = titleText || pName;
+      ideaText = [pBrand ? `Brand: ${pBrand}` : "", pName ? `Product: ${pName}` : "", pDesc, pAudience ? `Audience: ${pAudience}` : ""]
+        .filter(Boolean)
+        .join(". ");
+    } else {
+      ideaText = (this.inputIdeaPrompt?.value || "").trim();
+    }
+
+    if (!ideaText && !titleText) {
+      this.showToast("Please enter a Story Idea, Script, or Title first so AI can analyze & create characters! ✨", true);
+      if (isPasteMode) this.inputDirectPasteText?.focus();
+      else if (isAdMode) (this.inputAdProductName || this.textareaAdDesc)?.focus();
+      else this.inputIdeaPrompt?.focus();
+      return;
+    }
+
+    const oldHtml = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = `<span>⏳ Analyzing story...</span>`;
+    }
+
+    const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
+    const modelVal = this.selectAiModel ? this.selectAiModel.value : "";
+    const apiKey = this.getEffectiveApiKey(provider);
+    const langVal = this.selectLanguage ? this.selectLanguage.value : "auto";
+    const narratorVoice = this.selectVoice ? this.selectVoice.value : "";
+
+    try {
+      const resp = await fetch("/api/characters/analyze-from-story", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: titleText,
+          idea: ideaText,
+          art_style: this.selectedStyleKey || "ghibli",
+          language: langVal || "auto",
+          narrator_voice: narratorVoice || "",
+          existing_characters: this.stage1Characters || [],
+          match_library: true,
+          max_characters: 8,
+          ai_provider: provider,
+          ai_model: modelVal || null,
+          api_key: apiKey
+        })
+      });
+      if (!resp.ok) {
+        const msg = await AniStoryApp.parseErrorResponse(resp, "Character analysis failed");
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      const analyzedChars = Array.isArray(data.characters) ? data.characters : [];
+      if (analyzedChars.length === 0) {
+        this.showToast("No characters could be identified from the story text.", true);
+        return;
+      }
+
+      if (!Array.isArray(this.stage1Characters)) {
+        this.stage1Characters = [];
+      }
+      const existingByName = new Map();
+      this.stage1Characters.forEach((c) => {
+        const k = (c.name || "").trim().toLowerCase();
+        if (k) existingByName.set(k, c);
+      });
+
+      const missingPortraitTargets = [];
+      analyzedChars.forEach((c) => {
+        const cleanName = (c.name || "").trim();
+        if (!cleanName) return;
+        const k = cleanName.toLowerCase();
+        let cardObj;
+        if (existingByName.has(k)) {
+          cardObj = existingByName.get(k);
+          if (!(cardObj.description || "").trim() && c.description) {
+            cardObj.description = c.description;
+          }
+          if (!(cardObj.voice_id || "").trim() && c.voice_id) {
+            cardObj.voice_id = c.voice_id;
+          }
+          if (!(cardObj.image_path || "").trim() && c.image_path) {
+            cardObj.image_path = c.image_path;
+          }
+          if (c.from_library && !cardObj.library_id) {
+            cardObj.from_library = true;
+            cardObj.library_id = c.library_id || "";
+          }
+        } else {
+          cardObj = {
+            id: `char_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            name: cleanName,
+            description: c.description || "",
+            voice_id: c.voice_id || "",
+            image_path: c.image_path || "",
+            role: c.role || "supporting",
+            from_library: !!c.from_library,
+            library_id: c.library_id || ""
+          };
+          this.stage1Characters.push(cardObj);
+          existingByName.set(k, cardObj);
+        }
+        if (!(cardObj.image_path || "").trim()) {
+          missingPortraitTargets.push(cardObj);
+        }
+      });
+
+      this.isStage1CharsExpanded = true;
+      this.saveStage1CharactersToStorage();
+      this.renderStage1Characters();
+
+      const libMatched = Number(data.matched_library_count || 0);
+      const libNote = libMatched > 0 ? ` (${libMatched} from Library)` : "";
+
+      if (missingPortraitTargets.length > 0 && (this.imageMode || "gemini") !== "manual") {
+        let paintedCount = 0;
+        let failedCount = 0;
+        for (let i = 0; i < missingPortraitTargets.length; i++) {
+          const ch = missingPortraitTargets[i];
+          if (btnEl) {
+            btnEl.innerHTML = `<span>🎨 Creating ${i + 1}/${missingPortraitTargets.length}...</span>`;
+          }
+          try {
+            const pResp = await fetch("/api/characters/generate-draft-portrait", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: ch.id,
+                name: (ch.name || `Character ${i + 1}`).trim(),
+                description: (ch.description || "").trim(),
+                art_style: this.selectedStyleKey || "ghibli",
+                image_mode: this.imageMode || "gemini",
+                ai_provider: provider,
+                api_key: apiKey
+              })
+            });
+            if (!pResp.ok) {
+              const pMsg = await AniStoryApp.parseErrorResponse(pResp, "Portrait generation failed");
+              throw new Error(pMsg);
+            }
+            const pData = await pResp.json();
+            ch.image_path = pData.image_path || "";
+            this.saveStage1CharactersToStorage();
+            this.renderStage1Characters();
+            paintedCount++;
+          } catch (pErr) {
+            failedCount++;
+            console.warn(`Analyze & Create portrait failed for ${ch.name}:`, pErr);
+          }
+        }
+        if (failedCount === 0) {
+          this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote} & created ${paintedCount} portrait(s)!`);
+        } else {
+          this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote}: created ${paintedCount} portrait(s), ${failedCount} failed.`, true);
+        }
+      } else if (missingPortraitTargets.length > 0) {
+        this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote}. Manual mode active — paint or upload portraits when ready!`);
+      } else {
+        this.showToast(`✨ Analyzed ${analyzedChars.length} characters — all portraits ready${libNote}!`);
+      }
+    } catch (e) {
+      this.showToast(e.message, true);
     } finally {
       if (btnEl) {
         btnEl.disabled = false;

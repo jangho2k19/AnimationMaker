@@ -4,7 +4,7 @@ import json
 import random
 import difflib
 import httpx
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 class ScriptAgent:
     def __init__(self, api_key: str = None, provider: str = "gemini", model: str = None):
@@ -4113,6 +4113,305 @@ RAW CHARACTER PROMPT TEXT:
             "characters": fallback_chars,
             "parser": "heuristic",
             "parser_note": parser_note,
+        }
+
+    @classmethod
+    def analyze_characters_from_story_heuristic(
+        cls,
+        idea: str,
+        title: str = "",
+        art_style: str = "ghibli",
+        language: str = "en",
+        max_characters: int = 8,
+    ) -> List[Dict[str, Any]]:
+        """
+        Extracts story characters, visual portrait descriptions, and roles heuristically from
+        a raw story idea, narrative prose, or pasted script when offline or as AI fallback.
+        """
+        from backend.config import ART_STYLES
+
+        raw_idea = (idea or "").strip()
+        raw_title = (title or "").strip()
+        if not raw_idea and not raw_title:
+            return []
+
+        combined_text = f"{raw_title}\n{raw_idea}".strip()
+        effective_lang = cls.detect_language(combined_text, fallback=language or "en")
+        style_info = ART_STYLES.get(art_style, ART_STYLES.get("ghibli", {}))
+        style_name = style_info.get("name", "Studio Ghibli 2D")
+
+        candidates: List[Dict[str, Any]] = []
+
+        def _add_candidate(raw_name: str, desc_val: str = "", role_val: str = "supporting", voice_val: str = "", hint_val: str = ""):
+            name_clean = re.sub(r'^\s*(?:\d+[\.\)\-]\s*|[-*•]+\s*)', '', (raw_name or "")).strip(' :,-"\'“”()[]')
+            if (
+                not name_clean
+                or name_clean.lower() in ("narrator", "người kể chuyện", "character", "nhân vật", "none", "n/a")
+                or cls.is_non_character_label(name_clean)
+                or len(name_clean.split()) > 6
+            ):
+                return
+            for existing in candidates:
+                if cls.is_same_character_alias(name_clean, existing["name"], existing.get("description", "")):
+                    if len((desc_val or "").strip()) > len(existing.get("description") or ""):
+                        existing["description"] = desc_val.strip()
+                    if voice_val and not existing.get("voice_id"):
+                        existing["voice_id"] = voice_val
+                    if hint_val and not existing.get("voice_hint"):
+                        existing["voice_hint"] = hint_val
+                    return
+            candidates.append({
+                "name": name_clean,
+                "description": (desc_val or "").strip(),
+                "role": role_val if role_val in ("lead", "supporting") else "supporting",
+                "voice_id": voice_val,
+                "voice_hint": hint_val,
+            })
+
+        # 1. Structured pasted storyboard if recognizable
+        imported = cls.parse_imported_storyboard(raw_idea, allow_narrative_fallback=False) if raw_idea else None
+        if imported:
+            chars_str = imported.get("characters") or ""
+            for entry in cls.split_characters_summary(chars_str):
+                if ":" in entry:
+                    nm, ds = entry.split(":", 1)
+                    _add_candidate(nm, ds)
+                else:
+                    _add_candidate(entry)
+            for sc in imported.get("scenes", []) or []:
+                for d in (sc.get("dialogues") or []):
+                    spk = cls.clean_speaker_name((d.get("speaker") or "").strip(), [c["name"] for c in candidates])
+                    if spk:
+                        _add_candidate(spk)
+
+        # 2. Deep-analysis character blueprints & dialogue extraction
+        bp = cls.deep_analyze_story_input(
+            idea=raw_idea or raw_title,
+            title=raw_title,
+            art_style=art_style or "ghibli",
+            language=effective_lang,
+        )
+        for entry in cls.split_characters_summary(bp.get("characters_blueprint") or ""):
+            if ":" in entry:
+                nm, ds = entry.split(":", 1)
+                _add_candidate(nm, ds)
+            else:
+                _add_candidate(entry)
+
+        for d in (cls.extract_story_dialogues(combined_text) or []):
+            spk = cls.clean_speaker_name((d.get("speaker") or "").strip(), [c["name"] for c in candidates])
+            if spk:
+                _add_candidate(spk)
+
+        # 3. Classic Vietnamese/English role & proper-name discovery when fewer than 2 candidates found
+        if len(candidates) < 2:
+            en_role_re = re.compile(
+                r'\b(?:a|an|the)?\s*((?:lonely|old|young|little|tiny|brave|wise|cute|cyberpunk|ancient|magical|curious|friendly|wicked|greedy)\s+)?'
+                r'(clockmaker|detective|hummingbird|humming-bird|kitten|cat|puppy|dog|rabbit|turtle|fox|owl|raven|forest spirit|traveler|wizard|witch|dragon|knight|king|queen|prince|princess|monk|baker|inventor|astronaut|farmer|villager|fairy|robot|shepherd|wolf|bear|mouse|lion)\b',
+                re.IGNORECASE,
+            )
+            for m in en_role_re.finditer(combined_text):
+                adj = (m.group(1) or "").strip()
+                noun = (m.group(2) or "").strip()
+                if noun:
+                    label = f"{adj} {noun}".strip().title()
+                    _add_candidate(label)
+
+        if len(candidates) < 2:
+            stop_proper = {
+                "một", "ngày", "khi", "trong", "sau", "nhưng", "tuy", "nếu", "bỗng", "thế",
+                "cảnh", "scene", "the", "this", "that", "then", "when", "once", "there",
+                "one", "however", "suddenly", "meanwhile", "later", "after", "before",
+                "under", "over", "chương", "chapter", "truyện", "story", "tập",
+            }
+            proper_re = re.compile(
+                r'(?<![.!?]\s)\b([A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲÝỴỶỸ]'
+                r'[a-zàáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỵỷỹ]+'
+                r'(?:\s+[A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲÝỴỶỸ]'
+                r'[a-zàáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỵỷỹ]+){1,3})\b'
+            )
+            for m in proper_re.finditer(combined_text):
+                cand_name = m.group(1).strip()
+                first_w = cand_name.split()[0].lower()
+                if first_w in stop_proper or len(cand_name) < 4:
+                    continue
+                _add_candidate(cand_name)
+
+        if not candidates:
+            fallback_name = raw_title or "Main Protagonist"
+            _add_candidate(fallback_name, role_val="lead")
+
+        trimmed = candidates[:max(1, int(max_characters or 8))]
+        for idx, c in enumerate(trimmed):
+            c["role"] = "lead" if idx < 2 and (idx == 0 or len(trimmed) > 2) else "supporting"
+            desc = (c.get("description") or "").strip()
+            if not desc:
+                desc = (
+                    f"Full-body character portrait of {c['name']}, expressive face, distinctive hair and signature costume fitting the story, "
+                    f"centered full-body stance, clean simple background, rendered in {style_name} style, no text, no watermark."
+                )
+            elif "full-body" not in desc.lower() and "portrait" not in desc.lower():
+                desc = (
+                    f"Full-body character portrait of {c['name']}, {desc}, "
+                    f"centered composition, clean simple background, {style_name} style, no text, no watermark."
+                )
+            c["description"] = desc
+
+        return trimmed
+
+    async def analyze_characters_from_story(
+        self,
+        idea: str,
+        title: str = "",
+        art_style: str = "ghibli",
+        language: str = "auto",
+        narrator_voice: str = "",
+        existing_characters: Optional[List[Dict[str, Any]]] = None,
+        max_characters: int = 8,
+    ) -> Dict[str, Any]:
+        """
+        Uses AI (with smart heuristic fallback) to analyze a story idea or pasted script
+        and generate a clean cast list with vivid visual portrait prompts & optional auto-cast voices.
+        """
+        from backend.config import ART_STYLES
+
+        raw_idea = (idea or "").strip()
+        raw_title = (title or "").strip()
+        if not raw_idea and not raw_title:
+            return {"characters": [], "parser": "empty", "parser_note": "", "language": "en"}
+
+        lang_in = "" if (language or "auto").lower() in ("auto", "") else language
+        effective_lang = self.detect_language(f"{raw_title} {raw_idea}", fallback=lang_in or "en", voice=narrator_voice or "")
+
+        style_info = ART_STYLES.get(art_style, ART_STYLES.get("ghibli", {}))
+        style_name = style_info.get("name", art_style or "Studio Ghibli 2D")
+        style_desc = style_info.get("description", "")
+
+        existing_names = [
+            (c.get("name") or "").strip()
+            for c in (existing_characters or [])
+            if isinstance(c, dict) and (c.get("name") or "").strip()
+        ]
+        existing_hint = (
+            f"\nEXISTING STAGE 1 CHARACTER NAMES (reuse exact canonical spelling if describing the same character):\n- "
+            + "\n- ".join(existing_names)
+            if existing_names
+            else ""
+        )
+
+        clipped_story = f"Title: {raw_title}\n\n{raw_idea}".strip()[:24000]
+        prompt = f"""You are a senior Animation Character Casting & Visual Bible Designer.
+Analyze the user's story / script carefully and create the official cast list of up to {max_characters} key visual characters needed to animate this story.
+
+CRITICAL RULES:
+1. Keep `name` clean and canonical in the story's language (NEVER include Narrator, camera directions, scene labels, body-part headers, or action verbs in the name).{existing_hint}
+2. Write `description` as a detailed, self-contained ENGLISH full-body character reference portrait prompt suitable for image generation in the target art style: "{style_name}" ({style_desc}).
+   Include: species/age, distinctive facial features & expression, hair style/color, exact signature outfit & color palette, iconic prop/accessory, full-body centered standing pose, clean simple background, no text, no watermark.
+3. Set `role` to `"lead"` for main protagonists and `"supporting"` for secondary characters.
+4. Provide accurate `gender` (`"male"`, `"female"`, or `"neutral"`), `age_group` (`"child"`, `"young_adult"`, `"adult"`, or `"elder"`), and `voice_hint` (`"none"` ONLY if explicitly mute/non-speaking animal or object; otherwise descriptive tone like `"warm female"`, `"heroic male"`, `"lively child"`).
+5. Return ONLY valid JSON matching this schema:
+{{
+  "characters": [
+    {{
+      "name": "Character Name",
+      "description": "Full-body character portrait of ..., centered full-body pose, clean simple background, {style_name} style, no text, no watermark.",
+      "role": "lead",
+      "gender": "female",
+      "age_group": "young_adult",
+      "voice_hint": "warm expressive female"
+    }}
+  ]
+}}
+
+STORY / SCRIPT TO ANALYZE:
+\"\"\"
+{clipped_story}
+\"\"\"
+"""
+
+        parsed_chars: List[Dict[str, Any]] = []
+        parser_mode = "heuristic"
+        parser_note = ""
+
+        if (self.provider or "").lower() not in ("builtin", "offline", "architect"):
+            try:
+                parsed = await self._dispatch_llm_request(prompt)
+                raw_list = None
+                if isinstance(parsed, dict):
+                    raw_list = parsed.get("characters") or parsed.get("cast") or parsed.get("profiles")
+                    if not raw_list and isinstance(parsed.get("scenes"), list):
+                        sc = parsed["scenes"]
+                        if sc and isinstance(sc[0], dict) and any(k in sc[0] for k in ("name", "character_name", "ten", "tên")):
+                            raw_list = sc
+                if isinstance(raw_list, list) and raw_list:
+                    for item in raw_list:
+                        item_dict = item if isinstance(item, dict) else {"name": str(item)}
+                        norm = self._normalize_parsed_character(item_dict)
+                        if not norm or self.is_non_character_label(norm["name"]):
+                            continue
+                        if any(self.is_same_character_alias(norm["name"], ex["name"], ex.get("description", "")) for ex in parsed_chars):
+                            continue
+                        norm["gender"] = str(item_dict.get("gender") or "").strip().lower()
+                        norm["age_group"] = str(item_dict.get("age_group") or "").strip().lower()
+                        parsed_chars.append(norm)
+                        if len(parsed_chars) >= max_characters:
+                            break
+                    if parsed_chars:
+                        parser_mode = "ai"
+            except Exception as err:
+                parser_note = str(err)
+                print(f"⚠️ AI character story analysis fell back to heuristic analyzer: {err}")
+
+        if not parsed_chars:
+            parsed_chars = self.analyze_characters_from_story_heuristic(
+                idea=raw_idea,
+                title=raw_title,
+                art_style=art_style,
+                language=effective_lang,
+                max_characters=max_characters,
+            )
+            parser_mode = "heuristic"
+
+        # Auto-cast optional voice IDs matching language, gender & age archetype
+        summary_chunks = []
+        silent_existing = {}
+        for ch in parsed_chars:
+            cues = " ".join(x for x in [ch.get("description", ""), ch.get("gender", ""), ch.get("age_group", ""), ch.get("voice_hint", "")] if x).replace("|", ";")
+            summary_chunks.append(f"{ch['name'].replace('|', '/')}: {cues}")
+            if ch.get("voice_id") == "none":
+                silent_existing[ch["name"]] = "none"
+
+        voice_map = ScriptAgent.auto_assign_character_voices(
+            characters_str=" | ".join(summary_chunks),
+            scenes=[],
+            language=effective_lang,
+            narrator_voice=narrator_voice or None,
+            existing_voices=silent_existing or None,
+        )
+
+        final_chars: List[Dict[str, Any]] = []
+        for ch in parsed_chars:
+            matched_voice = ch.get("voice_id") or ""
+            if matched_voice != "none":
+                matched_voice = voice_map.get(ch["name"], "")
+                if not matched_voice:
+                    matched_voice = next(
+                        (v for k, v in voice_map.items() if k != "Narrator" and self.is_same_character_alias(ch["name"], k)),
+                        "",
+                    )
+            final_chars.append({
+                "name": ch["name"],
+                "description": ch.get("description", ""),
+                "role": ch.get("role", "supporting"),
+                "voice_id": matched_voice,
+                "voice_hint": ch.get("voice_hint", ""),
+            })
+
+        return {
+            "characters": final_chars,
+            "parser": parser_mode,
+            "parser_note": parser_note,
+            "language": effective_lang,
         }
 
     @staticmethod
