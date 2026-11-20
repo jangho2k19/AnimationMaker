@@ -5,13 +5,15 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 WshShell.CurrentDirectory = scriptDir
 
-' 1. Stop any running AniStory AI agent processes (port 8088 listeners + run.py / backend.app:app reloader & workers)
+' 1. Stop any running AniStory AI agent processes (ports 8088-8097 listeners + run.py / backend.app:app reloader & orphaned multiprocessing workers)
 stopCmd = "powershell -NoProfile -WindowStyle Hidden -Command """ & _
-    "$pids = @(); " & _
-    "Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { if ($_.OwningProcess -gt 4) { $pids += $_.OwningProcess } }; " & _
-    "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'python*' -and $_.CommandLine -match 'run\.py|backend\.app:app' } | ForEach-Object { $pids += $_.ProcessId }; " & _
-    "$pids | Select-Object -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; " & _
-    "for ($i = 0; $i -lt 20; $i++) { if (-not (Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 250 }" & _
+    "$pids = New-Object System.Collections.Generic.HashSet[int]; " & _
+    "Get-NetTCPConnection -LocalPort (8088..8097) -State Listen -ErrorAction SilentlyContinue | ForEach-Object { if ($_.OwningProcess -gt 4) { [void]$pids.Add([int]$_.OwningProcess) } }; " & _
+    "$pyProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'python*' }); " & _
+    "foreach ($p in $pyProcs) { if ($p.CommandLine -match '(?<![a-zA-Z0-9_])run\.py\b|backend\.app:app' -and $p.CommandLine -notmatch 'flowkit[\\/]run_background\.py') { [void]$pids.Add([int]$p.ProcessId) } }; " & _
+    "do { $added = $false; foreach ($p in $pyProcs) { $pidInt = [int]$p.ProcessId; if (-not $pids.Contains($pidInt)) { $isChild = $pids.Contains([int]$p.ParentProcessId); if (-not $isChild -and $p.CommandLine -match 'parent_pid=(\d+)') { $isChild = $pids.Contains([int]$Matches[1]) }; if ($isChild) { [void]$pids.Add($pidInt); $added = $true } } } } while ($added); " & _
+    "foreach ($targetPid in $pids) { Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue }; " & _
+    "for ($i = 0; $i -lt 24; $i++) { if (-not (Get-NetTCPConnection -LocalPort (8088..8097) -State Listen -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 250 }" & _
     """"
 WshShell.Run stopCmd, 0, True
 
