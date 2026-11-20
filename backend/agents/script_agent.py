@@ -4643,9 +4643,9 @@ RAW CHARACTER PROMPT TEXT:
         tailored screenplays and narrative beats tailored to the story topic.
         """
         clean_idea_raw = idea.strip()
-        parsed_stories = ScriptAgent.split_multi_story_text(clean_idea_raw)
         extracted_heading_title = ""
-        if parsed_stories:
+        parsed_stories = ScriptAgent.split_multi_story_text(clean_idea_raw)
+        if len(parsed_stories) == 1:
             extracted_heading_title = parsed_stories[0].get("title", "").strip()
             if parsed_stories[0].get("idea"):
                 clean_idea_raw = parsed_stories[0]["idea"].strip()

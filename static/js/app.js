@@ -637,10 +637,6 @@ class AniStoryApp {
     this.btnRunBatchQueueStep1To4 = document.getElementById("btnRunBatchQueueStep1To4");
     this.textBtnRunBatchQueue = document.getElementById("textBtnRunBatchQueue");
     this.batchDetectHint = document.getElementById("batchDetectHint");
-    this.promptMultiStoryBanner = document.getElementById("promptMultiStoryBanner");
-    this.textPromptMultiStoryCount = document.getElementById("textPromptMultiStoryCount");
-    this.btnPromptQueueDetectedStories = document.getElementById("btnPromptQueueDetectedStories");
-    this.btnPromptAutoRunDetectedStories = document.getElementById("btnPromptAutoRunDetectedStories");
     this.pasteMultiStoryBanner = document.getElementById("pasteMultiStoryBanner");
     this.textPasteMultiStoryCount = document.getElementById("textPasteMultiStoryCount");
     this.btnPasteQueueDetectedStories = document.getElementById("btnPasteQueueDetectedStories");
@@ -1196,27 +1192,12 @@ class AniStoryApp {
           this.inputIdeaPrompt?.focus();
           return;
         }
-        const multiDetected = this.parseBatchInputText(idea, "auto", true);
-        if (multiDetected.length >= 2) {
-          this.addItemsToBatchQueue(multiDetected);
-          if (this.inputProjectTitle) this.inputProjectTitle.value = "";
-          if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
-          localStorage.removeItem("anistory_draft_prompt");
-          this.updateLiveMultiStoryDetection();
-          this.showToast(`📚 Detected & added ${multiDetected.length} stories to Batch Queue (${this.batchQueue.length} total)!`);
-          return;
-        }
-        const singleParsed = multiDetected[0] || { title, idea };
-        this.addItemsToBatchQueue([{ title: title || singleParsed.title || "", idea: singleParsed.idea || idea }]);
+        this.addItemsToBatchQueue([{ title, idea }]);
         if (this.inputProjectTitle) this.inputProjectTitle.value = "";
         if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
         localStorage.removeItem("anistory_draft_prompt");
-        this.updateLiveMultiStoryDetection();
-        this.showToast(`➕ Added to Batch Queue (${this.batchQueue.length} total)!`);
+        this.showToast(`➕ Added story to Batch Queue (${this.batchQueue.length} total)!`);
       });
-    }
-    if (this.inputIdeaPrompt) {
-      this.inputIdeaPrompt.addEventListener("input", () => this.updateLiveMultiStoryDetection());
     }
     if (this.inputDirectPasteText) {
       this.inputDirectPasteText.addEventListener("input", () => this.updateLiveMultiStoryDetection());
@@ -1230,37 +1211,6 @@ class AniStoryApp {
     if (this.chkBatchAutoStart) {
       this.chkBatchAutoStart.addEventListener("change", (e) => {
         localStorage.setItem("anistory_batch_autostart", e.target.checked ? "true" : "false");
-      });
-    }
-    if (this.btnPromptQueueDetectedStories) {
-      this.btnPromptQueueDetectedStories.addEventListener("click", async () => {
-        const raw = this.inputIdeaPrompt?.value?.trim() || "";
-        const detected = this.parseBatchInputText(raw, "auto", true);
-        if (detected.length >= 2) {
-          this.addItemsToBatchQueue(detected);
-          if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
-          localStorage.removeItem("anistory_draft_prompt");
-          this.updateLiveMultiStoryDetection();
-          if (this.tabModeBatch) this.tabModeBatch.click();
-          this.showToast(`📚 Queued ${detected.length} detected stories into Batch Story Queue!`);
-          if (!this.chkBatchAutoStart || this.chkBatchAutoStart.checked) {
-            await this.runBatchStoryQueueStep1To4();
-          }
-        }
-      });
-    }
-    if (this.btnPromptAutoRunDetectedStories) {
-      this.btnPromptAutoRunDetectedStories.addEventListener("click", async () => {
-        const raw = this.inputIdeaPrompt?.value?.trim() || "";
-        const detected = this.parseBatchInputText(raw, "auto", true);
-        if (detected.length >= 2) {
-          this.addItemsToBatchQueue(detected);
-          if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
-          localStorage.removeItem("anistory_draft_prompt");
-          this.updateLiveMultiStoryDetection();
-          if (this.tabModeBatch) this.tabModeBatch.click();
-          await this.runBatchStoryQueueStep1To4();
-        }
       });
     }
     if (this.btnPasteQueueDetectedStories) {
@@ -2889,7 +2839,6 @@ class AniStoryApp {
     if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
     if (this.inputDirectPasteText) this.inputDirectPasteText.value = "";
     localStorage.removeItem("anistory_draft_prompt");
-    if (this.promptMultiStoryBanner) this.promptMultiStoryBanner.style.display = "none";
     if (this.pasteMultiStoryBanner) this.pasteMultiStoryBanner.style.display = "none";
     if (this.deepAnalysisPreviewCard) this.deepAnalysisPreviewCard.style.display = "none";
     this.lastDeepAnalysis = null;
@@ -5293,27 +5242,6 @@ ${isAutoScenes
       this.showToast("Please enter a story idea or choose a quick spark! 💡", true);
       this.inputIdeaPrompt.focus();
       return false;
-    }
-
-    // Detect if the user pasted multiple stories into Option A (only when triggered directly, not from inside the batch loop)
-    if (!fromAutoWorkflow) {
-      const detectedStories = this.parseBatchInputText(idea, "auto", true);
-      if (detectedStories.length >= 2) {
-        this.addItemsToBatchQueue(detectedStories);
-        this.inputIdeaPrompt.value = "";
-        localStorage.removeItem("anistory_draft_prompt");
-        if (this.inputProjectTitle) this.inputProjectTitle.value = "";
-        this.updateLiveMultiStoryDetection();
-        if (this.tabModeBatch) this.tabModeBatch.click();
-        this.showToast(`📚 Detected ${detectedStories.length} stories! Automatically producing each film from Step 1 → Step 4 one-by-one...`);
-        await this.runBatchStoryQueueStep1To4();
-        return true;
-      } else if (detectedStories.length === 1 && detectedStories[0].title) {
-        idea = detectedStories[0].idea || idea;
-        if (this.inputProjectTitle && !this.inputProjectTitle.value.trim()) {
-          this.inputProjectTitle.value = detectedStories[0].title;
-        }
-      }
     }
 
     this.btnGenerateStoryboard.disabled = true;
@@ -8241,16 +8169,6 @@ ${isAutoScenes
         this.inputIdeaPrompt?.focus();
         return;
       }
-      const multiPrompt = this.parseBatchInputText(idea, "auto", true);
-      if (multiPrompt.length >= 2) {
-        this.addItemsToBatchQueue(multiPrompt);
-        if (this.inputIdeaPrompt) this.inputIdeaPrompt.value = "";
-        localStorage.removeItem("anistory_draft_prompt");
-        this.updateLiveMultiStoryDetection();
-        this.showToast(`📚 Detected ${multiPrompt.length} stories! Starting Batch Auto-Production (Step 1→4) 1-by-1...`);
-        await this.runBatchStoryQueueStep1To4();
-        return;
-      }
     }
 
     this.autoWorkflowState.active = true;
@@ -8759,22 +8677,7 @@ ${isAutoScenes
       }
     }
 
-    // 2. Option A (#inputIdeaPrompt) live multi-story banner
-    if (this.promptMultiStoryBanner && this.inputIdeaPrompt) {
-      const rawPrompt = this.inputIdeaPrompt.value.trim();
-      const detectedPrompt = rawPrompt ? this.parseBatchInputText(rawPrompt, "auto", true) : [];
-      if (detectedPrompt.length >= 2) {
-        const preview = detectedPrompt.slice(0, 3).map((it, idx) => `#${idx + 1} "${it.title || it.idea.slice(0, 24) + '...'}"`).join(" • ");
-        if (this.textPromptMultiStoryCount) {
-          this.textPromptMultiStoryCount.textContent = `Detected ${detectedPrompt.length} stories: ${preview}`;
-        }
-        this.promptMultiStoryBanner.style.display = "flex";
-      } else {
-        this.promptMultiStoryBanner.style.display = "none";
-      }
-    }
-
-    // 3. Option B (#inputDirectPasteText) live multi-story banner
+    // 2. Option B (#inputDirectPasteText) live multi-story banner
     if (this.pasteMultiStoryBanner && this.inputDirectPasteText) {
       const rawPaste = this.inputDirectPasteText.value.trim();
       const detectedPaste = rawPaste ? this.parseBatchInputText(rawPaste, "auto", true) : [];

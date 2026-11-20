@@ -190,19 +190,9 @@
                 <div class="form-row compact-row">
                   <label for="inputIdeaPrompt" class="input-label small-label">
                     <span>🌟 Story Idea or Creative Prompt</span>
-                    <span class="hint-text">Single story or paste multiple stories (1. 2. / ---)</span>
+                    <span class="hint-text">Single story idea, plot outline, or narrative (use Option E for multiple stories)</span>
                   </label>
                   <textarea id="inputIdeaPrompt" rows="3" class="styled-textarea compact-textarea" placeholder="e.g. A lonely clockmaker in a steampunk tower invents a mechanical humming-bird that brings memories back to the townspeople..."></textarea>
-                  <div id="promptMultiStoryBanner" class="multi-story-detect-banner" style="display:none;">
-                    <div class="multi-story-detect-info">
-                      <span class="multi-story-detect-icon">📚</span>
-                      <span id="textPromptMultiStoryCount">Detected 2 stories in your text!</span>
-                    </div>
-                    <div class="multi-story-detect-actions">
-                      <button id="btnPromptQueueDetectedStories" type="button" class="scene-action-pill" title="Move all detected stories into the Batch Story Queue">📥 Queue All in Batch List</button>
-                      <button id="btnPromptAutoRunDetectedStories" type="button" class="scene-action-pill active-dialogue-only" title="Queue all detected stories and produce them 1-by-1 from Step 1 to Step 4">🎬 Auto-Produce All (Step 1→4)</button>
-                    </div>
-                  </div>
                 </div>
 
                 <!-- Quick idea inspiration tags -->
@@ -1708,6 +1698,6 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
   <div id="toastNotification" class="toast-popup"></div>
 
   <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=4.1"></script>
+  <script src="/js/app.js?v=4.2"></script>
 </body>
 </html>
