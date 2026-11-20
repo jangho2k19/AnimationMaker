@@ -295,11 +295,14 @@ class GeminiWebWrapper:
                     refresh_interval=300
                 )
 
-            await self.client.init(
-                timeout=60,
-                auto_close=False,
-                auto_refresh=True,
-                refresh_interval=300
+            await asyncio.wait_for(
+                self.client.init(
+                    timeout=20,
+                    auto_close=False,
+                    auto_refresh=True,
+                    refresh_interval=300
+                ),
+                timeout=25
             )
 
             if getattr(self.client, "account_status", None) and self.client.account_status.name == "UNAUTHENTICATED":
@@ -349,7 +352,12 @@ class GeminiWebWrapper:
                 await self.get_client(force_refresh=True)
                 return True
 
-            # 3. Fallback: Re-init client with Method B cache reload
+            # 3. Do NOT re-initialize with the exact same expired cookies (avoids 25-60s hang on dead session)
+            if self.psid:
+                logger.warning("Gemini session cookies are expired and could not be rotated; skipping redundant re-init.")
+                return False
+
+            # Fallback for Method B (no explicit psid): try cache reload once
             await self.get_client(force_refresh=True)
             return True
 

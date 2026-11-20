@@ -4081,7 +4081,8 @@ RAW CHARACTER PROMPT TEXT:
         parser_note = ""
         if (self.provider or "").lower() not in ("builtin", "offline", "architect"):
             try:
-                parsed = await self._dispatch_llm_request(prompt)
+                import asyncio
+                parsed = await asyncio.wait_for(self._dispatch_llm_request(prompt), timeout=35)
                 raw_list = None
                 if isinstance(parsed, dict):
                     raw_list = parsed.get("characters") or parsed.get("cast") or parsed.get("profiles")
@@ -4227,7 +4228,7 @@ RAW CHARACTER PROMPT TEXT:
             proper_re = re.compile(
                 r'(?<![.!?]\s)\b([A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲÝỴỶỸ]'
                 r'[a-zàáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỵỷỹ]+'
-                r'(?:\s+[A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲÝỴỶỸ]'
+                r'(?:[ \t]+[A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲÝỴỶỸ]'
                 r'[a-zàáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳýỵỷỹ]+){1,3})\b'
             )
             for m in proper_re.finditer(combined_text):
@@ -4335,7 +4336,8 @@ STORY / SCRIPT TO ANALYZE:
 
         if (self.provider or "").lower() not in ("builtin", "offline", "architect"):
             try:
-                parsed = await self._dispatch_llm_request(prompt)
+                import asyncio
+                parsed = await asyncio.wait_for(self._dispatch_llm_request(prompt), timeout=35)
                 raw_list = None
                 if isinstance(parsed, dict):
                     raw_list = parsed.get("characters") or parsed.get("cast") or parsed.get("profiles")

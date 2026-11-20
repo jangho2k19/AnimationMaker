@@ -3522,8 +3522,23 @@ class AniStoryApp {
     const langVal = this.selectLanguage ? this.selectLanguage.value : "auto";
     const narratorVoice = this.selectVoice ? this.selectVoice.value : "";
 
+    const fetchWithTimeout = async (url, options, timeoutMs = 45000) => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: ctrl.signal });
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          throw new Error("Request timed out — check your AI provider credentials or try again.");
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
     try {
-      const resp = await fetch("/api/characters/analyze-from-story", {
+      const resp = await fetchWithTimeout("/api/characters/analyze-from-story", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3539,7 +3554,7 @@ class AniStoryApp {
           ai_model: modelVal || null,
           api_key: apiKey
         })
-      });
+      }, 45000);
       if (!resp.ok) {
         const msg = await AniStoryApp.parseErrorResponse(resp, "Character analysis failed");
         throw new Error(msg);
@@ -3606,50 +3621,65 @@ class AniStoryApp {
 
       const libMatched = Number(data.matched_library_count || 0);
       const libNote = libMatched > 0 ? ` (${libMatched} from Library)` : "";
+      const activeImgMode = this.imageMode || "gemini";
+      const parserNote = (data.parser_note || "").trim();
+      const parserAuthErr = /unauthenticated|cookies have expired|401|api key/i.test(parserNote);
 
-      if (missingPortraitTargets.length > 0 && (this.imageMode || "gemini") !== "manual") {
-        let paintedCount = 0;
-        let failedCount = 0;
-        for (let i = 0; i < missingPortraitTargets.length; i++) {
-          const ch = missingPortraitTargets[i];
-          if (btnEl) {
-            btnEl.innerHTML = `<span>🎨 Creating ${i + 1}/${missingPortraitTargets.length}...</span>`;
-          }
-          try {
-            const pResp = await fetch("/api/characters/generate-draft-portrait", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id: ch.id,
-                name: (ch.name || `Character ${i + 1}`).trim(),
-                description: (ch.description || "").trim(),
-                art_style: this.selectedStyleKey || "ghibli",
-                image_mode: this.imageMode || "gemini",
-                ai_provider: provider,
-                api_key: apiKey
-              })
-            });
-            if (!pResp.ok) {
-              const pMsg = await AniStoryApp.parseErrorResponse(pResp, "Portrait generation failed");
-              throw new Error(pMsg);
-            }
-            const pData = await pResp.json();
-            ch.image_path = pData.image_path || "";
-            this.saveStage1CharactersToStorage();
-            this.renderStage1Characters();
-            paintedCount++;
-          } catch (pErr) {
-            failedCount++;
-            console.warn(`Analyze & Create portrait failed for ${ch.name}:`, pErr);
-          }
-        }
-        if (failedCount === 0) {
-          this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote} & created ${paintedCount} portrait(s)!`);
+      if (missingPortraitTargets.length > 0 && activeImgMode !== "manual" && activeImgMode !== "puter") {
+        if (parserAuthErr && (activeImgMode === "gemini" || activeImgMode === "gemini_cookie")) {
+          this.showToast(`✨ Created ${analyzedChars.length} character profiles${libNote}! Portrait painting skipped: Gemini cookies expired — update cookies in Settings ⚙️ then click 🎨 Paint all Characters.`, true);
         } else {
-          this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote}: created ${paintedCount} portrait(s), ${failedCount} failed.`, true);
+          let paintedCount = 0;
+          let failedCount = 0;
+          let authAbortMsg = "";
+          for (let i = 0; i < missingPortraitTargets.length; i++) {
+            const ch = missingPortraitTargets[i];
+            if (btnEl) {
+              btnEl.innerHTML = `<span>🎨 Creating ${i + 1}/${missingPortraitTargets.length}...</span>`;
+            }
+            try {
+              const pResp = await fetchWithTimeout("/api/characters/generate-draft-portrait", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: ch.id,
+                  name: (ch.name || `Character ${i + 1}`).trim(),
+                  description: (ch.description || "").trim(),
+                  art_style: this.selectedStyleKey || "ghibli",
+                  image_mode: activeImgMode,
+                  ai_provider: provider,
+                  api_key: apiKey
+                })
+              }, 45000);
+              if (!pResp.ok) {
+                const pMsg = await AniStoryApp.parseErrorResponse(pResp, "Portrait generation failed");
+                throw new Error(pMsg);
+              }
+              const pData = await pResp.json();
+              ch.image_path = pData.image_path || "";
+              this.saveStage1CharactersToStorage();
+              this.renderStage1Characters();
+              paintedCount++;
+            } catch (pErr) {
+              failedCount++;
+              console.warn(`Analyze & Create portrait failed for ${ch.name}:`, pErr);
+              const errStr = String(pErr?.message || pErr || "");
+              if (/unauthenticated|cookies have expired|401|api key|quota/i.test(errStr)) {
+                authAbortMsg = errStr;
+                break;
+              }
+            }
+          }
+          if (authAbortMsg) {
+            this.showToast(`✨ Created ${analyzedChars.length} character profiles${libNote}, but portrait painting stopped: ${authAbortMsg}`, true);
+          } else if (failedCount === 0) {
+            this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote} & created ${paintedCount} portrait(s)!`);
+          } else {
+            this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote}: created ${paintedCount} portrait(s), ${failedCount} failed.`, true);
+          }
         }
       } else if (missingPortraitTargets.length > 0) {
-        this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote}. Manual mode active — paint or upload portraits when ready!`);
+        this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote}. Upload portraits or click 🎨 Paint all Characters when ready!`);
       } else {
         this.showToast(`✨ Analyzed ${analyzedChars.length} characters — all portraits ready${libNote}!`);
       }
