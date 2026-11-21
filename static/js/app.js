@@ -3575,14 +3575,12 @@ class AniStoryApp {
         if (k) existingByName.set(k, c);
       });
 
-      const missingPortraitTargets = [];
       analyzedChars.forEach((c) => {
         const cleanName = (c.name || "").trim();
         if (!cleanName) return;
         const k = cleanName.toLowerCase();
-        let cardObj;
         if (existingByName.has(k)) {
-          cardObj = existingByName.get(k);
+          const cardObj = existingByName.get(k);
           if (!(cardObj.description || "").trim() && c.description) {
             cardObj.description = c.description;
           }
@@ -3597,7 +3595,7 @@ class AniStoryApp {
             cardObj.library_id = c.library_id || "";
           }
         } else {
-          cardObj = {
+          const cardObj = {
             id: `char_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             name: cleanName,
             description: c.description || "",
@@ -3610,9 +3608,6 @@ class AniStoryApp {
           this.stage1Characters.push(cardObj);
           existingByName.set(k, cardObj);
         }
-        if (!(cardObj.image_path || "").trim()) {
-          missingPortraitTargets.push(cardObj);
-        }
       });
 
       this.isStage1CharsExpanded = true;
@@ -3620,68 +3615,14 @@ class AniStoryApp {
       this.renderStage1Characters();
 
       const libMatched = Number(data.matched_library_count || 0);
-      const libNote = libMatched > 0 ? ` (${libMatched} from Library)` : "";
-      const activeImgMode = this.imageMode || "gemini";
+      const libNote = libMatched > 0 ? ` (${libMatched} matched from Library)` : "";
       const parserNote = (data.parser_note || "").trim();
       const parserAuthErr = /unauthenticated|cookies have expired|401|api key/i.test(parserNote);
 
-      if (missingPortraitTargets.length > 0 && activeImgMode !== "manual" && activeImgMode !== "puter") {
-        if (parserAuthErr && (activeImgMode === "gemini" || activeImgMode === "gemini_cookie")) {
-          this.showToast(`✨ Created ${analyzedChars.length} character profiles${libNote}! Portrait painting skipped: Gemini cookies expired — update cookies in Settings ⚙️ then click 🎨 Paint all Characters.`, true);
-        } else {
-          let paintedCount = 0;
-          let failedCount = 0;
-          let authAbortMsg = "";
-          for (let i = 0; i < missingPortraitTargets.length; i++) {
-            const ch = missingPortraitTargets[i];
-            if (btnEl) {
-              btnEl.innerHTML = `<span>🎨 Creating ${i + 1}/${missingPortraitTargets.length}...</span>`;
-            }
-            try {
-              const pResp = await fetchWithTimeout("/api/characters/generate-draft-portrait", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  id: ch.id,
-                  name: (ch.name || `Character ${i + 1}`).trim(),
-                  description: (ch.description || "").trim(),
-                  art_style: this.selectedStyleKey || "ghibli",
-                  image_mode: activeImgMode,
-                  ai_provider: provider,
-                  api_key: apiKey
-                })
-              }, 45000);
-              if (!pResp.ok) {
-                const pMsg = await AniStoryApp.parseErrorResponse(pResp, "Portrait generation failed");
-                throw new Error(pMsg);
-              }
-              const pData = await pResp.json();
-              ch.image_path = pData.image_path || "";
-              this.saveStage1CharactersToStorage();
-              this.renderStage1Characters();
-              paintedCount++;
-            } catch (pErr) {
-              failedCount++;
-              console.warn(`Analyze & Create portrait failed for ${ch.name}:`, pErr);
-              const errStr = String(pErr?.message || pErr || "");
-              if (/unauthenticated|cookies have expired|401|api key|quota/i.test(errStr)) {
-                authAbortMsg = errStr;
-                break;
-              }
-            }
-          }
-          if (authAbortMsg) {
-            this.showToast(`✨ Created ${analyzedChars.length} character profiles${libNote}, but portrait painting stopped: ${authAbortMsg}`, true);
-          } else if (failedCount === 0) {
-            this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote} & created ${paintedCount} portrait(s)!`);
-          } else {
-            this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote}: created ${paintedCount} portrait(s), ${failedCount} failed.`, true);
-          }
-        }
-      } else if (missingPortraitTargets.length > 0) {
-        this.showToast(`✨ Analyzed ${analyzedChars.length} characters${libNote}. Upload portraits or click 🎨 Paint all Characters when ready!`);
+      if (parserAuthErr) {
+        this.showToast(`✨ Created ${analyzedChars.length} character(s)${libNote} (local analyzer: update Gemini Cookie in ⚙️ for AI analysis). Review prompts, then click 🎨 Paint all Characters!`);
       } else {
-        this.showToast(`✨ Analyzed ${analyzedChars.length} characters — all portraits ready${libNote}!`);
+        this.showToast(`✨ Analyzed & created ${analyzedChars.length} character(s)${libNote}! Review prompts & voices, then click 🎨 Paint all Characters.`);
       }
     } catch (e) {
       this.showToast(e.message, true);
