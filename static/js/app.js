@@ -569,6 +569,28 @@ class AniStoryApp {
     this.btnDetectModels = document.getElementById("btnDetectModels");
     this.badgeProviderHint = document.getElementById("badgeProviderHint");
     this.labelProviderKey = document.getElementById("labelProviderKey");
+    this.labelProviderStatus = document.getElementById("labelProviderStatus");
+    this.btnVerifyProviderKey = document.getElementById("btnVerifyProviderKey");
+    this.providerVerifyResultBanner = document.getElementById("providerVerifyResultBanner");
+    this.btnVerifySettingsGeminiApi = document.getElementById("btnVerifySettingsGeminiApi");
+    this.settingsGeminiApiVerifyStatus = document.getElementById("settingsGeminiApiVerifyStatus");
+    this.btnVerifySettingsGeminiCookie = document.getElementById("btnVerifySettingsGeminiCookie");
+    this.settingsGeminiCookieVerifyStatus = document.getElementById("settingsGeminiCookieVerifyStatus");
+    this.btnVerifyAllSettingsKeys = document.getElementById("btnVerifyAllSettingsKeys");
+
+    // Per-Task / Step AI Type & Model Selector elements
+    this.btnToggleTaskModels = document.getElementById("btnToggleTaskModels");
+    this.taskModelsConfigPanel = document.getElementById("taskModelsConfigPanel");
+    this.btnResetTaskModels = document.getElementById("btnResetTaskModels");
+    this.selectTaskCharProvider = document.getElementById("selectTaskCharProvider");
+    this.selectTaskCharModel = document.getElementById("selectTaskCharModel");
+    this.selectTaskStoryProvider = document.getElementById("selectTaskStoryProvider");
+    this.selectTaskStoryModel = document.getElementById("selectTaskStoryModel");
+    this.selectTaskPortraitEngine = document.getElementById("selectTaskPortraitEngine");
+    this.selectTaskScenePaintEngine = document.getElementById("selectTaskScenePaintEngine");
+    this.selectTaskRefineProvider = document.getElementById("selectTaskRefineProvider");
+    this.selectTaskRefineModel = document.getElementById("selectTaskRefineModel");
+    this.selectTaskVideoEngine = document.getElementById("selectTaskVideoEngine");
 
     // Model Explorer Modal elements
     this.modalModelExplorer = document.getElementById("modalModelExplorer");
@@ -1525,6 +1547,30 @@ class AniStoryApp {
 
     if (this.btnDetectModels) {
       this.btnDetectModels.addEventListener("click", () => this.openModelExplorer());
+    }
+    if (this.btnVerifyProviderKey) {
+      this.btnVerifyProviderKey.addEventListener("click", () => this.verifyActiveProviderCredentials(this.btnVerifyProviderKey));
+    }
+    if (this.btnVerifySettingsGeminiApi) {
+      this.btnVerifySettingsGeminiApi.addEventListener("click", () => this.verifySettingsCredential("gemini", this.btnVerifySettingsGeminiApi, this.settingsGeminiApiVerifyStatus));
+    }
+    if (this.btnVerifySettingsGeminiCookie) {
+      this.btnVerifySettingsGeminiCookie.addEventListener("click", () => this.verifySettingsCredential("gemini_cookie", this.btnVerifySettingsGeminiCookie, this.settingsGeminiCookieVerifyStatus));
+    }
+    if (this.btnVerifyAllSettingsKeys) {
+      this.btnVerifyAllSettingsKeys.addEventListener("click", () => this.verifyAllSettingsCredentials(this.btnVerifyAllSettingsKeys));
+    }
+    if (this.btnToggleTaskModels && this.taskModelsConfigPanel) {
+      this.btnToggleTaskModels.addEventListener("click", () => {
+        const isOpen = this.taskModelsConfigPanel.style.display === "block";
+        this.taskModelsConfigPanel.style.display = isOpen ? "none" : "block";
+        this.btnToggleTaskModels.innerHTML = isOpen
+          ? `<span>🎛️ AI Models per Task/Step ▾</span>`
+          : `<span>🎛️ AI Models per Task/Step ▴</span>`;
+      });
+    }
+    if (this.btnResetTaskModels) {
+      this.btnResetTaskModels.addEventListener("click", () => this.resetAllTaskModelsToDefault());
     }
     if (this.btnCloseModelExplorer) {
       this.btnCloseModelExplorer.addEventListener("click", () => this.modalModelExplorer?.classList.remove("active"));
@@ -3046,8 +3092,7 @@ class AniStoryApp {
     btnEl.disabled = true;
     btnEl.textContent = "⏳";
     try {
-      const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
-      const apiKey = this.getEffectiveApiKey(provider);
+      const { imageMode: portraitMode, provider, apiKey } = this.getTaskImageConfig("portrait");
       const resp = await fetch("/api/characters/generate-draft-portrait", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3056,7 +3101,7 @@ class AniStoryApp {
           name: (char.name || `Character ${idx + 1}`).trim(),
           description: (char.description || "").trim(),
           art_style: this.selectedStyleKey || "ghibli",
-          image_mode: this.imageMode || "gemini",
+          image_mode: portraitMode || "gemini",
           ai_provider: provider,
           api_key: apiKey
         })
@@ -3360,15 +3405,14 @@ class AniStoryApp {
       btnEl.textContent = "⏳";
     }
     try {
-      const provider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
-      const apiKey = this.getEffectiveApiKey(provider);
+      const { imageMode: portraitMode, provider, apiKey } = this.getTaskImageConfig("portrait");
       const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(charId)}/generate-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           api_key: apiKey,
           ai_provider: provider,
-          image_mode: this.imageMode || this.currentProject.image_mode || "gemini"
+          image_mode: portraitMode || "gemini"
         })
       });
       if (!resp.ok) {
@@ -3445,8 +3489,7 @@ class AniStoryApp {
       btnEl.innerHTML = `<span>⏳ Painting (0/${targets.length})...</span>`;
     }
 
-    const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
-    const apiKey = this.getEffectiveApiKey(provider);
+    const { imageMode: portraitMode, provider, apiKey } = this.getTaskImageConfig("portrait");
     let paintedCount = 0;
     let failedCount = 0;
 
@@ -3465,7 +3508,7 @@ class AniStoryApp {
               name: (char.name || `Character ${i + 1}`).trim(),
               description: (char.description || "").trim(),
               art_style: this.selectedStyleKey || "ghibli",
-              image_mode: this.imageMode || "gemini",
+              image_mode: portraitMode || "gemini",
               ai_provider: provider,
               api_key: apiKey
             })
@@ -3534,9 +3577,7 @@ class AniStoryApp {
       btnEl.innerHTML = `<span>⏳ Analyzing story...</span>`;
     }
 
-    const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
-    const modelVal = this.selectAiModel ? this.selectAiModel.value : "";
-    const apiKey = this.getEffectiveApiKey(provider);
+    const { provider, model: modelVal, apiKey } = this.getTaskAiConfig("characters");
     const langVal = this.selectLanguage ? this.selectLanguage.value : "auto";
     const narratorVoice = this.selectVoice ? this.selectVoice.value : "";
 
@@ -3678,11 +3719,7 @@ class AniStoryApp {
     }
     if (this.btnParseCharImport) this.btnParseCharImport.disabled = true;
     try {
-      const provider = this._charImportTarget === "stage2" && this.currentProject?.ai_provider
-        ? this.currentProject.ai_provider
-        : (this.selectAiProvider ? this.selectAiProvider.value : "gemini");
-      const model = this.selectAiModel ? this.selectAiModel.value : "";
-      const apiKey = this.getEffectiveApiKey(provider);
+      const { provider, model, apiKey } = this.getTaskAiConfig("characters");
 
       const fd = new FormData();
       fd.append("file", file);
@@ -3729,11 +3766,7 @@ class AniStoryApp {
       this.btnParseCharImport.innerHTML = `<span>⏳ Đang phân tích bằng AI...</span>`;
     }
     try {
-      const provider = this._charImportTarget === "stage2" && this.currentProject?.ai_provider
-        ? this.currentProject.ai_provider
-        : (this.selectAiProvider ? this.selectAiProvider.value : "gemini");
-      const model = this.selectAiModel ? this.selectAiModel.value : "";
-      const apiKey = this.getEffectiveApiKey(provider);
+      const { provider, model, apiKey } = this.getTaskAiConfig("characters");
 
       const resp = await fetch("/api/characters/parse-import", {
         method: "POST",
@@ -4252,9 +4285,7 @@ class AniStoryApp {
       btnEl.innerHTML = `<span>⏳ Painting (0/${targets.length})...</span>`;
     }
 
-    const provider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
-    const apiKey = this.getEffectiveApiKey(provider);
-    const activeImageMode = this.imageMode || this.currentProject.image_mode || "gemini";
+    const { imageMode: activeImageMode, provider, apiKey } = this.getTaskImageConfig("portrait");
     let paintedCount = 0;
     let failedCount = 0;
 
@@ -5103,9 +5134,300 @@ ${isAutoScenes
     }
 
     updateModelsAndKey();
+    this.initTaskModelsConfig(providers);
     if (this.selectAiProvider.value === "gemini" || this.selectAiProvider.value === "gemini_cookie") {
       this.detectGeminiModels(true);
     }
+  }
+
+  initTaskModelsConfig(providers) {
+    const populateTaskModelDropdown = (provSelect, modelSelect, storageModelKey) => {
+      if (!provSelect || !modelSelect) return;
+      const pVal = provSelect.value;
+      const savedM = localStorage.getItem(storageModelKey) || "default";
+      modelSelect.innerHTML = `<option value="default" ${savedM === "default" ? "selected" : ""}>🔗 Default Model</option>`;
+      if (pVal === "default") {
+        modelSelect.disabled = true;
+        return;
+      }
+      modelSelect.disabled = false;
+      if (pVal === "builtin") {
+        const opt = document.createElement("option");
+        opt.value = "story_architect";
+        opt.textContent = "Offline Story Architect";
+        opt.selected = true;
+        modelSelect.appendChild(opt);
+        return;
+      }
+      if (pVal === "gemini") {
+        const apiModels = this.detectedModelsData?.api_models?.length
+          ? this.detectedModelsData.api_models
+          : [
+              { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" },
+              { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite" },
+              { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+              { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+              { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash" }
+            ];
+        apiModels.forEach(m => {
+          const id = typeof m === "string" ? m : m.id;
+          const name = typeof m === "string" ? m : (m.name || m.id);
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = name;
+          if (id === savedM) opt.selected = true;
+          modelSelect.appendChild(opt);
+        });
+      } else if (pVal === "gemini_cookie") {
+        const cookieModels = [
+          { id: "gemini-flash-advanced", name: "Gemini Flash Advanced (Cookie)" },
+          { id: "gemini-pro-advanced", name: "Gemini Pro Advanced (Cookie)" },
+          { id: "gemini-flash", name: "Gemini Flash (Web)" },
+          { id: "gemini-pro", name: "Gemini Pro (Web)" },
+          { id: "default", name: "Default Web Model" }
+        ];
+        cookieModels.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.textContent = m.name;
+          if (m.id === savedM) opt.selected = true;
+          modelSelect.appendChild(opt);
+        });
+      } else if (providers && providers[pVal]) {
+        (providers[pVal].models || []).forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m;
+          opt.textContent = m;
+          if (m === savedM) opt.selected = true;
+          modelSelect.appendChild(opt);
+        });
+      }
+    };
+
+    const bindTaskPair = (provSelect, modelSelect, provKey, modelKey) => {
+      if (!provSelect) return;
+      const savedP = localStorage.getItem(provKey) || "default";
+      provSelect.value = savedP;
+      populateTaskModelDropdown(provSelect, modelSelect, modelKey);
+      provSelect.addEventListener("change", () => {
+        localStorage.setItem(provKey, provSelect.value);
+        if (provSelect.value === "default") {
+          localStorage.setItem(modelKey, "default");
+        }
+        populateTaskModelDropdown(provSelect, modelSelect, modelKey);
+      });
+      if (modelSelect) {
+        modelSelect.addEventListener("change", () => {
+          localStorage.setItem(modelKey, modelSelect.value);
+        });
+      }
+    };
+
+    bindTaskPair(this.selectTaskCharProvider, this.selectTaskCharModel, "anistory_task_char_provider", "anistory_task_char_model");
+    bindTaskPair(this.selectTaskStoryProvider, this.selectTaskStoryModel, "anistory_task_story_provider", "anistory_task_story_model");
+    bindTaskPair(this.selectTaskRefineProvider, this.selectTaskRefineModel, "anistory_task_refine_provider", "anistory_task_refine_model");
+
+    const bindEngineSelect = (sel, key, fallback = "default") => {
+      if (!sel) return;
+      const saved = localStorage.getItem(key) || fallback;
+      sel.value = saved;
+      sel.addEventListener("change", () => {
+        localStorage.setItem(key, sel.value);
+      });
+    };
+
+    bindEngineSelect(this.selectTaskPortraitEngine, "anistory_task_portrait_engine", "default");
+    bindEngineSelect(this.selectTaskScenePaintEngine, "anistory_task_scene_paint_engine", "default");
+    bindEngineSelect(this.selectTaskVideoEngine, "anistory_task_video_engine", "ken_burns");
+  }
+
+  resetAllTaskModelsToDefault() {
+    const keys = [
+      "anistory_task_char_provider", "anistory_task_char_model",
+      "anistory_task_story_provider", "anistory_task_story_model",
+      "anistory_task_refine_provider", "anistory_task_refine_model",
+      "anistory_task_portrait_engine", "anistory_task_scene_paint_engine",
+      "anistory_task_video_engine"
+    ];
+    keys.forEach(k => localStorage.removeItem(k));
+    this.initTaskModelsConfig(this.config?.ai_providers || {});
+    this.showToast("↺ Reset all task/step AI models to use Default Provider & Paint Engine!");
+  }
+
+  getTaskAiConfig(taskName = "storyboard") {
+    const defaultProvider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
+    const defaultModel = this.selectAiModel ? this.selectAiModel.value : "";
+
+    let pSel = null;
+    let mSel = null;
+    if (taskName === "characters") {
+      pSel = this.selectTaskCharProvider;
+      mSel = this.selectTaskCharModel;
+    } else if (taskName === "storyboard") {
+      pSel = this.selectTaskStoryProvider;
+      mSel = this.selectTaskStoryModel;
+    } else if (taskName === "refine") {
+      pSel = this.selectTaskRefineProvider;
+      mSel = this.selectTaskRefineModel;
+    }
+
+    const chosenProv = (pSel && pSel.value && pSel.value !== "default") ? pSel.value : defaultProvider;
+    let chosenModel = (mSel && mSel.value && mSel.value !== "default") ? mSel.value : (chosenProv === defaultProvider ? defaultModel : "");
+    if (!chosenModel && this.config?.ai_providers?.[chosenProv]?.default_model) {
+      chosenModel = this.config.ai_providers[chosenProv].default_model;
+    }
+    const apiKey = this.getEffectiveApiKey(chosenProv);
+    return { provider: chosenProv, model: chosenModel, apiKey };
+  }
+
+  getTaskImageConfig(taskName = "scene") {
+    const defaultMode = this.imageMode || this.currentProject?.image_mode || "gemini";
+    const defaultProvider = this.selectAiProvider ? this.selectAiProvider.value : (this.currentProject?.ai_provider || "gemini");
+    const sel = taskName === "portrait" ? this.selectTaskPortraitEngine : this.selectTaskScenePaintEngine;
+    const val = (sel && sel.value && sel.value !== "default") ? sel.value : defaultMode;
+
+    let provider = defaultProvider;
+    let imageMode = val;
+    if (val === "gemini_api") {
+      provider = "gemini";
+      imageMode = "gemini_api";
+    } else if (val === "gemini_cookie") {
+      provider = "gemini_cookie";
+      imageMode = "gemini_cookie";
+    } else if (val === "openai") {
+      provider = "openai";
+      imageMode = "openai";
+    } else if (val === "neural_love") {
+      provider = "neural_love";
+      imageMode = "neural_love";
+    } else if (val === "pollinations") {
+      imageMode = "pollinations";
+    }
+    const apiKey = this.getEffectiveApiKey(provider);
+    return { imageMode, provider, apiKey };
+  }
+
+  renderCredentialVerifyBanner(bannerEl, data) {
+    if (!bannerEl) return;
+    bannerEl.style.display = "block";
+    const isOk = Boolean(data?.valid);
+    const isGuest = data?.mode === "guest_fallback";
+    if (isOk && !isGuest) {
+      bannerEl.style.background = "rgba(16, 185, 129, 0.14)";
+      bannerEl.style.borderColor = "rgba(16, 185, 129, 0.45)";
+      bannerEl.style.color = "#a7f3d0";
+      bannerEl.innerHTML = `✅ <strong>Valid:</strong> ${this.escapeHtml(data.message || "Credentials verified!")}`;
+    } else if (isOk && isGuest) {
+      bannerEl.style.background = "rgba(245, 158, 11, 0.15)";
+      bannerEl.style.borderColor = "rgba(245, 158, 11, 0.45)";
+      bannerEl.style.color = "#fde68a";
+      bannerEl.innerHTML = `⚠️ <strong>Connected (Guest Fallback):</strong> ${this.escapeHtml(data.message || "")}`;
+    } else {
+      bannerEl.style.background = "rgba(239, 68, 68, 0.14)";
+      bannerEl.style.borderColor = "rgba(239, 68, 68, 0.45)";
+      bannerEl.style.color = "#fecaca";
+      bannerEl.innerHTML = `❌ <strong>Invalid / Unauthenticated:</strong> ${this.escapeHtml(data?.message || "Verification failed")}`;
+    }
+  }
+
+  async verifyActiveProviderCredentials(btnEl) {
+    const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
+    const model = this.selectAiModel ? this.selectAiModel.value : "";
+    const apiKey = this.getEffectiveApiKey(provider);
+    const psid = localStorage.getItem("anistory_gemini_cookie_psid") || "";
+    const psidts = localStorage.getItem("anistory_gemini_cookie_psidts") || "";
+
+    const oldHtml = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = `<span>⏳ Checking...</span>`;
+    }
+    if (this.labelProviderStatus) {
+      this.labelProviderStatus.textContent = "⏳ Checking...";
+      this.labelProviderStatus.style.color = "#fbbf24";
+    }
+
+    try {
+      const resp = await fetch("/api/credentials/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          api_key: apiKey,
+          cookie_psid: provider === "gemini_cookie" ? (this.inputProviderKey?.value?.trim() || psid) : psid,
+          cookie_psidts: psidts,
+          model
+        })
+      });
+      const data = await resp.json();
+      this.renderCredentialVerifyBanner(this.providerVerifyResultBanner, data);
+      if (this.labelProviderStatus) {
+        if (data.valid && data.mode !== "guest_fallback") {
+          this.labelProviderStatus.textContent = "● Valid & Ready";
+          this.labelProviderStatus.style.color = "#34d399";
+        } else if (data.valid && data.mode === "guest_fallback") {
+          this.labelProviderStatus.textContent = "● Guest Mode (Text OK)";
+          this.labelProviderStatus.style.color = "#fbbf24";
+        } else {
+          this.labelProviderStatus.textContent = "● Invalid Key/Cookie";
+          this.labelProviderStatus.style.color = "#f87171";
+        }
+      }
+      this.showToast(data.message || (data.valid ? "Credentials valid!" : "Credentials invalid"), !data.valid);
+    } catch (e) {
+      this.showToast("Failed to verify credentials: " + e.message, true);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = oldHtml;
+      }
+    }
+  }
+
+  async verifySettingsCredential(provider, btnEl, statusEl) {
+    const oldHtml = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = `⏳ Checking...`;
+    }
+    try {
+      let apiKey = "";
+      let psid = "";
+      let psidts = "";
+      if (provider === "gemini") {
+        apiKey = this.inputGeminiApiKey ? this.inputGeminiApiKey.value.trim() : "";
+      } else if (provider === "gemini_cookie") {
+        psid = this.inputGeminiCookie ? this.inputGeminiCookie.value.trim() : "";
+        psidts = this.inputGeminiCookieTs ? this.inputGeminiCookieTs.value.trim() : "";
+      }
+      const resp = await fetch("/api/credentials/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          api_key: apiKey,
+          cookie_psid: psid,
+          cookie_psidts: psidts
+        })
+      });
+      const data = await resp.json();
+      this.renderCredentialVerifyBanner(statusEl, data);
+      this.showToast(data.message || (data.valid ? "Valid!" : "Invalid"), !data.valid);
+    } catch (e) {
+      this.showToast("Check failed: " + e.message, true);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = oldHtml;
+      }
+    }
+  }
+
+  async verifyAllSettingsCredentials(btnEl) {
+    await Promise.all([
+      this.verifySettingsCredential("gemini", this.btnVerifySettingsGeminiApi, this.settingsGeminiApiVerifyStatus),
+      this.verifySettingsCredential("gemini_cookie", this.btnVerifySettingsGeminiCookie, this.settingsGeminiCookieVerifyStatus)
+    ]);
   }
 
   async deepAnalyzeCurrentInput() {
@@ -5478,9 +5800,8 @@ ${isAutoScenes
     }, 1000);
 
     try {
-      const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
-      const model = this.selectAiModel ? this.selectAiModel.value : "";
-      let apiKey = this.getEffectiveApiKey(provider);
+      const { provider, model, apiKey } = this.getTaskAiConfig("storyboard");
+      const { imageMode: scenePaintMode } = this.getTaskImageConfig("scene");
 
       if (provider === "gemini_cookie" && !apiKey && !this.hasServerGeminiCookie) {
         clearInterval(timerInterval);
@@ -5545,7 +5866,7 @@ ${isAutoScenes
         ai_provider: provider,
         ai_model: model,
         api_key: apiKey,
-        image_mode: this.imageMode || "server",
+        image_mode: scenePaintMode || this.imageMode || "server",
         enable_voiceover: this.enableVoiceover !== false,
         enable_subtitles: this.enableSubtitles !== false,
         enable_multivoice: this.enableMultivoice !== false,
@@ -5720,9 +6041,8 @@ ${isAutoScenes
     }, 1000);
 
     try {
-      const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
-      const model = this.selectAiModel ? this.selectAiModel.value : "";
-      const apiKey = this.getEffectiveApiKey(provider);
+      const { provider, model, apiKey } = this.getTaskAiConfig("storyboard");
+      const { imageMode: scenePaintMode } = this.getTaskImageConfig("scene");
 
       const isAutoScenes = this.isAutoSceneCount();
       const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto";
@@ -5759,7 +6079,7 @@ ${isAutoScenes
       formData.append("ai_provider", provider);
       if (model) formData.append("ai_model", model);
       if (apiKey) formData.append("api_key", apiKey);
-      formData.append("image_mode", this.imageMode || "gemini");
+      formData.append("image_mode", scenePaintMode || this.imageMode || "gemini");
       formData.append("video_mode", "acting");
       formData.append("enable_voiceover", (this.enableVoiceover !== false).toString());
       formData.append("enable_subtitles", (this.enableSubtitles !== false).toString());
@@ -7220,12 +7540,11 @@ ${isAutoScenes
       }
 
       try {
-        const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
-        const curKey = this.getEffectiveApiKey(curProvider);
+        const { imageMode: scenePaintMode, provider: curProvider, apiKey: curKey } = this.getTaskImageConfig("scene");
         const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/regenerate-image/${sceneIdx}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: curKey, ai_provider: curProvider })
+          body: JSON.stringify({ api_key: curKey, ai_provider: curProvider, image_mode: scenePaintMode })
         });
 
         if (resp.ok) {
@@ -7305,6 +7624,12 @@ ${isAutoScenes
     const projectId = this.currentProject.id;
     const scene = this.currentProject.scenes?.[sceneIdx];
     if (!scene) return;
+
+    // If Step 3 Video Engine is set to FlowKit Veo 3 Acting, route single scene animation to Veo
+    const videoEnginePref = this.selectTaskVideoEngine ? this.selectTaskVideoEngine.value : (localStorage.getItem("anistory_task_video_engine") || "ken_burns");
+    if (videoEnginePref === "flowkit_veo") {
+      return await this.generateVeoSceneVideo(sceneIdx, buttonEl);
+    }
 
     // Save pending edits (narration, prompt, camera motion) first
     await this.saveStoryboardEdits(false);
@@ -7495,9 +7820,10 @@ ${isAutoScenes
       await this.saveStoryboardEdits(false);
 
       let painted = false;
+      const { imageMode: scenePaintMode, provider: curProvider, apiKey: curKey } = this.getTaskImageConfig("scene");
 
       // Only attempt browser Puter.js if imageMode is "puter"
-      if (this.imageMode === "puter") {
+      if (scenePaintMode === "puter") {
         if (window.puter && window.puter.ai && typeof window.puter.ai.txt2img === "function") {
           try {
             const scene = this.currentProject.scenes[sceneIdx];
@@ -7529,12 +7855,10 @@ ${isAutoScenes
       }
 
       if (!painted) {
-        const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
-        const curKey = this.getEffectiveApiKey(curProvider);
         const resp = await fetch(`/api/projects/${this.currentProject.id}/regenerate-image/${sceneIdx}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: curKey, ai_provider: curProvider })
+          body: JSON.stringify({ api_key: curKey, ai_provider: curProvider, image_mode: scenePaintMode })
         });
         if (!resp.ok) {
           let errDetail = "Image re-roll failed";

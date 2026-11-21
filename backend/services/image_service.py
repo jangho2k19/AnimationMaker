@@ -936,17 +936,40 @@ class ImageService:
             except Exception as e:
                 raise RuntimeError(f"OpenAI DALL-E 3 generation failed: {e}")
 
+        # 3b. Direct Cloud AI Art (Pollinations Flux / Sana) Mode
+        if image_mode == "pollinations":
+            import urllib.parse
+            import random
+            clean_p = re.sub(r'\s+', ' ', (full_prompt or "Animated illustration")).strip()[:950]
+            encoded_p = urllib.parse.quote(clean_p)
+            eff_seed = seed if seed is not None else random.randint(1000, 999999)
+            req_w = min(1280, max(512, int(width)))
+            req_h = min(1280, max(512, int(height)))
+            poll_url = f"https://image.pollinations.ai/prompt/{encoded_p}?width={req_w}&height={req_h}&seed={eff_seed}&nologo=true"
+            async with httpx.AsyncClient(timeout=35.0, follow_redirects=True) as client:
+                p_resp = await client.get(poll_url)
+                if p_resp.status_code == 200 and len(p_resp.content) > 2048:
+                    img = Image.open(io.BytesIO(p_resp.content)).convert("RGB")
+                    fitted = self.fit_image_to_aspect_ratio(img, width, height)
+                    fitted.save(output_path, "JPEG", quality=95)
+                    print(f"Generated {label} using Cloud AI Art (Pollinations)!")
+                    return output_path
+            raise RuntimeError("Cloud AI Art (Pollinations) image generation failed.")
+
         # 4. Google Gemini / Imagen 3 Mode (Default)
-        if image_mode in ("gemini", "server"):
+        if image_mode in ("gemini", "server", "gemini_api", "gemini_cookie"):
             from backend.config import get_server_credentials
             s_creds = get_server_credentials()
             gemini_error = None
 
             is_cookie_key = bool(
-                eff_api_key and (
-                    eff_api_key.startswith("g.a")
-                    or "__Secure-1PSID" in eff_api_key
-                    or eff_provider == "gemini_cookie"
+                image_mode == "gemini_cookie"
+                or (
+                    eff_api_key and (
+                        eff_api_key.startswith("g.a")
+                        or "__Secure-1PSID" in eff_api_key
+                        or eff_provider == "gemini_cookie"
+                    )
                 )
             )
             api_studio_key = (
@@ -954,7 +977,7 @@ class ImageService:
                 if (eff_api_key and not is_cookie_key and not eff_api_key.startswith("g.a"))
                 else (s_creds.get("gemini_api_key") or "").strip()
             )
-            if api_studio_key.startswith("g.a") or "__Secure-1PSID" in api_studio_key:
+            if api_studio_key.startswith("g.a") or "__Secure-1PSID" in api_studio_key or image_mode == "gemini_cookie":
                 api_studio_key = ""
 
             # 4a. Official Google AI Studio API Key (AIzaSy... or AQ....)

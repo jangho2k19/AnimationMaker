@@ -203,6 +203,7 @@ class RenderRequest(BaseModel):
 class RegenerateImageRequest(BaseModel):
     api_key: Optional[str] = None
     ai_provider: Optional[str] = None
+    image_mode: Optional[str] = None
 
 class RenderSceneVideoRequest(BaseModel):
     force_revoice: bool = False
@@ -219,6 +220,14 @@ class DetectModelsRequest(BaseModel):
     api_key: Optional[str] = None
     cookie: Optional[str] = None
     provider: Optional[str] = "gemini"
+
+class VerifyCredentialsRequest(BaseModel):
+    provider: Optional[str] = "gemini"
+    api_key: Optional[str] = None
+    cookie_psid: Optional[str] = None
+    cookie_psidts: Optional[str] = None
+    model: Optional[str] = None
+    check_all: bool = False
 
 class AuditionVoiceRequest(BaseModel):
     voice: str
@@ -386,6 +395,234 @@ async def get_credentials(request: Request):
         "has_deepseek_key": bool(creds.get("deepseek_api_key")),
         "has_nvidia_key": bool(creds.get("nvidia_api_key"))
     }
+
+@app.post("/api/credentials/verify")
+async def verify_credentials(req: VerifyCredentialsRequest):
+    """Actively tests and validates API keys or Gemini Web Cookies against the upstream AI provider."""
+    import httpx
+    from backend.config import get_server_credentials
+    from backend.services.gemini_wrapper import GeminiWebWrapper
+
+    saved = get_server_credentials()
+    wrapper = GeminiWebWrapper.get_instance()
+    provider_req = (req.provider or "gemini").strip().lower()
+
+    async def _verify_single(prov: str, raw_key: str = "", raw_psid: str = "", raw_psidts: str = "") -> Dict[str, Any]:
+        p = (prov or "gemini").strip().lower()
+        if p == "builtin":
+            return {
+                "provider": "builtin",
+                "valid": True,
+                "authenticated": True,
+                "mode": "offline",
+                "message": "Built-in Offline Story Architect is always ready (no API key required)."
+            }
+
+        if p in ("gemini_cookie", "cookie"):
+            # Resolve cookie pair from request or server credentials
+            c_in = (raw_psid or raw_key or "").strip()
+            ts_in = (raw_psidts or "").strip()
+            if c_in:
+                ext_psid, ext_ts = wrapper.extract_cookie_pair(c_in)
+                psid = ext_psid or c_in
+                psidts = ts_in or ext_ts or (saved.get("gemini_cookie_psidts", "") if psid == saved.get("gemini_cookie_psid", "") else "")
+            else:
+                psid = (saved.get("gemini_cookie_psid") or "").strip()
+                psidts = (saved.get("gemini_cookie_psidts") or "").strip()
+
+            if not psid:
+                return {
+                    "provider": "gemini_cookie",
+                    "valid": False,
+                    "authenticated": False,
+                    "mode": "missing",
+                    "message": "No Gemini __Secure-1PSID cookie provided."
+                }
+            combined = f"{psid}|{psidts}" if psidts else psid
+            try:
+                resp = await asyncio.wait_for(
+                    wrapper.generate_content("Reply with 1 word: OK", cookie_override=combined),
+                    timeout=25.0
+                )
+                acct_status = getattr(wrapper.client, "account_status", None)
+                acct_name = getattr(acct_status, "name", "UNKNOWN") if acct_status is not None else "UNKNOWN"
+                is_full_auth = acct_name not in ("UNAUTHENTICATED", "1016")
+                reply_snippet = (resp.text or "").strip()[:40]
+                if is_full_auth:
+                    return {
+                        "provider": "gemini_cookie",
+                        "valid": True,
+                        "authenticated": True,
+                        "mode": "pro_session",
+                        "account_status": acct_name,
+                        "message": f"Valid Gemini Pro Web session (Authenticated • {acct_name}). Text & Imagen 3 ready!"
+                    }
+                else:
+                    return {
+                        "provider": "gemini_cookie",
+                        "valid": True,
+                        "authenticated": False,
+                        "mode": "guest_fallback",
+                        "account_status": acct_name,
+                        "message": f"Cookie connected in Guest Mode ({acct_name}: Chrome/Brave rotated __Secure-1PSIDTS). Text AI works ({reply_snippet or 'OK'}); Images use Cloud AI fallback."
+                    }
+            except Exception as e:
+                return {
+                    "provider": "gemini_cookie",
+                    "valid": False,
+                    "authenticated": False,
+                    "mode": "error",
+                    "message": f"Gemini Cookie check failed: {str(e)[:180]}"
+                }
+
+        if p == "gemini":
+            key_val = (raw_key or "").strip()
+            if key_val.startswith("g.a") or "__Secure-1PSID" in key_val:
+                return await _verify_single("gemini_cookie", raw_key=key_val)
+            if not key_val:
+                key_val = (saved.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY") or "").strip()
+            if not key_val or key_val.startswith("g.a"):
+                return {
+                    "provider": "gemini",
+                    "valid": False,
+                    "authenticated": False,
+                    "mode": "missing",
+                    "message": "No Google Gemini API key (AIzaSy... or AQ....) configured."
+                }
+            try:
+                from google import genai
+                from google.genai import types
+                client = genai.Client(
+                    api_key=key_val,
+                    http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
+                )
+                tested_model = None
+                last_err = None
+                for cand_m in ([req.model] if req.model and "cookie" not in req.model else []) + ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.8-flash"]:
+                    if not cand_m:
+                        continue
+                    try:
+                        r = await asyncio.wait_for(
+                            client.aio.models.generate_content(model=cand_m, contents="Reply OK"),
+                            timeout=18.0
+                        )
+                        if getattr(r, "text", None):
+                            tested_model = cand_m
+                            break
+                    except Exception as em:
+                        last_err = em
+                        continue
+                if tested_model:
+                    return {
+                        "provider": "gemini",
+                        "valid": True,
+                        "authenticated": True,
+                        "mode": "api_key",
+                        "model_tested": tested_model,
+                        "message": f"Valid Google Gemini API Key! Verified live generation on {tested_model}."
+                    }
+                return {
+                    "provider": "gemini",
+                    "valid": False,
+                    "authenticated": False,
+                    "mode": "error",
+                    "message": f"Gemini API key failed: {str(last_err)[:180]}"
+                }
+            except Exception as e:
+                return {
+                    "provider": "gemini",
+                    "valid": False,
+                    "authenticated": False,
+                    "mode": "error",
+                    "message": f"Gemini API key error: {str(e)[:180]}"
+                }
+
+        if p == "openai":
+            k = (raw_key or saved.get("openai_api_key") or os.environ.get("OPENAI_API_KEY") or "").strip()
+            if not k:
+                return {"provider": "openai", "valid": False, "message": "No OpenAI API key configured."}
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    r = await client.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {k}"})
+                    if r.status_code == 200:
+                        return {"provider": "openai", "valid": True, "authenticated": True, "message": "Valid OpenAI API Key! Connected to OpenAI."}
+                    return {"provider": "openai", "valid": False, "message": f"OpenAI rejected key (HTTP {r.status_code}): {r.text[:140]}"}
+            except Exception as e:
+                return {"provider": "openai", "valid": False, "message": f"OpenAI connection error: {str(e)[:140]}"}
+
+        if p == "claude":
+            k = (raw_key or saved.get("claude_api_key") or os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+            if not k:
+                return {"provider": "claude", "valid": False, "message": "No Anthropic Claude API key configured."}
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    r = await client.get(
+                        "https://api.anthropic.com/v1/models",
+                        headers={"x-api-key": k, "anthropic-version": "2023-06-01"}
+                    )
+                    if r.status_code == 200:
+                        return {"provider": "claude", "valid": True, "authenticated": True, "message": "Valid Anthropic Claude API Key!"}
+                    return {"provider": "claude", "valid": False, "message": f"Claude rejected key (HTTP {r.status_code}): {r.text[:140]}"}
+            except Exception as e:
+                return {"provider": "claude", "valid": False, "message": f"Claude connection error: {str(e)[:140]}"}
+
+        if p == "deepseek":
+            k = (raw_key or saved.get("deepseek_api_key") or os.environ.get("DEEPSEEK_API_KEY") or "").strip()
+            if not k:
+                return {"provider": "deepseek", "valid": False, "message": "No DeepSeek API key configured."}
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    r = await client.get("https://api.deepseek.com/models", headers={"Authorization": f"Bearer {k}"})
+                    if r.status_code == 200:
+                        return {"provider": "deepseek", "valid": True, "authenticated": True, "message": "Valid DeepSeek API Key!"}
+                    return {"provider": "deepseek", "valid": False, "message": f"DeepSeek rejected key (HTTP {r.status_code}): {r.text[:140]}"}
+            except Exception as e:
+                return {"provider": "deepseek", "valid": False, "message": f"DeepSeek connection error: {str(e)[:140]}"}
+
+        if p == "nvidia":
+            k = (raw_key or saved.get("nvidia_api_key") or os.environ.get("NVIDIA_API_KEY") or "").strip()
+            if not k:
+                return {"provider": "nvidia", "valid": False, "message": "No NVIDIA NIM API key configured."}
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    r = await client.get("https://integrate.api.nvidia.com/v1/models", headers={"Authorization": f"Bearer {k}"})
+                    if r.status_code == 200:
+                        return {"provider": "nvidia", "valid": True, "authenticated": True, "message": "Valid NVIDIA NIM API Key!"}
+                    return {"provider": "nvidia", "valid": False, "message": f"NVIDIA NIM rejected key (HTTP {r.status_code}): {r.text[:140]}"}
+            except Exception as e:
+                return {"provider": "nvidia", "valid": False, "message": f"NVIDIA NIM connection error: {str(e)[:140]}"}
+
+        if p == "neural_love":
+            k = (raw_key or saved.get("neural_love_key") or "").strip()
+            if not k:
+                return {"provider": "neural_love", "valid": False, "message": "No Neural.love API key configured."}
+            return {"provider": "neural_love", "valid": len(k) >= 12, "authenticated": len(k) >= 12, "message": "Neural.love API key format verified."}
+
+        return {"provider": p, "valid": False, "message": f"Unknown provider '{p}'."}
+
+    if req.check_all:
+        providers_to_check = ["gemini", "gemini_cookie"]
+        for extra_p, cred_field in [("openai", "openai_api_key"), ("claude", "claude_api_key"), ("deepseek", "deepseek_api_key"), ("nvidia", "nvidia_api_key"), ("neural_love", "neural_love_key")]:
+            if saved.get(cred_field):
+                providers_to_check.append(extra_p)
+        results = {}
+        for p_item in providers_to_check:
+            results[p_item] = await _verify_single(
+                p_item,
+                raw_key=(req.api_key if p_item == provider_req else ""),
+                raw_psid=(req.cookie_psid or "" if p_item == "gemini_cookie" else ""),
+                raw_psidts=(req.cookie_psidts or "" if p_item == "gemini_cookie" else "")
+            )
+        any_valid = any(r.get("valid") for r in results.values())
+        return {"status": "ok", "valid": any_valid, "results": results}
+
+    single_res = await _verify_single(
+        provider_req,
+        raw_key=req.api_key or "",
+        raw_psid=req.cookie_psid or "",
+        raw_psidts=req.cookie_psidts or ""
+    )
+    return {"status": "ok", **single_res}
 
 @app.get("/api/config")
 async def get_config():
@@ -2044,6 +2281,8 @@ async def regenerate_scene_image(project_id: str, scene_idx: int, req: Optional[
                 project["api_key"] = req.api_key
             if req.ai_provider:
                 project["ai_provider"] = req.ai_provider
+            if req.image_mode:
+                project["image_mode"] = req.image_mode
             pipeline.save_project(project)
 
         updated = await pipeline.generate_scene_image(project_id, scene_idx)
@@ -2064,6 +2303,8 @@ async def generate_all_images(project_id: str, req: Optional[RegenerateImageRequ
                 project["api_key"] = req.api_key
             if req.ai_provider:
                 project["ai_provider"] = req.ai_provider
+            if req.image_mode:
+                project["image_mode"] = req.image_mode
             pipeline.save_project(project)
 
         updated = await pipeline.generate_all_scene_images(project_id)
