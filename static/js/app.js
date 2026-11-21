@@ -1490,12 +1490,14 @@ class AniStoryApp {
         }
         localStorage.setItem("anistory_gemini_cookie_psid", psid);
         localStorage.setItem("anistory_gemini_cookie_psidts", psidts);
-        const combined = psidts ? `${psid}|${psidts}` : psid;
+        const combined = psid ? (psidts ? `${psid}|${psidts}` : psid) : "";
         localStorage.setItem("anistory_key_gemini_cookie", combined);
-        if (this.currentProject) {
+        this.hasServerGeminiCookie = Boolean(psid);
+        if (this.currentProject && (this.currentProject.ai_provider === "gemini_cookie" || !psid)) {
           this.currentProject.api_key = combined;
         }
       }
+      this.hasServerGeminiKey = Boolean(geminiVal);
 
       if (this.inputNeuralLoveApiKey) localStorage.setItem("anistory_key_neural_love", this.inputNeuralLoveApiKey.value.trim());
       if (this.inputOpenAiApiKey) localStorage.setItem("anistory_key_openai", this.inputOpenAiApiKey.value.trim());

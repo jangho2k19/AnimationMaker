@@ -332,7 +332,7 @@ async def save_credentials(req: SaveCredentialsRequest):
                 req.gemini_cookie_psid = gk
             if existing.get("gemini_api_key", "").startswith("g.a"):
                 creds_dict["gemini_api_key"] = ""
-        elif gk:
+        else:
             creds_dict["gemini_api_key"] = gk
 
     if req.gemini_cookie_psid is not None:
@@ -351,14 +351,18 @@ async def save_credentials(req: SaveCredentialsRequest):
             elif clean_psid != prev_psid or (req.gemini_cookie_psidts is not None and not explicit_ts):
                 # Do not pair a newly pasted __Secure-1PSID with a stale __Secure-1PSIDTS from an old session
                 creds_dict["gemini_cookie_psidts"] = ""
+        else:
+            # User explicitly cleared the Gemini Web Session Cookie
+            creds_dict["gemini_cookie_psid"] = ""
+            creds_dict["gemini_cookie_psidts"] = ""
     elif req.gemini_cookie_psidts is not None:
         creds_dict["gemini_cookie_psidts"] = req.gemini_cookie_psidts.strip()
 
-    if req.neural_love_key: creds_dict["neural_love_key"] = req.neural_love_key.strip()
-    if req.openai_api_key: creds_dict["openai_api_key"] = req.openai_api_key.strip()
-    if req.claude_api_key: creds_dict["claude_api_key"] = req.claude_api_key.strip()
-    if req.deepseek_api_key: creds_dict["deepseek_api_key"] = req.deepseek_api_key.strip()
-    if req.nvidia_api_key: creds_dict["nvidia_api_key"] = req.nvidia_api_key.strip()
+    if req.neural_love_key is not None: creds_dict["neural_love_key"] = req.neural_love_key.strip()
+    if req.openai_api_key is not None: creds_dict["openai_api_key"] = req.openai_api_key.strip()
+    if req.claude_api_key is not None: creds_dict["claude_api_key"] = req.claude_api_key.strip()
+    if req.deepseek_api_key is not None: creds_dict["deepseek_api_key"] = req.deepseek_api_key.strip()
+    if req.nvidia_api_key is not None: creds_dict["nvidia_api_key"] = req.nvidia_api_key.strip()
     try:
         save_server_credentials(creds_dict)
     except HTTPException:
