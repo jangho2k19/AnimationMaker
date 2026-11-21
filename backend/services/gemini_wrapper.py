@@ -323,6 +323,16 @@ class GeminiWebWrapper:
             # Prevent gemini_webapi's @retry_on_error decorator from self-deadlocking client._lock during init()
             self.client._lock = _ReentrantAsyncLock()
 
+            orig_init_rpc = self.client._init_rpc
+            async def _checked_init_rpc():
+                bl = str(getattr(self.client, "build_label", "") or "").lower()
+                if "identityfrontend" in bl:
+                    raise RuntimeError(
+                        "Google Gemini Web Cookie (__Secure-1PSID / __Secure-1PSIDTS) is expired or unauthenticated."
+                    )
+                return await orig_init_rpc()
+            self.client._init_rpc = _checked_init_rpc
+
             try:
                 await asyncio.wait_for(
                     self.client.init(
