@@ -592,6 +592,15 @@ class AniStoryApp {
     this.selectTaskRefineModel = document.getElementById("selectTaskRefineModel");
     this.selectTaskVideoEngine = document.getElementById("selectTaskVideoEngine");
 
+    // AI Execution & Error Log Box elements
+    this.btnToggleAiLogBox = document.getElementById("btnToggleAiLogBox");
+    this.badgeAiLogCount = document.getElementById("badgeAiLogCount");
+    this.aiExecutionLogPanel = document.getElementById("aiExecutionLogPanel");
+    this.aiExecutionLogList = document.getElementById("aiExecutionLogList");
+    this.btnCopyAiLogs = document.getElementById("btnCopyAiLogs");
+    this.btnClearAiLogs = document.getElementById("btnClearAiLogs");
+    this.aiExecutionLogs = [];
+
     // Model Explorer Modal elements
     this.modalModelExplorer = document.getElementById("modalModelExplorer");
     this.btnCloseModelExplorer = document.getElementById("btnCloseModelExplorer");
@@ -1529,9 +1538,9 @@ class AniStoryApp {
       }
     });
 
-    // Image Painting Mode Toggles (Google Gemini Imagen 3 vs FlowKit Character Ref vs Neural.love vs Puter.js vs Storyboard Only)
+    // Image Painting Mode Toggles (Google Gemini Imagen 3 vs FlowKit Character Ref vs Storyboard Only)
     const toggleImageModeHandler = () => {
-      const modes = ["gemini", "flowkit", "neural_love", "puter", "manual"];
+      const modes = ["gemini", "flowkit", "manual"];
       const currentIdx = Math.max(0, modes.indexOf(this.imageMode));
       const nextMode = modes[(currentIdx + 1) % modes.length];
       this.setImageMode(nextMode);
@@ -1539,11 +1548,23 @@ class AniStoryApp {
         ? "✨ Google Gemini / Imagen 3"
         : (nextMode === "flowkit"
           ? "🎬 FlowKit Character Ref Image"
-          : (nextMode === "neural_love"
-            ? "💖 Neural.love AI Art"
-            : (nextMode === "puter" ? "🖌️ In-Browser Puter.js" : "📝 Storyboard Only (No AI Paint)")));
+          : "📝 Storyboard Only (No AI Paint)");
       this.showToast(`Switched Image Mode to: ${label}`);
+      this.addAiLog("info", "Switch Paint Mode", label, `Default image painting engine switched to ${label}.`);
     };
+
+    if (this.btnToggleAiLogBox && this.aiExecutionLogPanel) {
+      this.btnToggleAiLogBox.addEventListener("click", () => {
+        const isOpen = this.aiExecutionLogPanel.style.display !== "none";
+        this.aiExecutionLogPanel.style.display = isOpen ? "none" : "block";
+      });
+    }
+    if (this.btnCopyAiLogs) {
+      this.btnCopyAiLogs.addEventListener("click", () => this.copyAiLogs());
+    }
+    if (this.btnClearAiLogs) {
+      this.btnClearAiLogs.addEventListener("click", () => this.clearAiLogs());
+    }
 
     if (this.btnDetectModels) {
       this.btnDetectModels.addEventListener("click", () => this.openModelExplorer());
@@ -2531,13 +2552,16 @@ class AniStoryApp {
 
   initImageMode() {
     let mode = localStorage.getItem("anistory_image_mode") || "gemini";
-    if (mode === "server") mode = "gemini";
+    if (mode === "server" || mode === "neural_love" || mode === "puter") {
+      mode = "gemini";
+      localStorage.setItem("anistory_image_mode", "gemini");
+    }
     this.imageMode = mode;
     this.applyImageModeUI(this.imageMode);
   }
 
   setImageMode(mode) {
-    if (mode === "server") mode = "gemini";
+    if (mode === "server" || mode === "neural_love" || mode === "puter") mode = "gemini";
     this.imageMode = mode;
     localStorage.setItem("anistory_image_mode", mode);
     this.applyImageModeUI(mode);
@@ -2553,14 +2577,6 @@ class AniStoryApp {
         this.badgeImageMode.textContent = "🎬 FlowKit Character Ref Image";
         this.badgeImageMode.style.background = "rgba(14, 165, 233, 0.2)";
         this.badgeImageMode.style.color = "#38bdf8";
-      } else if (mode === "neural_love") {
-        this.badgeImageMode.textContent = "💖 Neural.love AI Art";
-        this.badgeImageMode.style.background = "rgba(236, 72, 153, 0.2)";
-        this.badgeImageMode.style.color = "#f472b6";
-      } else if (mode === "puter") {
-        this.badgeImageMode.textContent = "🖌️ In-Browser Puter.js";
-        this.badgeImageMode.style.background = "rgba(16, 185, 129, 0.2)";
-        this.badgeImageMode.style.color = "#34d399";
       } else {
         this.badgeImageMode.textContent = "✨ Google Gemini / Imagen 3";
         this.badgeImageMode.style.background = "rgba(245, 158, 11, 0.2)";
@@ -2572,10 +2588,6 @@ class AniStoryApp {
         this.descImageMode.textContent = "AI is dedicated exclusively to the storyboard. Scenes use SVG placeholders and user-uploaded media.";
       } else if (mode === "flowkit") {
         this.descImageMode.textContent = "FlowKit / Google Flow image generation with automatic Character Portrait References across scenes.";
-      } else if (mode === "neural_love") {
-        this.descImageMode.textContent = "High-fidelity artistic anime & fantasy illustrations via your Neural.love API Key";
-      } else if (mode === "puter") {
-        this.descImageMode.textContent = "In-browser Puter.js AI Paint (subject to Puter balance/quota)";
       } else {
         this.descImageMode.textContent = "High-fidelity Google Imagen 3 visuals powered by your Gemini API Key or Web Cookie";
       }
@@ -2584,17 +2596,13 @@ class AniStoryApp {
       if (mode === "gemini") {
         this.btnToggleImageMode.innerHTML = `<span>🎬</span> Switch to FlowKit Character Ref`;
       } else if (mode === "flowkit") {
-        this.btnToggleImageMode.innerHTML = `<span>💖</span> Switch to Neural.love AI Art`;
-      } else if (mode === "neural_love") {
-        this.btnToggleImageMode.innerHTML = `<span>🖌️</span> Switch to In-Browser Puter.js`;
-      } else if (mode === "puter") {
         this.btnToggleImageMode.innerHTML = `<span>📝</span> Switch to Storyboard Only`;
       } else {
         this.btnToggleImageMode.innerHTML = `<span>✨</span> Switch to Google Gemini Imagen 3`;
       }
     }
     if (this.selectSettingsImageMode) {
-      this.selectSettingsImageMode.value = (mode === "server") ? "gemini" : mode;
+      this.selectSettingsImageMode.value = (mode === "server" || mode === "neural_love" || mode === "puter") ? "gemini" : mode;
     }
     if (this.textImageModeStage2 && this.iconImageModeStage2) {
       if (mode === "manual") {
@@ -2603,12 +2611,6 @@ class AniStoryApp {
       } else if (mode === "flowkit") {
         this.iconImageModeStage2.textContent = "🎬";
         this.textImageModeStage2.textContent = "Paint: FlowKit Char Ref";
-      } else if (mode === "neural_love") {
-        this.iconImageModeStage2.textContent = "💖";
-        this.textImageModeStage2.textContent = "Paint: Neural.love AI";
-      } else if (mode === "puter") {
-        this.iconImageModeStage2.textContent = "🖌️";
-        this.textImageModeStage2.textContent = "Paint: In-Browser Puter";
       } else {
         this.iconImageModeStage2.textContent = "✨";
         this.textImageModeStage2.textContent = "Paint: Gemini Imagen 3";
@@ -3091,14 +3093,17 @@ class AniStoryApp {
     const oldText = btnEl.textContent;
     btnEl.disabled = true;
     btnEl.textContent = "⏳";
+    const { imageMode: portraitMode, provider, apiKey } = this.getTaskImageConfig("portrait");
+    const engineTag = `${portraitMode || "gemini"} (${provider})`;
+    const charLabel = (char.name || `Character ${idx + 1}`).trim();
+    this.addAiLog("info", `Paint Draft Portrait (${charLabel})`, engineTag, `Requesting portrait generation...`);
     try {
-      const { imageMode: portraitMode, provider, apiKey } = this.getTaskImageConfig("portrait");
       const resp = await fetch("/api/characters/generate-draft-portrait", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: char.id,
-          name: (char.name || `Character ${idx + 1}`).trim(),
+          name: charLabel,
           description: (char.description || "").trim(),
           art_style: this.selectedStyleKey || "ghibli",
           image_mode: portraitMode || "gemini",
@@ -3114,8 +3119,10 @@ class AniStoryApp {
       char.image_path = data.image_path || "";
       this.saveStage1CharactersToStorage();
       this.renderStage1Characters();
+      this.addAiLog("success", `Paint Draft Portrait (${charLabel})`, engineTag, `Portrait generated (${char.image_path}).`);
       this.showToast(`🎨 Đã tạo chân dung nhân vật "${char.name || "Character"}"!`);
     } catch (e) {
+      this.addAiLog("error", `Paint Draft Portrait (${charLabel})`, engineTag, e.message || String(e));
       this.showToast(e.message, true);
     } finally {
       btnEl.disabled = false;
@@ -3404,8 +3411,10 @@ class AniStoryApp {
       btnEl.disabled = true;
       btnEl.textContent = "⏳";
     }
+    const { imageMode: portraitMode, provider, apiKey } = this.getTaskImageConfig("portrait");
+    const engineTag = `${portraitMode || "gemini"} (${provider})`;
+    this.addAiLog("info", `Paint Studio Portrait (${charId})`, engineTag, `Generating character portrait...`);
     try {
-      const { imageMode: portraitMode, provider, apiKey } = this.getTaskImageConfig("portrait");
       const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/characters/${encodeURIComponent(charId)}/generate-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3425,9 +3434,11 @@ class AniStoryApp {
         this.saveActiveProjectState();
         this.renderCharacterVoiceCasting();
         this.renderStoryboardView();
+        this.addAiLog("success", `Paint Studio Portrait (${charId})`, engineTag, `Portrait generated and active for scene/video refs.`);
         this.showToast("🎨 Character portrait generated! Now used automatically in Scene & Video generation.");
       }
     } catch (err) {
+      this.addAiLog("error", `Paint Studio Portrait (${charId})`, engineTag, err.message || String(err));
       this.showToast(err.message, true);
     } finally {
       if (btnEl) {
@@ -3490,12 +3501,15 @@ class AniStoryApp {
     }
 
     const { imageMode: portraitMode, provider, apiKey } = this.getTaskImageConfig("portrait");
+    const engineTag = `${portraitMode || "gemini"} (${provider})`;
     let paintedCount = 0;
     let failedCount = 0;
+    this.addAiLog("info", "Paint All Stage 1 Characters", engineTag, `Starting sequential portrait generation for ${targets.length} character(s)...`);
 
     try {
       for (let i = 0; i < targets.length; i++) {
         const char = targets[i];
+        const charLabel = (char.name || `Character ${i + 1}`).trim();
         if (btnEl) {
           btnEl.innerHTML = `<span>⏳ Painting ${i + 1}/${targets.length}...</span>`;
         }
@@ -3505,7 +3519,7 @@ class AniStoryApp {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               id: char.id,
-              name: (char.name || `Character ${i + 1}`).trim(),
+              name: charLabel,
               description: (char.description || "").trim(),
               art_style: this.selectedStyleKey || "ghibli",
               image_mode: portraitMode || "gemini",
@@ -3522,8 +3536,10 @@ class AniStoryApp {
           this.saveStage1CharactersToStorage();
           this.renderStage1Characters();
           paintedCount++;
+          this.addAiLog("success", `Paint Portrait (${charLabel})`, engineTag, `Portrait generated (${char.image_path}).`);
         } catch (err) {
           failedCount++;
+          this.addAiLog("error", `Paint Portrait (${charLabel})`, engineTag, err.message || String(err));
           console.warn(`Stage 1 portrait fail for ${char.name}:`, err);
         }
       }
@@ -3532,7 +3548,7 @@ class AniStoryApp {
       } else if (paintedCount > 0) {
         this.showToast(`🎨 Đã tạo ${paintedCount}/${targets.length} chân dung (${failedCount} lỗi).`, true);
       } else {
-        this.showToast(`Không thể tạo ảnh nhân vật (${failedCount} lỗi). Kiểm tra API key / chế độ vẽ.`, true);
+        this.showToast(`Không thể tạo ảnh nhân vật (${failedCount} lỗi). Xem hộp Logs để kiểm tra chi tiết.`, true);
       }
     } finally {
       if (btnEl) {
@@ -3578,8 +3594,10 @@ class AniStoryApp {
     }
 
     const { provider, model: modelVal, apiKey } = this.getTaskAiConfig("characters");
+    const engineTag = `${provider}${modelVal ? " / " + modelVal : ""}`;
     const langVal = this.selectLanguage ? this.selectLanguage.value : "auto";
     const narratorVoice = this.selectVoice ? this.selectVoice.value : "";
+    this.addAiLog("info", "Analyze & Create Characters", engineTag, `Analyzing story text strictly with ${engineTag}...`);
 
     const fetchWithTimeout = async (url, options, timeoutMs = 45000) => {
       const ctrl = new AbortController();
@@ -3621,6 +3639,7 @@ class AniStoryApp {
       const data = await resp.json();
       const analyzedChars = Array.isArray(data.characters) ? data.characters : [];
       if (analyzedChars.length === 0) {
+        this.addAiLog("warn", "Analyze & Create Characters", engineTag, "No characters could be identified from the story text.");
         this.showToast("No characters could be identified from the story text.", true);
         return;
       }
@@ -3675,15 +3694,10 @@ class AniStoryApp {
 
       const libMatched = Number(data.matched_library_count || 0);
       const libNote = libMatched > 0 ? ` (${libMatched} matched from Library)` : "";
-      const parserNote = (data.parser_note || "").trim();
-      const parserAuthErr = /unauthenticated|cookies have expired|401|api key/i.test(parserNote);
-
-      if (parserAuthErr) {
-        this.showToast(`✨ Created ${analyzedChars.length} character(s)${libNote} (local analyzer: update Gemini Cookie in ⚙️ for AI analysis). Review prompts, then click 🎨 Paint all Characters!`);
-      } else {
-        this.showToast(`✨ Analyzed & created ${analyzedChars.length} character(s)${libNote}! Review prompts & voices, then click 🎨 Paint all Characters.`);
-      }
+      this.addAiLog("success", "Analyze & Create Characters", engineTag, `Created ${analyzedChars.length} character(s)${libNote}: ${analyzedChars.map(c => c.name).join(", ")}`);
+      this.showToast(`✨ Analyzed & created ${analyzedChars.length} character(s)${libNote}! Review prompts & voices, then click 🎨 Paint all Characters.`);
     } catch (e) {
+      this.addAiLog("error", "Analyze & Create Characters", engineTag, e.message || String(e));
       this.showToast(e.message, true);
     } finally {
       if (btnEl) {
@@ -3720,6 +3734,8 @@ class AniStoryApp {
     if (this.btnParseCharImport) this.btnParseCharImport.disabled = true;
     try {
       const { provider, model, apiKey } = this.getTaskAiConfig("characters");
+      const engineTag = `${provider}${model ? " / " + model : ""}`;
+      this.addAiLog("info", `Import Character .txt (${file.name})`, engineTag, `Parsing character file strictly with ${engineTag}...`);
 
       const fd = new FormData();
       fd.append("file", file);
@@ -3742,8 +3758,12 @@ class AniStoryApp {
       }
       this._parsedImportCharacters = Array.isArray(data.characters) ? data.characters : [];
       this.renderCharImportPreview(data.parser, data.parser_note);
+      this.addAiLog("success", `Import Character .txt (${file.name})`, engineTag, `Extracted ${this._parsedImportCharacters.length} character(s).`);
       this.showToast(`🤖 Đã đọc "${data.filename}" & tách ${this._parsedImportCharacters.length} nhân vật!`);
     } catch (e) {
+      const { provider, model } = this.getTaskAiConfig("characters");
+      const engineTag = `${provider}${model ? " / " + model : ""}`;
+      this.addAiLog("error", `Import Character .txt (${file.name})`, engineTag, e.message || String(e));
       if (this.labelCharImportFileName) {
         this.labelCharImportFileName.textContent = `❌ Lỗi đọc file: ${e.message}`;
       }
@@ -3765,9 +3785,10 @@ class AniStoryApp {
       this.btnParseCharImport.disabled = true;
       this.btnParseCharImport.innerHTML = `<span>⏳ Đang phân tích bằng AI...</span>`;
     }
+    const { provider, model, apiKey } = this.getTaskAiConfig("characters");
+    const engineTag = `${provider}${model ? " / " + model : ""}`;
+    this.addAiLog("info", "Parse Character Text", engineTag, `Parsing character prompt text strictly with ${engineTag}...`);
     try {
-      const { provider, model, apiKey } = this.getTaskAiConfig("characters");
-
       const resp = await fetch("/api/characters/parse-import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3785,9 +3806,11 @@ class AniStoryApp {
       const data = await resp.json();
       this._parsedImportCharacters = Array.isArray(data.characters) ? data.characters : [];
       this.renderCharImportPreview(data.parser, data.parser_note);
+      this.addAiLog("success", "Parse Character Text", engineTag, `Extracted ${this._parsedImportCharacters.length} character(s).`);
       this.showToast(`✓ Đã tách ${this._parsedImportCharacters.length} nhân vật (${data.parser === "ai" ? "AI Parse" : "Smart Parser"})!`);
       return this._parsedImportCharacters;
     } catch (e) {
+      this.addAiLog("error", "Parse Character Text", engineTag, e.message || String(e));
       this.showToast(e.message, true);
       return [];
     } finally {
@@ -4286,8 +4309,10 @@ class AniStoryApp {
     }
 
     const { imageMode: activeImageMode, provider, apiKey } = this.getTaskImageConfig("portrait");
+    const engineTag = `${activeImageMode || "gemini"} (${provider})`;
     let paintedCount = 0;
     let failedCount = 0;
+    this.addAiLog("info", "Paint All Studio Characters", engineTag, `Starting sequential portrait generation for ${targets.length} character(s)...`);
 
     try {
       for (let i = 0; i < targets.length; i++) {
@@ -4316,8 +4341,10 @@ class AniStoryApp {
             this.renderCharacterVoiceCasting();
           }
           paintedCount++;
+          this.addAiLog("success", `Paint Studio Portrait (${char.name})`, engineTag, `Portrait generated.`);
         } catch (err) {
           failedCount++;
+          this.addAiLog("error", `Paint Studio Portrait (${char.name})`, engineTag, err.message || String(err));
           console.warn(`Batch portrait error for ${char.name}:`, err);
         }
       }
@@ -4820,14 +4847,20 @@ ${isAutoScenes
     if (!this.selectAiModel) return;
     const provider = this.selectAiProvider ? this.selectAiProvider.value : "gemini";
     const savedModel = localStorage.getItem("anistory_cfg_model") || localStorage.getItem("anistory_model_gemini");
-    const selected = currentSelected || savedModel || this.selectAiModel.value || (provider === "gemini_cookie" ? "gemini-flash-advanced" : "gemini-2.5-flash");
+    const defaultForProvider = provider === "gemini_cookie" ? "gemini-flash-advanced" : "gemini-3.5-flash";
+    let selected = currentSelected || savedModel || this.selectAiModel.value || defaultForProvider;
+    if (provider === "gemini" && selected === "gemini-2.5-flash" && !currentSelected) {
+      selected = "gemini-3.5-flash";
+    }
 
     if (provider !== "gemini" && provider !== "gemini_cookie") return;
 
     this.selectAiModel.innerHTML = "";
 
     const apiModels = (data && data.api_models && data.api_models.length > 0) ? data.api_models : [
-      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", badge: "✨ Recommended (~2s)" },
+      { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", badge: "✨ Recommended (~2s)" },
+      { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", badge: "💨 Sub-Second" },
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", badge: "⚡ Fast" },
       { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash-Lite", badge: "💨 Sub-Second" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", badge: "🧠 Deep Reasoning (~30s)" },
       { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", badge: "⚡ Latest Flash" }
@@ -4884,7 +4917,7 @@ ${isAutoScenes
       if (provider === "gemini_cookie") {
         this.selectAiModel.value = "gemini-flash-advanced";
       } else {
-        this.selectAiModel.value = "gemini-2.5-flash";
+        this.selectAiModel.value = "gemini-3.5-flash";
       }
     }
   }
@@ -5239,6 +5272,98 @@ ${isAutoScenes
     bindEngineSelect(this.selectTaskPortraitEngine, "anistory_task_portrait_engine", "default");
     bindEngineSelect(this.selectTaskScenePaintEngine, "anistory_task_scene_paint_engine", "default");
     bindEngineSelect(this.selectTaskVideoEngine, "anistory_task_video_engine", "ken_burns");
+    if (this.selectTaskPortraitEngine && (this.selectTaskPortraitEngine.value === "neural_love" || this.selectTaskPortraitEngine.value === "puter")) {
+      this.selectTaskPortraitEngine.value = "default";
+      localStorage.setItem("anistory_task_portrait_engine", "default");
+    }
+    if (this.selectTaskScenePaintEngine && (this.selectTaskScenePaintEngine.value === "neural_love" || this.selectTaskScenePaintEngine.value === "puter")) {
+      this.selectTaskScenePaintEngine.value = "default";
+      localStorage.setItem("anistory_task_scene_paint_engine", "default");
+    }
+  }
+
+  addAiLog(level = "info", taskLabel = "AI Task", engineLabel = "", message = "") {
+    if (!Array.isArray(this.aiExecutionLogs)) {
+      this.aiExecutionLogs = [];
+    }
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const entry = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      time: timeStr,
+      level,
+      task: taskLabel || "AI Task",
+      engine: engineLabel || "",
+      message: String(message || "")
+    };
+    this.aiExecutionLogs.push(entry);
+    if (this.aiExecutionLogs.length > 200) {
+      this.aiExecutionLogs.shift();
+    }
+    if (level === "error" && this.aiExecutionLogPanel) {
+      this.aiExecutionLogPanel.style.display = "block";
+    }
+    this.renderAiLogs();
+  }
+
+  renderAiLogs() {
+    if (this.badgeAiLogCount) {
+      this.badgeAiLogCount.textContent = String((this.aiExecutionLogs || []).length);
+    }
+    if (!this.aiExecutionLogList) return;
+    const logs = this.aiExecutionLogs || [];
+    if (logs.length === 0) {
+      this.aiExecutionLogList.innerHTML = `<div style="color:#64748b;">[System] Ready. Strict AI execution mode active — tasks will strictly use the selected AI method/model and log all execution results here.</div>`;
+      return;
+    }
+    this.aiExecutionLogList.innerHTML = logs.map(item => {
+      let color = "#cbd5e1";
+      let badgeColor = "#38bdf8";
+      let prefix = "ℹ️ INFO";
+      if (item.level === "error") {
+        color = "#fca5a5";
+        badgeColor = "#f87171";
+        prefix = "❌ FAILED";
+      } else if (item.level === "success") {
+        color = "#a7f3d0";
+        badgeColor = "#34d399";
+        prefix = "✅ OK";
+      } else if (item.level === "warn") {
+        color = "#fde68a";
+        badgeColor = "#fbbf24";
+        prefix = "⚠️ WARN";
+      }
+      const engineBadge = item.engine
+        ? `<span style="color:#c4b5fd; font-weight:600;">[${this.escapeHtml(item.engine)}]</span> `
+        : "";
+      return `<div style="padding:3px 6px; border-bottom:1px solid rgba(255,255,255,0.05); color:${color}; word-break:break-word;">` +
+        `<span style="color:#64748b;">[${this.escapeHtml(item.time)}]</span> ` +
+        `<strong style="color:${badgeColor};">${prefix}</strong> ` +
+        `<strong style="color:#f8fafc;">${this.escapeHtml(item.task)}</strong> ` +
+        `${engineBadge}— ${this.escapeHtml(item.message)}` +
+        `</div>`;
+    }).join("");
+    this.aiExecutionLogList.scrollTop = this.aiExecutionLogList.scrollHeight;
+  }
+
+  clearAiLogs() {
+    this.aiExecutionLogs = [];
+    this.renderAiLogs();
+    this.showToast("🧹 Cleared AI execution logs.");
+  }
+
+  copyAiLogs() {
+    const logs = this.aiExecutionLogs || [];
+    if (logs.length === 0) {
+      this.showToast("No logs to copy yet.", true);
+      return;
+    }
+    const text = logs.map(it => `[${it.time}] [${it.level.toUpperCase()}] ${it.task} ${it.engine ? `[${it.engine}]` : ""} - ${it.message}`).join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      this.showToast("📋 Copied AI execution logs to clipboard!");
+    }).catch(() => {
+      this.showToast("Failed to copy logs", true);
+    });
   }
 
   resetAllTaskModelsToDefault() {
@@ -5281,10 +5406,16 @@ ${isAutoScenes
   }
 
   getTaskImageConfig(taskName = "scene") {
-    const defaultMode = this.imageMode || this.currentProject?.image_mode || "gemini";
+    let defaultMode = this.imageMode || this.currentProject?.image_mode || "gemini";
+    if (defaultMode === "neural_love" || defaultMode === "puter" || defaultMode === "server") {
+      defaultMode = "gemini";
+    }
     const defaultProvider = this.selectAiProvider ? this.selectAiProvider.value : (this.currentProject?.ai_provider || "gemini");
     const sel = taskName === "portrait" ? this.selectTaskPortraitEngine : this.selectTaskScenePaintEngine;
-    const val = (sel && sel.value && sel.value !== "default") ? sel.value : defaultMode;
+    let val = (sel && sel.value && sel.value !== "default") ? sel.value : defaultMode;
+    if (val === "neural_love" || val === "puter" || val === "server") {
+      val = "gemini";
+    }
 
     let provider = defaultProvider;
     let imageMode = val;
@@ -5297,9 +5428,6 @@ ${isAutoScenes
     } else if (val === "openai") {
       provider = "openai";
       imageMode = "openai";
-    } else if (val === "neural_love") {
-      provider = "neural_love";
-      imageMode = "neural_love";
     } else if (val === "pollinations") {
       imageMode = "pollinations";
     }
@@ -5347,6 +5475,8 @@ ${isAutoScenes
       this.labelProviderStatus.style.color = "#fbbf24";
     }
 
+    const engineTag = `${provider}${model ? " / " + model : ""}`;
+    this.addAiLog("info", "Verify Credentials", engineTag, `Verifying credentials for ${engineTag}...`);
     try {
       const resp = await fetch("/api/credentials/verify", {
         method: "POST",
@@ -5373,8 +5503,10 @@ ${isAutoScenes
           this.labelProviderStatus.style.color = "#f87171";
         }
       }
+      this.addAiLog(data.valid ? (data.mode === "guest_fallback" ? "warn" : "success") : "error", "Verify Credentials", engineTag, data.message || (data.valid ? "Credentials valid!" : "Credentials invalid"));
       this.showToast(data.message || (data.valid ? "Credentials valid!" : "Credentials invalid"), !data.valid);
     } catch (e) {
+      this.addAiLog("error", "Verify Credentials", engineTag, e.message || String(e));
       this.showToast("Failed to verify credentials: " + e.message, true);
     } finally {
       if (btnEl) {
@@ -5412,8 +5544,10 @@ ${isAutoScenes
       });
       const data = await resp.json();
       this.renderCredentialVerifyBanner(statusEl, data);
+      this.addAiLog(data.valid ? "success" : "error", "Verify Settings Credential", provider, data.message || (data.valid ? "Valid!" : "Invalid"));
       this.showToast(data.message || (data.valid ? "Valid!" : "Invalid"), !data.valid);
     } catch (e) {
+      this.addAiLog("error", "Verify Settings Credential", provider, e.message || String(e));
       this.showToast("Check failed: " + e.message, true);
     } finally {
       if (btnEl) {
@@ -5799,12 +5933,16 @@ ${isAutoScenes
       `;
     }, 1000);
 
-    try {
-      const { provider, model, apiKey } = this.getTaskAiConfig("storyboard");
-      const { imageMode: scenePaintMode } = this.getTaskImageConfig("scene");
+    const { provider, model, apiKey } = this.getTaskAiConfig("storyboard");
+    const { imageMode: scenePaintMode } = this.getTaskImageConfig("scene");
+    const engineTag = `${provider}${model ? " / " + model : ""}`;
+    this.addAiLog("info", "Generate Storyboard", engineTag, `Generating storyboard screenplay strictly using ${engineTag}...`);
 
+    try {
       if (provider === "gemini_cookie" && !apiKey && !this.hasServerGeminiCookie) {
         clearInterval(timerInterval);
+        const cookieErr = "Missing Gemini __Secure-1PSID cookie. Paste your cookie in Settings ⚙️ first!";
+        this.addAiLog("error", "Generate Storyboard", engineTag, cookieErr);
         this.showToast("Please paste your Gemini __Secure-1PSID cookie in Settings ⚙️ first! 🍪", true);
         this.btnGenerateStoryboard.disabled = false;
         this.btnGenerateStoryboard.innerHTML = `<span class="btn-text">Generate Storyboard</span><span class="btn-arrow">✨</span>`;
@@ -5896,6 +6034,7 @@ ${isAutoScenes
       this.renderStoryboardView();
       this.switchStage(2);
       const titleDisplay = this.currentProject.title ? `"${this.currentProject.title}"` : `${this.currentProject.scenes.length} scenes`;
+      this.addAiLog("success", "Generate Storyboard", engineTag, `Generated ${titleDisplay} (${this.currentProject.scenes.length} scenes in ${elapsedSec}s).`);
       this.showToast(`✨ Generated ${titleDisplay} (${this.currentProject.scenes.length} scenes in ${elapsedSec}s)! Review your script, then click '🎨 Paint All' to paint. 🎬`);
       if (!fromAutoWorkflow && this.autoWorkflowEnabled) {
         this.runAutoWorkflowFromStep2To4();
@@ -5905,6 +6044,7 @@ ${isAutoScenes
       return true;
     } catch (e) {
       console.error(e);
+      this.addAiLog("error", "Generate Storyboard", engineTag, e.message || String(e));
       this.showToast(e.message, true);
       return false;
     } finally {
@@ -6040,10 +6180,12 @@ ${isAutoScenes
       `;
     }, 1000);
 
-    try {
-      const { provider, model, apiKey } = this.getTaskAiConfig("storyboard");
-      const { imageMode: scenePaintMode } = this.getTaskImageConfig("scene");
+    const { provider, model, apiKey } = this.getTaskAiConfig("storyboard");
+    const { imageMode: scenePaintMode } = this.getTaskImageConfig("scene");
+    const engineTag = `${provider}${model ? " / " + model : ""}`;
+    this.addAiLog("info", `Generate Ad Storyboard (${productName})`, engineTag, `Generating commercial script strictly using ${engineTag}...`);
 
+    try {
       const isAutoScenes = this.isAutoSceneCount();
       const durVal = this.selectTargetDuration ? this.selectTargetDuration.value : "auto";
       const isAutoDuration = durVal === "auto";
@@ -6106,6 +6248,7 @@ ${isAutoScenes
       const photoMsg = this.adUploadedFiles.length > 0
         ? ` with ${this.adUploadedFiles.length} product photos ready`
         : "";
+      this.addAiLog("success", `Generate Ad Storyboard (${productName})`, engineTag, `Generated commercial with ${this.currentProject.scenes.length} scenes.`);
       this.showToast(`🛍️ Generated Commercial for "${productName}" (${this.currentProject.scenes.length} scenes${photoMsg})! Click '🎬 Render Film' to produce video.`);
       if (!fromAutoWorkflow && this.autoWorkflowEnabled) {
         this.runAutoWorkflowFromStep2To4();
@@ -6113,6 +6256,7 @@ ${isAutoScenes
       return true;
     } catch (e) {
       console.error(e);
+      this.addAiLog("error", `Generate Ad Storyboard (${productName})`, engineTag, e.message || String(e));
       this.showToast(e.message, true);
       return false;
     } finally {
@@ -7287,7 +7431,10 @@ ${isAutoScenes
       btn.disabled = true;
       btn.innerHTML = `⏳ Refining...`;
     }
+    const { provider: refProv, model: refMod } = this.getTaskAiConfig("refine");
+    const refTag = `${refProv}${refMod ? " / " + refMod : ""}`;
     try {
+      this.addAiLog("info", `Refine Video Prompt (Scene ${idx + 1})`, refTag, `Upgrading video acting prompt...`);
       await this.saveStoryboardEdits(false);
       const res = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/scenes/${idx}/refine-video-prompt`, {
         method: "POST"
@@ -7311,9 +7458,11 @@ ${isAutoScenes
         void textarea.offsetWidth;
         textarea.classList.add("flash-highlight");
       }
+      this.addAiLog("success", `Refine Video Prompt (Scene ${idx + 1})`, refTag, `Refined Scene ${idx + 1} acting prompt.`);
       this.showToast(`✨ Upgraded Scene ${idx + 1} Video Prompt to cinematic director grade!`);
     } catch (err) {
       console.error("Refine scene video prompt failed:", err);
+      this.addAiLog("error", `Refine Video Prompt (Scene ${idx + 1})`, refTag, err.message || String(err));
       this.showToast(err.message || "Failed to refine prompt", true);
     } finally {
       if (btn) {
@@ -7333,7 +7482,10 @@ ${isAutoScenes
       btn.disabled = true;
       btn.innerHTML = `⏳ Refining All...`;
     }
+    const { provider: refProv, model: refMod } = this.getTaskAiConfig("refine");
+    const refTag = `${refProv}${refMod ? " / " + refMod : ""}`;
     try {
+      this.addAiLog("info", "Refine All Video Prompts", refTag, `Upgrading all scene acting prompts...`);
       await this.saveStoryboardEdits(false);
       const res = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/refine-all-video-prompts`, {
         method: "POST"
@@ -7359,9 +7511,11 @@ ${isAutoScenes
         this.currentProject = data.project;
       }
       this.saveActiveProjectState();
+      this.addAiLog("success", "Refine All Video Prompts", refTag, `Upgraded all scene acting prompts.`);
       this.showToast("✨ All scenes upgraded with director-grade 8s cinematic video prompts! 🎬");
     } catch (err) {
       console.error("Refine all video prompts failed:", err);
+      this.addAiLog("error", "Refine All Video Prompts", refTag, err.message || String(err));
       this.showToast(err.message || "Failed to refine prompts", true);
     } finally {
       if (btn) {
@@ -7539,8 +7693,10 @@ ${isAutoScenes
         statusPill.textContent = `🎨 Painting ${i + 1}/${scenesToPaint.length}...`;
       }
 
+      const { imageMode: scenePaintMode, provider: curProvider, apiKey: curKey } = this.getTaskImageConfig("scene");
+      const engineTag = `${scenePaintMode || "gemini"} (${curProvider})`;
       try {
-        const { imageMode: scenePaintMode, provider: curProvider, apiKey: curKey } = this.getTaskImageConfig("scene");
+        this.addAiLog("info", `Paint Scene ${sceneIdx + 1}/${scenesToPaint.length}`, engineTag, `Generating keyframe strictly using ${engineTag}...`);
         const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/regenerate-image/${sceneIdx}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -7569,6 +7725,7 @@ ${isAutoScenes
                 statusPill.className = "scene-status-pill ready";
                 statusPill.textContent = "✓ Ready";
               }
+              this.addAiLog("success", `Paint Scene ${sceneIdx + 1}`, engineTag, `Scene ${sceneIdx + 1} keyframe painted (${cleanPath}).`);
             } else {
               if (imgEl) imgEl.style.display = "none";
               if (placeholderEl) placeholderEl.style.display = "flex";
@@ -7576,6 +7733,7 @@ ${isAutoScenes
                 statusPill.className = "scene-status-pill error";
                 statusPill.textContent = "⚠️ No Image";
               }
+              this.addAiLog("warn", `Paint Scene ${sceneIdx + 1}`, engineTag, `No image returned for Scene ${sceneIdx + 1}.`);
             }
             this.updateQuickJumpPill(sceneIdx, Boolean(cleanPath), Boolean(updatedScene?.video_path));
             this.saveActiveProjectState();
@@ -7590,9 +7748,11 @@ ${isAutoScenes
             statusPill.className = "scene-status-pill error";
             statusPill.textContent = "⚠️ Error";
           }
+          this.addAiLog("error", `Paint Scene ${sceneIdx + 1}`, engineTag, errDetail);
           console.warn(`Scene ${sceneIdx + 1} paint issue:`, errDetail);
         }
       } catch (err) {
+        this.addAiLog("error", `Paint Scene ${sceneIdx + 1}`, engineTag, err.message || String(err));
         console.warn(`Sequential paint scene ${sceneIdx + 1} error:`, err);
         if (statusPill) {
           statusPill.className = "scene-status-pill error";
@@ -7815,70 +7975,39 @@ ${isAutoScenes
     buttonEl.disabled = true;
     buttonEl.textContent = "Painting... ⏳";
 
+    const { imageMode: scenePaintMode, provider: curProvider, apiKey: curKey } = this.getTaskImageConfig("scene");
+    const engineTag = `${scenePaintMode || "gemini"} (${curProvider})`;
+    this.addAiLog("info", `Paint Scene ${sceneIdx + 1}`, engineTag, `Generating scene keyframe strictly using ${engineTag}...`);
+
     try {
       // First save any prompt edits
       await this.saveStoryboardEdits(false);
 
-      let painted = false;
-      const { imageMode: scenePaintMode, provider: curProvider, apiKey: curKey } = this.getTaskImageConfig("scene");
-
-      // Only attempt browser Puter.js if imageMode is "puter"
-      if (scenePaintMode === "puter") {
-        if (window.puter && window.puter.ai && typeof window.puter.ai.txt2img === "function") {
-          try {
-            const scene = this.currentProject.scenes[sceneIdx];
-            const imgEl = await window.puter.ai.txt2img(scene.visual_prompt || scene.title);
-            if (imgEl && imgEl.src) {
-              const bResp = await fetch(imgEl.src);
-              const blob = await bResp.blob();
-              const formData = new FormData();
-              formData.append("file", blob, `scene_${sceneIdx + 1}.jpg`);
-              const upResp = await fetch(`/api/projects/${this.currentProject.id}/upload-image/${sceneIdx}`, {
-                method: "POST",
-                body: formData
-              });
-              if (upResp.ok) {
-                this.currentProject = await upResp.json();
-                this.saveActiveProjectState();
-                painted = true;
-                this.showToast(`Scene ${sceneIdx + 1} painted using In-Browser Puter AI! 🖌️`);
-              }
-            }
-          } catch (pErr) {
-            console.warn("Puter browser AI notice:", pErr);
-            this.showToast(`Puter generation notice: ${pErr.message || pErr}`, true);
-          }
-        } else {
-          this.showToast("Puter.js not available in browser. Generating with Google Gemini Imagen 3...", false);
-          this.setImageMode("gemini");
-        }
+      const resp = await fetch(`/api/projects/${this.currentProject.id}/regenerate-image/${sceneIdx}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: curKey, ai_provider: curProvider, image_mode: scenePaintMode })
+      });
+      if (!resp.ok) {
+        let errDetail = "Image re-roll failed";
+        try {
+          const errJson = await resp.json();
+          errDetail = errJson.detail || errDetail;
+        } catch {}
+        throw new Error(errDetail);
       }
-
-      if (!painted) {
-        const resp = await fetch(`/api/projects/${this.currentProject.id}/regenerate-image/${sceneIdx}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: curKey, ai_provider: curProvider, image_mode: scenePaintMode })
-        });
-        if (!resp.ok) {
-          let errDetail = "Image re-roll failed";
-          try {
-            const errJson = await resp.json();
-            errDetail = errJson.detail || errDetail;
-          } catch {}
-          throw new Error(errDetail);
-        }
-        this.currentProject = await resp.json();
-        this.saveActiveProjectState();
-        const modeLabel = this.imageMode === "flowkit"
-          ? "FlowKit Char-Ref"
-          : ((curProvider === "gemini_cookie" || curProvider === "gemini")
-            ? "Google Imagen 3"
-            : (curProvider === "neural_love" ? "Neural.love AI" : "AI Paint"));
-        const charImgsCount = (this.currentProject.character_profiles || []).filter(p => p && p.image_path).length;
-        const refNote = charImgsCount > 0 ? ` + ${charImgsCount} Character Ref` : "";
-        this.showToast(`Scene ${sceneIdx + 1} painted with ${modeLabel}${refNote}! 🎨✨`);
-      }
+      this.currentProject = await resp.json();
+      this.saveActiveProjectState();
+      const modeLabel = scenePaintMode === "flowkit"
+        ? "FlowKit Char-Ref"
+        : (scenePaintMode === "pollinations"
+          ? "Pollinations Flux"
+          : (scenePaintMode === "openai"
+            ? "OpenAI DALL-E 3"
+            : "Google Imagen 3"));
+      const charImgsCount = (this.currentProject.character_profiles || []).filter(p => p && p.image_path).length;
+      const refNote = charImgsCount > 0 ? ` + ${charImgsCount} Character Ref` : "";
+      this.showToast(`Scene ${sceneIdx + 1} painted with ${modeLabel}${refNote}! 🎨✨`);
 
       const updatedScene = this.currentProject.scenes[sceneIdx];
       const cleanPath = updatedScene?.image_path ? updatedScene.image_path.replace(/\\/g, "/") : "";
@@ -7897,6 +8026,7 @@ ${isAutoScenes
           statusPill.className = "scene-status-pill ready";
           statusPill.textContent = "✓ Ready";
         }
+        this.addAiLog("success", `Paint Scene ${sceneIdx + 1}`, engineTag, `Painted Scene ${sceneIdx + 1} with ${modeLabel}${refNote} (${cleanPath}).`);
       } else {
         if (imgEl) imgEl.style.display = "none";
         if (placeholderEl) placeholderEl.style.display = "flex";
@@ -7904,11 +8034,13 @@ ${isAutoScenes
           statusPill.className = "scene-status-pill error";
           statusPill.textContent = "⚠️ No Image";
         }
+        this.addAiLog("warn", `Paint Scene ${sceneIdx + 1}`, engineTag, `Scene ${sceneIdx + 1} finished without an image path.`);
       }
       this.updateQuickJumpPill(sceneIdx, Boolean(cleanPath), Boolean(updatedScene?.video_path));
       this.saveActiveProjectState();
     } catch (e) {
       console.error(e);
+      this.addAiLog("error", `Paint Scene ${sceneIdx + 1}`, engineTag, e.message || "Failed to regenerate image");
       this.showToast(e.message || "Failed to regenerate image", true);
     } finally {
       buttonEl.disabled = false;
@@ -8125,9 +8257,11 @@ ${isAutoScenes
       if (btnDownload) btnDownload.style.display = "";
 
       this.updateQuickJumpPill(sceneIdx, true, true);
+      this.addAiLog("success", `Veo Video (Scene ${sceneIdx + 1})`, "flowkit_veo", `Rendered Scene ${sceneIdx + 1} with Google Veo acting motion.`);
       this.showToast(`🎉 Scene ${sceneIdx + 1} rendered with Google Veo acting motion!`);
     } catch (e) {
       console.error(e);
+      this.addAiLog("error", `Veo Video (Scene ${sceneIdx + 1})`, "flowkit_veo", e.message || String(e));
       this.showToast(e.message, true);
     } finally {
       buttonEl.disabled = false;
@@ -8212,10 +8346,11 @@ ${isAutoScenes
       <div class="log-row active"><span class="log-spinner">⏳</span> Visual Artist Agent painting frames...</div>
     `;
 
+    const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
+    const curKey = this.getEffectiveApiKey(curProvider);
+    const targetProjId = this.currentProject.id;
+    this.addAiLog("info", "Render Full Film", curProvider, `Starting full film render for project ${targetProjId}...`);
     try {
-      const curProvider = this.currentProject?.ai_provider || this.selectAiProvider?.value || "gemini";
-      const curKey = this.getEffectiveApiKey(curProvider);
-      const targetProjId = this.currentProject.id;
       const resp = await fetch(`/api/projects/${encodeURIComponent(targetProjId)}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -24,12 +24,7 @@ class ScriptAgent:
                 psid = creds.get("gemini_cookie_psid")
                 psidts = creds.get("gemini_cookie_psidts")
                 if self.provider == "gemini":
-                    if creds.get("gemini_api_key") and creds["gemini_api_key"].startswith(("AIzaSy", "AQ.")):
-                        self.api_key = creds.get("gemini_api_key")
-                    elif psid:
-                        self.api_key = f"{psid}|{psidts}" if psidts else psid
-                        self.provider = "gemini_cookie"
-                    elif creds.get("gemini_api_key"):
+                    if creds.get("gemini_api_key") and not creds["gemini_api_key"].startswith("g.a"):
                         self.api_key = creds.get("gemini_api_key")
                 elif self.provider in ("gemini_cookie", "gemini_web"):
                     if psid:
@@ -729,38 +724,14 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
 
         except Exception as e:
             err_msg = str(e)
-            print(f"❌ {self.provider.upper()} AI Storyboard Error: {err_msg}")
-            # If user provided a full narrative story (>= 20 words), fall back to Story Architect so batch/film creation succeeds
-            if len((idea or "").split()) >= 20:
-                print("⚠️ Falling back to built-in Narrative Story Architect to preserve user's story...")
-                story = self._generate_with_story_architect(idea, num_scenes, art_style, language, audience, camera_on_speaker=camera_on_speaker)
-                if story and isinstance(story.get("scenes"), list):
-                    if title and title.strip():
-                        story["title"] = title.strip()
-                    story["scenes"] = [
-                        self.ensure_separate_prompts(sc, art_style=art_style, language=language, camera_on_speaker=camera_on_speaker)
-                        for sc in story["scenes"]
-                        if isinstance(sc, dict)
-                    ]
-                    story["scenes"] = self.sync_story_dialogues_to_scenes(
-                        story["scenes"],
-                        idea=idea,
-                        art_style=art_style,
-                        language=language,
-                        target="all",
-                        characters=story.get("characters"),
-                        camera_on_speaker=camera_on_speaker
-                    )
-                    return story
-            # If cookie error, give actionable guidance
+            print(f"❌ {self.provider.upper()} ({self.model or 'default'}) AI Storyboard Error: {err_msg}")
             if "cookie" in self.provider or "__Secure-1PSID" in (self.api_key or ""):
                 raise RuntimeError(
-                    f"AI Storyboard generation failed ({self.provider.upper()}): {err_msg}. "
+                    f"AI Storyboard generation failed using [{self.provider} / {self.model or 'default'}]: {err_msg}. "
                     "Google Gemini session cookies may be expired. Please update __Secure-1PSID and __Secure-1PSIDTS in Settings ⚙️."
                 )
             raise RuntimeError(
-                f"AI Storyboard generation failed ({self.provider.upper()}): {err_msg}. "
-                "Please check your API key, model selection, or network connection."
+                f"AI Storyboard generation failed using [{self.provider} / {self.model or 'default'}]: {err_msg}"
             )
 
     async def _dispatch_llm_request(self, prompt: str) -> Dict[str, Any]:
@@ -772,12 +743,7 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
                 psid = creds.get("gemini_cookie_psid")
                 psidts = creds.get("gemini_cookie_psidts")
                 if self.provider == "gemini":
-                    if creds.get("gemini_api_key") and creds["gemini_api_key"].startswith(("AIzaSy", "AQ.")):
-                        self.api_key = creds.get("gemini_api_key")
-                    elif psid:
-                        self.api_key = f"{psid}|{psidts}" if psidts else psid
-                        self.provider = "gemini_cookie"
-                    elif creds.get("gemini_api_key"):
+                    if creds.get("gemini_api_key") and not creds["gemini_api_key"].startswith("g.a"):
                         self.api_key = creds.get("gemini_api_key")
                 elif self.provider in ("gemini_cookie", "gemini_web"):
                     if psid:
@@ -899,42 +865,15 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
         try:
             story = await self._dispatch_llm_request(prompt)
             if not story or not isinstance(story.get("scenes"), list) or len(story["scenes"]) == 0:
-                print("⚠️ AI returned empty ad storyboard. Falling back to built-in commercial director...")
-                story = self._generate_offline_advertisement(
-                    product_name=product_name,
-                    description=description,
-                    specs=specs,
-                    brand=brand,
-                    target_audience=target_audience,
-                    ad_style=ad_style,
-                    call_to_action=call_to_action,
-                    pricing_offer=pricing_offer,
-                    num_scenes=num_scenes,
-                    art_style=art_style,
-                    language=language
-                )
-            else:
-                story["scenes"] = [
-                    self.ensure_separate_prompts(sc, art_style=art_style, language=language)
-                    for sc in story["scenes"]
-                    if isinstance(sc, dict)
-                ]
+                raise RuntimeError(f"Selected AI [{self.provider} / {self.model or 'default'}] returned an empty commercial storyboard.")
+            story["scenes"] = [
+                self.ensure_separate_prompts(sc, art_style=art_style, language=language)
+                for sc in story["scenes"]
+                if isinstance(sc, dict)
+            ]
             return story
         except Exception as e:
-            print(f"⚠️ Commercial AI generation error ({e}). Using offline Commercial Generator fallback...")
-            return self._generate_offline_advertisement(
-                product_name=product_name,
-                description=description,
-                specs=specs,
-                brand=brand,
-                target_audience=target_audience,
-                ad_style=ad_style,
-                call_to_action=call_to_action,
-                pricing_offer=pricing_offer,
-                num_scenes=num_scenes,
-                art_style=art_style,
-                language=language
-            )
+            raise RuntimeError(f"Commercial AI generation failed using [{self.provider} / {self.model or 'default'}]: {e}")
 
     def _build_story_prompt(
         self,
@@ -4106,8 +4045,9 @@ RAW CHARACTER PROMPT TEXT:
                             "provider": self.provider,
                         }
             except Exception as err:
-                parser_note = str(err)
-                print(f"⚠️ AI character import parse fell back to smart text parser: {err}")
+                raise RuntimeError(
+                    f"Character import AI parse failed using [{self.provider} / {self.model or 'default'}]: {err}"
+                ) from err
 
         fallback_chars = self.parse_characters_heuristic(text)
         return {
@@ -4361,10 +4301,15 @@ STORY / SCRIPT TO ANALYZE:
                     if parsed_chars:
                         parser_mode = "ai"
             except Exception as err:
-                parser_note = str(err)
-                print(f"⚠️ AI character story analysis fell back to heuristic analyzer: {err}")
+                raise RuntimeError(
+                    f"Character story analysis failed using [{self.provider} / {self.model or 'default'}]: {err}"
+                ) from err
 
         if not parsed_chars:
+            if (self.provider or "").lower() not in ("builtin", "offline", "architect"):
+                raise RuntimeError(
+                    f"Selected AI [{self.provider} / {self.model or 'default'}] did not return any characters."
+                )
             parsed_chars = self.analyze_characters_from_story_heuristic(
                 idea=raw_idea,
                 title=raw_title,
@@ -4618,75 +4563,47 @@ STORY / SCRIPT TO ANALYZE:
         )
         return self._clean_json_response(res.text)
 
-    async def _generate_with_gemini(self, prompt: str, model: str = "gemini-2.5-flash") -> Dict[str, Any]:
+    async def _generate_with_gemini(self, prompt: str, model: str = "gemini-3.5-flash") -> Dict[str, Any]:
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=self.api_key, http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)))
-        target_model = (model or "gemini-3.5-flash").strip()
+        cur_model = (model or "gemini-3.5-flash").strip()
 
-        candidate_models = [target_model]
-        for fb_m in ("gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash"):
-            if fb_m not in candidate_models:
-                candidate_models.append(fb_m)
+        is_pro = "pro" in cur_model.lower()
+        config_kwargs = {
+            "response_mime_type": "application/json",
+            "temperature": 0.7
+        }
+        if "2.5" in cur_model.lower():
+            try:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048 if is_pro else 0)
+            except Exception:
+                pass
 
-        last_err = None
-        for cur_model in candidate_models:
-            is_pro = "pro" in cur_model.lower()
-            config_kwargs = {
-                "response_mime_type": "application/json",
-                "temperature": 0.7
-            }
-            if "2.5" in cur_model.lower():
+        async def _call(m_id, kwargs):
+            config = types.GenerateContentConfig(**kwargs)
+            response = await client.aio.models.generate_content(
+                model=m_id,
+                contents=prompt,
+                config=config
+            )
+            text = getattr(response, "text", None)
+            if not text:
+                reason = ""
                 try:
-                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048 if is_pro else 0)
+                    reason = str(response.candidates[0].finish_reason)
                 except Exception:
                     pass
+                raise RuntimeError(f"Gemini model '{m_id}' returned an empty response {reason}".strip())
+            return self._clean_json_response(text)
 
-            async def _call(m_id, kwargs):
-                config = types.GenerateContentConfig(**kwargs)
-                response = await client.aio.models.generate_content(
-                    model=m_id,
-                    contents=prompt,
-                    config=config
-                )
-                text = getattr(response, "text", None)
-                if not text:
-                    reason = ""
-                    try:
-                        reason = str(response.candidates[0].finish_reason)
-                    except Exception:
-                        pass
-                    raise RuntimeError(f"Gemini returned an empty response {reason}".strip())
-                return self._clean_json_response(text)
-
-            try:
-                try:
-                    return await _call(cur_model, config_kwargs)
-                except Exception as e_cfg:
-                    if "thinking_config" in config_kwargs and "thinking" in str(e_cfg).lower():
-                        config_kwargs.pop("thinking_config", None)
-                        return await _call(cur_model, config_kwargs)
-                    raise
-            except Exception as e_model:
-                last_err = e_model
-                err_low = str(e_model).lower()
-                if any(tok in err_low for tok in ("404", "not_found", "no longer available", "503", "unavailable", "high demand", "429", "resource_exhausted")):
-                    continue
-                break
-
-        # Check if cookie session is available as a fallback
         try:
-            from backend.config import get_server_credentials
-            creds = get_server_credentials()
-            psid = creds.get("gemini_cookie_psid")
-            psidts = creds.get("gemini_cookie_psidts")
-            if psid:
-                cookie_token = f"{psid}|{psidts}" if psidts else psid
-                print(f"⚠️ Google GenAI API returned ({last_err}). Auto-falling back to persistent Gemini Web Session...")
-                return await self._generate_with_gemini_cookie(prompt, cookie_token)
-        except Exception:
-            pass
-        raise last_err or RuntimeError("Gemini generation failed.")
+            return await _call(cur_model, config_kwargs)
+        except Exception as e_cfg:
+            if "thinking_config" in config_kwargs and "thinking" in str(e_cfg).lower():
+                config_kwargs.pop("thinking_config", None)
+                return await _call(cur_model, config_kwargs)
+            raise RuntimeError(f"Gemini API model '{cur_model}' failed: {e_cfg}") from e_cfg
 
     async def _generate_with_openai_compatible(self, endpoint: str, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
         url = f"{endpoint.rstrip('/')}/chat/completions"

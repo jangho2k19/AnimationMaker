@@ -233,8 +233,8 @@ CAMERA_MOTIONS = [
 AI_PROVIDERS = {
     "gemini": {
         "name": "Google Gemini (Official API Key)",
-        "default_model": "gemini-2.5-flash",
-        "models": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-3.8-flash"],
+        "default_model": "gemini-3.5-flash",
+        "models": ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-3.8-flash"],
         "icon": "✨",
         "key_env": "GEMINI_API_KEY",
         "placeholder": "AIzaSy..."
@@ -294,18 +294,6 @@ IMAGE_MODES = {
         "name": "Google Flow Bridge (Character Refs)",
         "description": "Paints via Google Flow Chrome Extension using uploaded Character Reference Images",
         "icon": "🌊"
-    },
-    "neural_love": {
-        "id": "neural_love",
-        "name": "Neural.love AI Art",
-        "description": "High quality artistic illustrations via your Neural.love API key",
-        "icon": "💖"
-    },
-    "puter": {
-        "id": "puter",
-        "name": "In-Browser Puter.js",
-        "description": "Direct in-browser generation using Puter.js cloud balance",
-        "icon": "🖌️"
     },
     "manual": {
         "id": "manual",

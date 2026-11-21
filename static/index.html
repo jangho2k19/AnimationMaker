@@ -192,6 +192,9 @@
                     <button id="btnToggleTaskModels" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 9px; height:22px; font-size:11px; border-color:rgba(167,139,250,0.45); color:#c4b5fd;" title="Select distinct AI type/model for each processing task &amp; step">
                       <span>🎛️ AI Models per Task/Step ▾</span>
                     </button>
+                    <button id="btnToggleAiLogBox" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 9px; height:22px; font-size:11px; border-color:rgba(56,189,248,0.45); color:#7dd3fc;" title="Show or hide the AI Execution &amp; Error Log Box">
+                      <span>📋 Logs (<span id="badgeAiLogCount">0</span>) ▾</span>
+                    </button>
                   </div>
                 </div>
 
@@ -294,7 +297,6 @@
                         <option value="gemini_api">✨ Gemini API Multimodal Image</option>
                         <option value="gemini_cookie">🍪 Gemini Web Cookie (Imagen 3)</option>
                         <option value="flowkit">🌊 FlowKit Character Ref Bridge</option>
-                        <option value="neural_love">💖 Neural.love AI Art</option>
                         <option value="openai">🟢 OpenAI DALL-E 3</option>
                         <option value="pollinations">☁️ Free Cloud AI Art (Pollinations Flux)</option>
                         <option value="manual">📝 Placeholder Only (No AI Paint)</option>
@@ -309,10 +311,8 @@
                         <option value="gemini_api">✨ Gemini API Multimodal Image</option>
                         <option value="gemini_cookie">🍪 Gemini Web Cookie (Imagen 3)</option>
                         <option value="flowkit">🌊 FlowKit Character Ref Bridge</option>
-                        <option value="neural_love">💖 Neural.love AI Art</option>
                         <option value="openai">🟢 OpenAI DALL-E 3</option>
                         <option value="pollinations">☁️ Free Cloud AI Art (Pollinations Flux)</option>
-                        <option value="puter">🖌️ In-Browser Puter.js</option>
                         <option value="manual">📝 Storyboard Only (No AI Paint)</option>
                       </select>
                     </div>
@@ -345,6 +345,24 @@
                         <option value="flowkit_veo">⚡ Google Flow / Veo 3 AI Acting (FlowKit)</option>
                       </select>
                     </div>
+                  </div>
+                </div>
+
+                <!-- AI Execution & Error Log Box -->
+                <div id="aiExecutionLogPanel" style="display:block; margin-bottom:10px; padding:8px 10px; border-radius:8px; background:rgba(8,11,22,0.88); border:1px solid rgba(56,189,248,0.28);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <span style="font-size:12px;">📋</span>
+                      <strong style="font-size:11.5px; color:#e0f2fe;">AI Task Execution &amp; Error Log</strong>
+                      <span class="hint-text" style="font-size:10.5px;">(Strictly uses selected AI method/model; logs all starts, completions &amp; failures)</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                      <button id="btnCopyAiLogs" type="button" class="glass-btn secondary-btn mini-btn" style="padding:2px 7px; font-size:10px; height:20px;" title="Copy all log entries to clipboard">📋 Copy</button>
+                      <button id="btnClearAiLogs" type="button" class="glass-btn secondary-btn mini-btn" style="padding:2px 7px; font-size:10px; height:20px; color:#fca5a5;" title="Clear log entries">🧹 Clear</button>
+                    </div>
+                  </div>
+                  <div id="aiExecutionLogList" style="max-height:135px; overflow-y:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; line-height:1.45; display:flex; flex-direction:column; gap:4px; padding-right:4px;">
+                    <div style="color:var(--text-dim); font-style:italic;">Ready — AI task logs and errors will appear here.</div>
                   </div>
                 </div>
 
@@ -1433,9 +1451,7 @@
           <select id="selectSettingsImageMode" class="styled-select">
             <option value="gemini" selected>✨ Google Gemini / Imagen 3 AI Paint (API Key or Cookie)</option>
             <option value="flowkit">🌊 Google Flow Bridge (Character Reference Images)</option>
-            <option value="neural_love">💖 Neural.love AI Art Engine (High-Fidelity Artwork)</option>
-            <option value="puter">🖌️ In-Browser AI Paint (Puter.js — subject to Puter balance)</option>
-            <option value="manual">📝 Storyboard Only (No AI Painting — Placeholders & Manual Uploads)</option>
+            <option value="manual">📝 Storyboard Only (No AI Painting — Placeholders &amp; Manual Uploads)</option>
           </select>
           <p class="field-hint">You can also quickly toggle this directly on the Director's Storyboard bar.</p>
         </div>
@@ -1837,7 +1853,6 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
   <!-- Notification Toast Container -->
   <div id="toastNotification" class="toast-popup"></div>
 
-  <script src="https://js.puter.com/v2/"></script>
-  <script src="/js/app.js?v=4.7"></script>
+  <script src="/js/app.js?v=4.8"></script>
 </body>
 </html>

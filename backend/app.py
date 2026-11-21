@@ -730,7 +730,9 @@ async def detect_gemini_models(
 
     # 2. Curated API models
     curated_api = [
-        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "category": "api", "badge": "✨ Recommended (~2s)", "description": "Next-gen flagship model with balanced speed and creative intelligence."},
+        {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash", "category": "api", "badge": "✨ Recommended (~2s)", "description": "Next-gen flagship model with balanced speed and creative intelligence."},
+        {"id": "gemini-3.1-flash-lite", "name": "Gemini 3.1 Flash-Lite", "category": "api", "badge": "💨 Sub-Second", "description": "Fast lightweight Gemini 3.1 model optimized for low latency."},
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "category": "api", "badge": "⚡ Fast", "description": "Standard Gemini 2.5 Flash model."},
         {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash-Lite", "category": "api", "badge": "💨 Sub-Second", "description": "Extremely lightweight model optimized for low latency."},
         {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "category": "api", "badge": "🧠 Deep Reasoning (~30s)", "description": "State-of-the-art multimodal reasoning for intricate short film screenplays."},
         {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "category": "api", "badge": "⚡ Latest Flash", "description": "Newest everyday fast model (availability depends on your API key)."}
@@ -753,7 +755,7 @@ async def detect_gemini_models(
                     display = m.display_name or clean_id
                     desc = m.description or ""
                     badge = "⚡ Fast" if "flash" in clean_lower else ("🧠 Pro" if "pro" in clean_lower else "✨ Gemini")
-                    if "2.5" in clean_lower:
+                    if "3.5" in clean_lower or "2.5" in clean_lower:
                         badge = "✨ Next-Gen"
                     elif "thinking" in clean_lower or "exp" in clean_lower:
                         badge = "🧪 Experimental"
@@ -768,11 +770,13 @@ async def detect_gemini_models(
 
             def model_rank(item):
                 mid = item["id"].lower()
-                if "2.5-flash" in mid: return 0
-                if "2.5-pro" in mid: return 1
-                if "2.0-flash" in mid and "lite" not in mid: return 2
-                if "1.5-pro" in mid: return 3
-                if "1.5-flash" in mid: return 4
+                if "3.5-flash" in mid: return 0
+                if "3.1-flash" in mid: return 1
+                if "2.5-flash" in mid: return 2
+                if "2.5-pro" in mid: return 3
+                if "2.0-flash" in mid and "lite" not in mid: return 4
+                if "1.5-pro" in mid: return 5
+                if "1.5-flash" in mid: return 6
                 if "2." in mid: return 5
                 return 6
 
@@ -1845,27 +1849,32 @@ async def delete_draft_character_portrait(req: DeleteDraftPortraitRequest):
 
 @app.post("/api/characters/parse-import")
 async def parse_characters_import(req: ParseCharactersImportRequest):
-    """Uses AI (with smart text fallback) to parse character names and visual prompts from raw text."""
+    """Uses AI to parse character names and visual prompts from raw text."""
     raw_text = (req.text or "").strip()
     if not raw_text:
         raise HTTPException(status_code=400, detail="Character prompt text is empty.")
-    agent = ScriptAgent(
-        api_key=req.api_key or pipeline.api_key,
-        provider=req.ai_provider or pipeline.ai_provider or "gemini",
-        model=req.ai_model or pipeline.ai_model,
-    )
-    res = await agent.parse_characters_from_text(raw_text)
-    if not res.get("characters"):
-        raise HTTPException(
-            status_code=422,
-            detail="Could not extract any characters from the provided text. Please include character names and descriptions."
+    try:
+        agent = ScriptAgent(
+            api_key=req.api_key or pipeline.api_key,
+            provider=req.ai_provider or pipeline.ai_provider or "gemini",
+            model=req.ai_model or pipeline.ai_model,
         )
-    return {
-        "status": "ok",
-        "characters": res["characters"],
-        "parser": res.get("parser", "ai"),
-        "parser_note": res.get("parser_note", ""),
-    }
+        res = await agent.parse_characters_from_text(raw_text)
+        if not res.get("characters"):
+            raise HTTPException(
+                status_code=422,
+                detail="Could not extract any characters from the provided text. Please include character names and descriptions."
+            )
+        return {
+            "status": "ok",
+            "characters": res["characters"],
+            "parser": res.get("parser", "ai"),
+            "parser_note": res.get("parser_note", ""),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/characters/analyze-from-story")
 async def analyze_characters_from_story(req: AnalyzeStoryCharactersRequest):
@@ -1874,39 +1883,43 @@ async def analyze_characters_from_story(req: AnalyzeStoryCharactersRequest):
     raw_title = (req.title or "").strip()
     if not raw_idea and not raw_title:
         raise HTTPException(status_code=400, detail="Please enter a Story Idea, Title, or Script first.")
-
-    agent = ScriptAgent(
-        api_key=req.api_key or pipeline.api_key,
-        provider=req.ai_provider or pipeline.ai_provider or "gemini",
-        model=req.ai_model or pipeline.ai_model,
-    )
-    res = await agent.analyze_characters_from_story(
-        idea=raw_idea,
-        title=raw_title,
-        art_style=req.art_style or "ghibli",
-        language=req.language or "auto",
-        narrator_voice=req.narrator_voice or "",
-        existing_characters=req.existing_characters,
-        max_characters=max(1, min(int(req.max_characters or 8), 16)),
-    )
-    chars = res.get("characters", [])
-    if not chars:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not identify characters from the provided story text."
+    try:
+        agent = ScriptAgent(
+            api_key=req.api_key or pipeline.api_key,
+            provider=req.ai_provider or pipeline.ai_provider or "gemini",
+            model=req.ai_model or pipeline.ai_model,
         )
-    if req.match_library:
-        chars = pipeline.match_characters_with_library(chars)
+        res = await agent.analyze_characters_from_story(
+            idea=raw_idea,
+            title=raw_title,
+            art_style=req.art_style or "ghibli",
+            language=req.language or "auto",
+            narrator_voice=req.narrator_voice or "",
+            existing_characters=req.existing_characters,
+            max_characters=max(1, min(int(req.max_characters or 8), 16)),
+        )
+        chars = res.get("characters", [])
+        if not chars:
+            raise HTTPException(
+                status_code=422,
+                detail="Could not identify characters from the provided story text."
+            )
+        if req.match_library:
+            chars = pipeline.match_characters_with_library(chars)
 
-    matched_lib_count = sum(1 for c in chars if c.get("from_library"))
-    return {
-        "status": "ok",
-        "characters": chars,
-        "parser": res.get("parser", "ai"),
-        "parser_note": res.get("parser_note", ""),
-        "language": res.get("language", "en"),
-        "matched_library_count": matched_lib_count,
-    }
+        matched_lib_count = sum(1 for c in chars if c.get("from_library"))
+        return {
+            "status": "ok",
+            "characters": chars,
+            "parser": res.get("parser", "ai"),
+            "parser_note": res.get("parser_note", ""),
+            "language": res.get("language", "en"),
+            "matched_library_count": matched_lib_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/characters/import-txt")
 async def import_characters_txt(
@@ -1920,20 +1933,25 @@ async def import_characters_txt(
     decoded_text = _decode_text_upload(raw_bytes).strip()
     if not decoded_text:
         raise HTTPException(status_code=400, detail="Uploaded text file is empty.")
-    agent = ScriptAgent(
-        api_key=api_key or pipeline.api_key,
-        provider=ai_provider or pipeline.ai_provider or "gemini",
-        model=ai_model or pipeline.ai_model,
-    )
-    res = await agent.parse_characters_from_text(decoded_text)
-    return {
-        "status": "ok",
-        "filename": file.filename or "characters.txt",
-        "raw_text": decoded_text,
-        "characters": res.get("characters", []),
-        "parser": res.get("parser", "ai"),
-        "parser_note": res.get("parser_note", ""),
-    }
+    try:
+        agent = ScriptAgent(
+            api_key=api_key or pipeline.api_key,
+            provider=ai_provider or pipeline.ai_provider or "gemini",
+            model=ai_model or pipeline.ai_model,
+        )
+        res = await agent.parse_characters_from_text(decoded_text)
+        return {
+            "status": "ok",
+            "filename": file.filename or "characters.txt",
+            "raw_text": decoded_text,
+            "characters": res.get("characters", []),
+            "parser": res.get("parser", "ai"),
+            "parser_note": res.get("parser_note", ""),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/projects/{project_id}/characters/import")
 async def import_project_characters(project_id: str, req: BulkImportCharactersRequest):

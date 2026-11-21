@@ -956,32 +956,36 @@ class ImageService:
                     return output_path
             raise RuntimeError("Cloud AI Art (Pollinations) image generation failed.")
 
-        # 4. Google Gemini / Imagen 3 Mode (Default)
+        # 4. Google Gemini / Imagen 3 Mode (Strict per selected method: gemini_api vs gemini_cookie)
         if image_mode in ("gemini", "server", "gemini_api", "gemini_cookie"):
             from backend.config import get_server_credentials
             s_creds = get_server_credentials()
             gemini_error = None
 
-            is_cookie_key = bool(
+            use_cookie_strict = bool(
                 image_mode == "gemini_cookie"
                 or (
-                    eff_api_key and (
-                        eff_api_key.startswith("g.a")
-                        or "__Secure-1PSID" in eff_api_key
-                        or eff_provider == "gemini_cookie"
+                    image_mode in ("gemini", "server")
+                    and (
+                        eff_provider == "gemini_cookie"
+                        or (eff_api_key and (eff_api_key.startswith("g.a") or "__Secure-1PSID" in eff_api_key))
                     )
                 )
             )
-            api_studio_key = (
-                eff_api_key
-                if (eff_api_key and not is_cookie_key and not eff_api_key.startswith("g.a"))
-                else (s_creds.get("gemini_api_key") or "").strip()
-            )
-            if api_studio_key.startswith("g.a") or "__Secure-1PSID" in api_studio_key or image_mode == "gemini_cookie":
-                api_studio_key = ""
+            use_api_strict = not use_cookie_strict
 
-            # 4a. Official Google AI Studio API Key (AIzaSy... or AQ....)
-            if api_studio_key:
+            # 4a. Strictly Official Google AI Studio API Key (when gemini_api or provider=gemini is selected)
+            if use_api_strict:
+                api_studio_key = (
+                    eff_api_key
+                    if (eff_api_key and not eff_api_key.startswith("g.a") and "__Secure-1PSID" not in eff_api_key)
+                    else (s_creds.get("gemini_api_key") or "").strip()
+                )
+                if not api_studio_key or api_studio_key.startswith("g.a") or "__Secure-1PSID" in api_studio_key:
+                    raise RuntimeError(
+                        "Gemini API Image generation failed: No valid Google Gemini API key configured. "
+                        "Please enter your Gemini API key or switch the task Paint Engine to Gemini Web Cookie / Cloud AI Art."
+                    )
                 try:
                     from google import genai
                     from google.genai import types
@@ -1023,13 +1027,13 @@ class ImageService:
                             gemini_error = str(e_mm)
                 except Exception as e:
                     gemini_error = str(e)
+                raise RuntimeError(f"Gemini API Image generation failed: {gemini_error or 'No image returned by Gemini API.'}")
 
-            # 4b. Google Gemini Web Session Cookie (__Secure-1PSID) — natively supports multi-file references!
+            # 4b. Strictly Google Gemini Web Session Cookie (__Secure-1PSID)
             saved_psid = (s_creds.get("gemini_cookie_psid") or "").strip()
             saved_psidts = (s_creds.get("gemini_cookie_psidts") or "").strip()
-            eff_psid, eff_psidts = self._parse_gemini_cookie_pair(eff_api_key if is_cookie_key else "")
+            eff_psid, eff_psidts = self._parse_gemini_cookie_pair(eff_api_key if use_cookie_strict else "")
 
-            # Prefer freshly saved server credentials if project's cached cookie is older/different
             if saved_psid and saved_psid != eff_psid:
                 psid = saved_psid
                 psidts = saved_psidts
@@ -1037,63 +1041,43 @@ class ImageService:
                 psid = eff_psid or saved_psid
                 psidts = eff_psidts or (saved_psidts if psid == saved_psid else "")
 
-            if psid:
-                combined_cookie = f"{psid}|{psidts}" if psidts else psid
-                try:
-                    from backend.services.gemini_wrapper import GeminiWebWrapper
-                    wrapper = GeminiWebWrapper.get_instance()
-                    resp = await wrapper.generate_content(
-                        multimodal_prompt or f"Generate an image of: {full_prompt[:2800]}. Clean illustration without text, no speech bubbles, no words.",
-                        files=req_files or None,
-                        cookie_override=combined_cookie
-                    )
-                    saved_img = None
-                    if resp.has_images:
-                        temp_dir = Path(output_path).parent / "temp_gemini"
-                        os.makedirs(temp_dir, exist_ok=True)
-                        saved_img = await resp.images[0].save(path=str(temp_dir))
+            if not psid:
+                raise RuntimeError(
+                    "Gemini Web Cookie Image generation failed: No __Secure-1PSID cookie configured in Settings ⚙️."
+                )
 
-                    if saved_img and os.path.exists(saved_img):
-                        img = Image.open(saved_img)
-                        fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                        fitted.save(output_path, "JPEG", quality=95)
-                        try:
-                            os.remove(saved_img)
-                        except Exception:
-                            pass
-                        print(f"Generated {label} using Gemini Pro Web Session with {len(req_files or [])} reference(s)!")
-                        return output_path
-                    else:
-                        gemini_error = "Gemini Web replied without an image (session may be in Guest mode due to expired/DBSC-rotated __Secure-1PSIDTS)."
-                except Exception as e:
-                    gemini_error = str(e).strip() or f"{type(e).__name__}: Gemini Web session request failed."
-
-            # 4c. Free Cloud AI Image Fallback (Pollinations Flux/Sana) when Free-Tier API key has 0 image quota
-            # and Gemini Web cookies were rotated/invalidated by the browser
+            combined_cookie = f"{psid}|{psidts}" if psidts else psid
             try:
-                import urllib.parse
-                import random
-                clean_p = re.sub(r'\s+', ' ', (full_prompt or "Animated character portrait")).strip()[:950]
-                encoded_p = urllib.parse.quote(clean_p)
-                eff_seed = seed if seed is not None else random.randint(1000, 999999)
-                req_w = min(1280, max(512, int(width)))
-                req_h = min(1280, max(512, int(height)))
-                poll_url = f"https://image.pollinations.ai/prompt/{encoded_p}?width={req_w}&height={req_h}&seed={eff_seed}&nologo=true"
-                async with httpx.AsyncClient(timeout=35.0, follow_redirects=True) as client:
-                    p_resp = await client.get(poll_url)
-                    if p_resp.status_code == 200 and len(p_resp.content) > 2048:
-                        img = Image.open(io.BytesIO(p_resp.content)).convert("RGB")
-                        fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                        fitted.save(output_path, "JPEG", quality=95)
-                        print(f"Generated {label} via Cloud AI Image Fallback (Gemini quota/cookie unavailable: {str(gemini_error)[:120]})!")
-                        return output_path
-            except Exception as e_poll:
-                print(f"[image_service] Cloud AI image fallback notice: {e_poll}")
+                from backend.services.gemini_wrapper import GeminiWebWrapper
+                wrapper = GeminiWebWrapper.get_instance()
+                resp = await wrapper.generate_content(
+                    multimodal_prompt or f"Generate an image of: {full_prompt[:2800]}. Clean illustration without text, no speech bubbles, no words.",
+                    files=req_files or None,
+                    cookie_override=combined_cookie
+                )
+                saved_img = None
+                if resp.has_images:
+                    temp_dir = Path(output_path).parent / "temp_gemini"
+                    os.makedirs(temp_dir, exist_ok=True)
+                    saved_img = await resp.images[0].save(path=str(temp_dir))
 
-            err_msg = (gemini_error or "").strip() or "Please verify your Gemini API key or update __Secure-1PSID / __Secure-1PSIDTS cookies in Settings ⚙️."
-            if err_msg.lower().startswith("google gemini"):
-                raise RuntimeError(err_msg)
-            raise RuntimeError(f"Google Gemini Imagen 3 generation failed: {err_msg}")
+                if saved_img and os.path.exists(saved_img):
+                    img = Image.open(saved_img)
+                    fitted = self.fit_image_to_aspect_ratio(img, width, height)
+                    fitted.save(output_path, "JPEG", quality=95)
+                    try:
+                        os.remove(saved_img)
+                    except Exception:
+                        pass
+                    print(f"Generated {label} using Gemini Pro Web Session with {len(req_files or [])} reference(s)!")
+                    return output_path
+                else:
+                    reply_hint = (resp.text or "").strip()[:160]
+                    gemini_error = f"Gemini Web replied without an image ({reply_hint or 'session is in unauthenticated Guest mode'})."
+            except Exception as e:
+                gemini_error = str(e).strip() or f"{type(e).__name__}: Gemini Web session request failed."
+
+            raise RuntimeError(f"Gemini Web Cookie Image generation failed: {gemini_error}")
 
         raise RuntimeError(f"Unsupported image generation mode '{image_mode}'.")
 
