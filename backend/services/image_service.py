@@ -938,6 +938,8 @@ class ImageService:
 
         # 4. Google Gemini / Imagen 3 Mode (Default)
         if image_mode in ("gemini", "server"):
+            from backend.config import get_server_credentials
+            s_creds = get_server_credentials()
             gemini_error = None
 
             is_cookie_key = bool(
@@ -947,79 +949,59 @@ class ImageService:
                     or eff_provider == "gemini_cookie"
                 )
             )
+            api_studio_key = (
+                eff_api_key
+                if (eff_api_key and not is_cookie_key and not eff_api_key.startswith("g.a"))
+                else (s_creds.get("gemini_api_key") or "").strip()
+            )
+            if api_studio_key.startswith("g.a") or "__Secure-1PSID" in api_studio_key:
+                api_studio_key = ""
 
-            # 4a. Official Google AI Studio API Key
-            if eff_api_key and not is_cookie_key:
+            # 4a. Official Google AI Studio API Key (AIzaSy... or AQ....)
+            if api_studio_key:
                 try:
                     from google import genai
                     from google.genai import types
-                    client = genai.Client(api_key=eff_api_key)
+                    client = genai.Client(
+                        api_key=api_studio_key,
+                        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+                    )
 
-                    # When reference images are attached, try Gemini multimodal image generation first
-                    # so character likeness & outfits from uploaded/generated portraits are preserved!
-                    if req_files:
-                        ref_pil_imgs = []
-                        for rf in req_files:
-                            try:
-                                ref_pil_imgs.append(Image.open(rf).convert("RGB"))
-                            except Exception:
-                                pass
-                        if ref_pil_imgs:
-                            contents_payload = [*ref_pil_imgs, multimodal_prompt or full_prompt[:2600]]
-                            for mm_model in ["gemini-2.5-flash-image", "gemini-2.0-flash-exp-image-generation"]:
-                                try:
-                                    mm_resp = await asyncio.to_thread(
-                                        lambda m=mm_model: client.models.generate_content(
-                                            model=m,
-                                            contents=contents_payload,
-                                            config=types.GenerateContentConfig(
-                                                response_modalities=["IMAGE"],
-                                                image_config=types.ImageConfig(aspect_ratio=imagen_ratio)
-                                            )
-                                        )
-                                    )
-                                    if mm_resp.candidates and mm_resp.candidates[0].content and mm_resp.candidates[0].content.parts:
-                                        for part in mm_resp.candidates[0].content.parts:
-                                            inline = getattr(part, "inline_data", None)
-                                            if inline and getattr(inline, "data", None):
-                                                img = Image.open(io.BytesIO(inline.data))
-                                                fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                                                fitted.save(output_path, "JPEG", quality=95)
-                                                print(f"Generated {label} using Gemini Multimodal API ({mm_model}) with {len(ref_pil_imgs)} character ref(s)!")
-                                                return output_path
-                                except Exception as e_mm:
-                                    gemini_error = str(e_mm)
-
-                    # Fallback or text-only path: Imagen 3 API
-                    for img_model in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+                    ref_pil_imgs = []
+                    for rf in (req_files or []):
                         try:
-                            resp = await asyncio.to_thread(
-                                lambda m=img_model: client.models.generate_images(
+                            ref_pil_imgs.append(Image.open(rf).convert("RGB"))
+                        except Exception:
+                            pass
+                    contents_payload = [*ref_pil_imgs, (multimodal_prompt or full_prompt)[:2600]] if ref_pil_imgs else (full_prompt[:2600])
+
+                    for mm_model in ["gemini-3.1-flash-image", "gemini-3.1-flash-lite-image", "gemini-2.5-flash-image", "gemini-3-pro-image"]:
+                        try:
+                            mm_resp = await asyncio.to_thread(
+                                lambda m=mm_model: client.models.generate_content(
                                     model=m,
-                                    prompt=full_prompt[:2800],
-                                    config=types.GenerateImagesConfig(
-                                        number_of_images=1,
-                                        aspect_ratio=imagen_ratio,
-                                        output_mime_type="image/jpeg",
-                                        person_generation="ALLOW_ADULT"
+                                    contents=contents_payload,
+                                    config=types.GenerateContentConfig(
+                                        response_modalities=["IMAGE"],
+                                        image_config=types.ImageConfig(aspect_ratio=imagen_ratio)
                                     )
                                 )
                             )
-                            if resp.generated_images:
-                                raw_bytes = resp.generated_images[0].image.image_bytes
-                                img = Image.open(io.BytesIO(raw_bytes))
-                                fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                                fitted.save(output_path, "JPEG", quality=95)
-                                print(f"Generated {label} using Google Gemini Imagen 3 API ({img_model})!")
-                                return output_path
-                        except Exception as e_model:
-                            gemini_error = str(e_model)
+                            if mm_resp.candidates and mm_resp.candidates[0].content and mm_resp.candidates[0].content.parts:
+                                for part in mm_resp.candidates[0].content.parts:
+                                    inline = getattr(part, "inline_data", None)
+                                    if inline and getattr(inline, "data", None):
+                                        img = Image.open(io.BytesIO(inline.data))
+                                        fitted = self.fit_image_to_aspect_ratio(img, width, height)
+                                        fitted.save(output_path, "JPEG", quality=95)
+                                        print(f"Generated {label} using Gemini Multimodal API ({mm_model})!")
+                                        return output_path
+                        except Exception as e_mm:
+                            gemini_error = str(e_mm)
                 except Exception as e:
                     gemini_error = str(e)
 
             # 4b. Google Gemini Web Session Cookie (__Secure-1PSID) — natively supports multi-file references!
-            from backend.config import get_server_credentials
-            s_creds = get_server_credentials()
             saved_psid = (s_creds.get("gemini_cookie_psid") or "").strip()
             saved_psidts = (s_creds.get("gemini_cookie_psidts") or "").strip()
             eff_psid, eff_psidts = self._parse_gemini_cookie_pair(eff_api_key if is_cookie_key else "")
@@ -1059,9 +1041,31 @@ class ImageService:
                         print(f"Generated {label} using Gemini Pro Web Session with {len(req_files or [])} reference(s)!")
                         return output_path
                     else:
-                        gemini_error = "Gemini returned a text reply without an image. Please try again or verify your Gemini Web cookies."
+                        gemini_error = "Gemini Web replied without an image (session may be in Guest mode due to expired/DBSC-rotated __Secure-1PSIDTS)."
                 except Exception as e:
-                    gemini_error = str(e).strip() or f"{type(e).__name__}: Gemini Web session request failed. Please update your __Secure-1PSID and __Secure-1PSIDTS cookies in Settings ⚙️."
+                    gemini_error = str(e).strip() or f"{type(e).__name__}: Gemini Web session request failed."
+
+            # 4c. Free Cloud AI Image Fallback (Pollinations Flux/Sana) when Free-Tier API key has 0 image quota
+            # and Gemini Web cookies were rotated/invalidated by the browser
+            try:
+                import urllib.parse
+                import random
+                clean_p = re.sub(r'\s+', ' ', (full_prompt or "Animated character portrait")).strip()[:950]
+                encoded_p = urllib.parse.quote(clean_p)
+                eff_seed = seed if seed is not None else random.randint(1000, 999999)
+                req_w = min(1280, max(512, int(width)))
+                req_h = min(1280, max(512, int(height)))
+                poll_url = f"https://image.pollinations.ai/prompt/{encoded_p}?width={req_w}&height={req_h}&seed={eff_seed}&nologo=true"
+                async with httpx.AsyncClient(timeout=35.0, follow_redirects=True) as client:
+                    p_resp = await client.get(poll_url)
+                    if p_resp.status_code == 200 and len(p_resp.content) > 2048:
+                        img = Image.open(io.BytesIO(p_resp.content)).convert("RGB")
+                        fitted = self.fit_image_to_aspect_ratio(img, width, height)
+                        fitted.save(output_path, "JPEG", quality=95)
+                        print(f"Generated {label} via Cloud AI Image Fallback (Gemini quota/cookie unavailable: {str(gemini_error)[:120]})!")
+                        return output_path
+            except Exception as e_poll:
+                print(f"[image_service] Cloud AI image fallback notice: {e_poll}")
 
             err_msg = (gemini_error or "").strip() or "Please verify your Gemini API key or update __Secure-1PSID / __Secure-1PSIDTS cookies in Settings ⚙️."
             if err_msg.lower().startswith("google gemini"):

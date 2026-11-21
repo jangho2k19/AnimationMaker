@@ -24,7 +24,7 @@ class ScriptAgent:
                 psid = creds.get("gemini_cookie_psid")
                 psidts = creds.get("gemini_cookie_psidts")
                 if self.provider == "gemini":
-                    if creds.get("gemini_api_key") and creds["gemini_api_key"].startswith("AIzaSy"):
+                    if creds.get("gemini_api_key") and creds["gemini_api_key"].startswith(("AIzaSy", "AQ.")):
                         self.api_key = creds.get("gemini_api_key")
                     elif psid:
                         self.api_key = f"{psid}|{psidts}" if psidts else psid
@@ -772,7 +772,7 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
                 psid = creds.get("gemini_cookie_psid")
                 psidts = creds.get("gemini_cookie_psidts")
                 if self.provider == "gemini":
-                    if creds.get("gemini_api_key") and creds["gemini_api_key"].startswith("AIzaSy"):
+                    if creds.get("gemini_api_key") and creds["gemini_api_key"].startswith(("AIzaSy", "AQ.")):
                         self.api_key = creds.get("gemini_api_key")
                     elif psid:
                         self.api_key = f"{psid}|{psidts}" if psidts else psid
@@ -4621,68 +4621,72 @@ STORY / SCRIPT TO ANALYZE:
     async def _generate_with_gemini(self, prompt: str, model: str = "gemini-2.5-flash") -> Dict[str, Any]:
         from google import genai
         from google.genai import types
-        client = genai.Client(api_key=self.api_key)
-        target_model = (model or "gemini-2.5-flash").strip()
-        is_pro = "pro" in target_model.lower()
+        client = genai.Client(api_key=self.api_key, http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)))
+        target_model = (model or "gemini-3.5-flash").strip()
 
-        config_kwargs = {
-            "response_mime_type": "application/json",
-            "temperature": 0.7
-        }
-        lower_model = target_model.lower()
-        # thinking_budget is only supported on Gemini 2.5 models (newer models manage thinking automatically,
-        # older models reject the field entirely)
-        if "2.5" in lower_model:
-            try:
-                if is_pro:
-                    # Deep reasoning budget for Pro (Pro cannot disable thinking)
-                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048)
-                else:
-                    # Turn off thinking delay on 2.5 Flash models for fast execution
-                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-            except Exception:
-                pass
+        candidate_models = [target_model]
+        for fb_m in ("gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash"):
+            if fb_m not in candidate_models:
+                candidate_models.append(fb_m)
 
-        async def _call(kwargs):
-            config = types.GenerateContentConfig(**kwargs)
-            response = await client.aio.models.generate_content(
-                model=target_model,
-                contents=prompt,
-                config=config
-            )
-            text = getattr(response, "text", None)
-            if not text:
-                reason = ""
+        last_err = None
+        for cur_model in candidate_models:
+            is_pro = "pro" in cur_model.lower()
+            config_kwargs = {
+                "response_mime_type": "application/json",
+                "temperature": 0.7
+            }
+            if "2.5" in cur_model.lower():
                 try:
-                    reason = str(response.candidates[0].finish_reason)
+                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=2048 if is_pro else 0)
                 except Exception:
                     pass
-                raise RuntimeError(f"Gemini returned an empty response {reason}".strip())
-            return self._clean_json_response(text)
 
+            async def _call(m_id, kwargs):
+                config = types.GenerateContentConfig(**kwargs)
+                response = await client.aio.models.generate_content(
+                    model=m_id,
+                    contents=prompt,
+                    config=config
+                )
+                text = getattr(response, "text", None)
+                if not text:
+                    reason = ""
+                    try:
+                        reason = str(response.candidates[0].finish_reason)
+                    except Exception:
+                        pass
+                    raise RuntimeError(f"Gemini returned an empty response {reason}".strip())
+                return self._clean_json_response(text)
+
+            try:
+                try:
+                    return await _call(cur_model, config_kwargs)
+                except Exception as e_cfg:
+                    if "thinking_config" in config_kwargs and "thinking" in str(e_cfg).lower():
+                        config_kwargs.pop("thinking_config", None)
+                        return await _call(cur_model, config_kwargs)
+                    raise
+            except Exception as e_model:
+                last_err = e_model
+                err_low = str(e_model).lower()
+                if any(tok in err_low for tok in ("404", "not_found", "no longer available", "503", "unavailable", "high demand", "429", "resource_exhausted")):
+                    continue
+                break
+
+        # Check if cookie session is available as a fallback
         try:
-            try:
-                return await _call(config_kwargs)
-            except Exception as e_cfg:
-                # Retry once without thinking config if the model rejected it
-                if "thinking_config" in config_kwargs and "thinking" in str(e_cfg).lower():
-                    config_kwargs.pop("thinking_config", None)
-                    return await _call(config_kwargs)
-                raise
-        except Exception as e:
-            # Check if cookie session is available as a fallback
-            try:
-                from backend.config import get_server_credentials
-                creds = get_server_credentials()
-                psid = creds.get("gemini_cookie_psid")
-                psidts = creds.get("gemini_cookie_psidts")
-                if psid:
-                    cookie_token = f"{psid}|{psidts}" if psidts else psid
-                    print(f"⚠️ Google GenAI API returned ({e}). Auto-falling back to persistent Gemini Web Session...")
-                    return await self._generate_with_gemini_cookie(prompt, cookie_token)
-            except Exception:
-                pass
-            raise e
+            from backend.config import get_server_credentials
+            creds = get_server_credentials()
+            psid = creds.get("gemini_cookie_psid")
+            psidts = creds.get("gemini_cookie_psidts")
+            if psid:
+                cookie_token = f"{psid}|{psidts}" if psidts else psid
+                print(f"⚠️ Google GenAI API returned ({last_err}). Auto-falling back to persistent Gemini Web Session...")
+                return await self._generate_with_gemini_cookie(prompt, cookie_token)
+        except Exception:
+            pass
+        raise last_err or RuntimeError("Gemini generation failed.")
 
     async def _generate_with_openai_compatible(self, endpoint: str, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
         url = f"{endpoint.rstrip('/')}/chat/completions"

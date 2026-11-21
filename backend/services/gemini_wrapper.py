@@ -31,7 +31,6 @@ class GeminiImage:
         raise RuntimeError("No underlying image object available to save.")
 
 
-@dataclass
 class _ReentrantAsyncLock:
     """Re-entrant asyncio lock so gemini_webapi's @retry_on_error inside client.init() never self-deadlocks."""
     def __init__(self):
@@ -57,6 +56,7 @@ class _ReentrantAsyncLock:
             self._lock.release()
 
 
+@dataclass
 class GeminiResponse:
     """Structured response from Gemini Web containing text, thoughts, images, and metadata."""
     text: str
@@ -304,6 +304,18 @@ class GeminiWebWrapper:
             self.psidts = active_psidts
 
             from gemini_webapi import GeminiClient
+            import sys
+            import gemini_webapi.utils.get_access_token
+            _gat_mod = sys.modules.get("gemini_webapi.utils.get_access_token")
+            if _gat_mod and hasattr(_gat_mod, "_extract_payload") and not getattr(_gat_mod, "_anistory_patched", False):
+                _orig_extract_payload = _gat_mod._extract_payload
+                def _safe_extract_payload(response):
+                    res = _orig_extract_payload(response)
+                    if res and len(res) > 1 and res[1] and "identityfrontend" in str(res[1]).lower():
+                        return None
+                    return res
+                _gat_mod._extract_payload = _safe_extract_payload
+                _gat_mod._anistory_patched = True
 
             # If explicit credentials are available, initialize with them; otherwise fallback to Method B (zero args)
             if self.psid:
@@ -328,7 +340,7 @@ class GeminiWebWrapper:
                 bl = str(getattr(self.client, "build_label", "") or "").lower()
                 if "identityfrontend" in bl:
                     raise RuntimeError(
-                        "Google Gemini Web Cookie (__Secure-1PSID / __Secure-1PSIDTS) is expired or unauthenticated."
+                        "Google Gemini Web Cookie (__Secure-1PSID / __Secure-1PSIDTS) redirected to Google Sign-In."
                     )
                 return await orig_init_rpc()
             self.client._init_rpc = _checked_init_rpc
@@ -355,15 +367,18 @@ class GeminiWebWrapper:
                 raise
 
             build_lbl = str(getattr(self.client, "build_label", "") or "").lower()
-            if (
-                (getattr(self.client, "account_status", None) and self.client.account_status.name == "UNAUTHENTICATED")
-                or "identityfrontend" in build_lbl
-            ):
+            if "identityfrontend" in build_lbl:
                 self._initialized = False
                 self._purge_cookie_cache()
                 raise RuntimeError(
                     "Google Gemini Web Cookie (__Secure-1PSID / __Secure-1PSIDTS) is expired or unauthenticated. "
                     "Please open gemini.google.com, copy fresh __Secure-1PSID and __Secure-1PSIDTS cookies, and save them in Settings ⚙️."
+                )
+
+            if getattr(self.client, "account_status", None) and self.client.account_status.name == "UNAUTHENTICATED":
+                logger.warning(
+                    "Gemini Web session initialized in Guest fallback mode (cookies unauthenticated/DBSC-bound); "
+                    "text generation remains active, image generation will use fallback engine."
                 )
 
             self._initialized = True
