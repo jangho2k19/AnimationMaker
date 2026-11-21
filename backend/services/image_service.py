@@ -889,21 +889,7 @@ class ImageService:
             print(f"Generated {label} using Google Flow Bridge with {len(req_files or [])} reference(s)!")
             return output_path
 
-        # 2. Neural.love AI Art Mode
-        if image_mode == "neural_love":
-            nl_success = await self._generate_with_neural_love(
-                prompt=full_prompt,
-                output_path=output_path,
-                width=width,
-                height=height,
-                style_key=style_key
-            )
-            if nl_success:
-                print(f"Generated {label} using Neural.love AI Art Engine!")
-                return output_path
-            raise RuntimeError("Neural.love image generation failed. Please check your API key and credit balance.")
-
-        # 3. OpenAI DALL-E 3 Mode
+        # 2. OpenAI DALL-E 3 Mode
         if image_mode == "openai" or (eff_provider == "openai" and eff_api_key):
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
@@ -1126,9 +1112,6 @@ class ImageService:
             )
             return output_path
 
-        if image_mode == "puter":
-            raise RuntimeError("In-Browser Puter image generation runs directly in the browser client.")
-
         clean_name = (name or "Character").strip()
         clean_desc = self.sanitize_visual_prompt(description or "") or f"expressive character named {clean_name}"
         effective_style = "ghibli" if style_key == "dialogue_cinema" else (style_key or self.default_style or "ghibli")
@@ -1261,9 +1244,6 @@ class ImageService:
             self.generate_procedural_fallback(title=title, prompt=prompt, output_path=output_path, style_key=style_key, scene_idx=scene_idx, width=width, height=height)
             print(f"Scene {scene_idx + 1} visual rendered using Storyboard-Only canvas (zero AI calls).")
             return _finalize(output_path)
-
-        if image_mode == "puter":
-            raise RuntimeError("In-Browser Puter image generation runs directly in the browser client. Please use the 'Repaint with Puter' button in the Storyboard.")
 
         scene_only_prompt = self.craft_full_prompt(
             prompt,
@@ -1500,81 +1480,3 @@ class ImageService:
             else:
                 psid = s
         return psid, psidts
-
-    async def _generate_with_neural_love(
-        self,
-        prompt: str,
-        output_path: str,
-        width: int = 1280,
-        height: int = 720,
-        style_key: str = "ghibli"
-    ) -> bool:
-        """Generate high fidelity artistic images using Neural.love AI Art API."""
-        from backend.config import get_server_credentials
-        s_creds = get_server_credentials()
-        key = s_creds.get("neural_love_key") or os.environ.get("NEURAL_LOVE_API_KEY", "")
-        if not key:
-            return False
-
-        style = "anime" if ("anime" in (style_key or "") or style_key in ("ghibli", "comic")) else "anything"
-        layout = "horizontal" if width >= height else "vertical"
-        if abs(width - height) < 50:
-            layout = "square"
-
-        payload = {
-            "prompt": prompt[:800],
-            "style": style,
-            "layout": layout,
-            "amount": 1,
-            "isHd": False
-        }
-
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json"
-        }
-
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            resp = await client.post("https://api.neural.love/v1/ai-art/generate", json=payload, headers=headers)
-            if resp.status_code == 439:
-                err_detail = resp.json().get("detail", "Free generation limit reached for today.")
-                raise RuntimeError(f"Neural.love quota notice: {err_detail}")
-            elif resp.status_code == 402:
-                err_detail = resp.json().get("detail", "Payment required / 0 credits remaining.")
-                raise RuntimeError(f"Neural.love credits notice: {err_detail}")
-            elif resp.status_code not in (200, 201, 202):
-                print(f"Neural.love API error: {resp.status_code} {resp.text}")
-                return False
-
-            data = resp.json()
-            order_id = data.get("orderId") or data.get("id")
-            if not order_id:
-                return False
-
-            import asyncio
-            for _ in range(30):
-                await asyncio.sleep(2.5)
-                poll_resp = await client.get(f"https://api.neural.love/v1/ai-art/orders/{order_id}", headers=headers)
-                if poll_resp.status_code == 200:
-                    p_data = poll_resp.json()
-                    status = (p_data.get("status") or "").lower()
-                    if status in ("done", "ready", "finished", "success"):
-                        images = p_data.get("output") or p_data.get("images") or []
-                        img_url = None
-                        if isinstance(images, list) and images:
-                            img_item = images[0]
-                            img_url = img_item.get("url") if isinstance(img_item, dict) else img_item
-                        elif isinstance(images, str):
-                            img_url = images
-
-                        if img_url:
-                            img_get = await client.get(img_url)
-                            if img_get.status_code == 200 and len(img_get.content) > 1000:
-                                img = Image.open(io.BytesIO(img_get.content))
-                                fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                                fitted.save(output_path, "JPEG", quality=93)
-                                return True
-                    elif status in ("failed", "error"):
-                        print(f"Neural.love order failed: {p_data}")
-                        return False
-        return False

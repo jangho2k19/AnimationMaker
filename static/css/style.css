@@ -4423,10 +4423,50 @@ body {
   color: #fca5a5;
 }
 
-.batch-Status-pill.pill-skipped,
 .batch-status-pill.pill-skipped {
   background: rgba(245, 158, 11, 0.18);
   color: #fcd34d;
+}
+
+/* Friendly inline secret reveal input wrapper */
+.input-with-eye {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-with-eye .styled-input {
+  padding-right: 36px;
+  width: 100%;
+}
+
+.btn-toggle-secret {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  line-height: 1;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.btn-toggle-secret:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.styled-input:focus,
+.styled-select:focus {
+  outline: none;
+  border-color: rgba(139, 92, 246, 0.65);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.18);
 }
 
 .batch-item-preview {

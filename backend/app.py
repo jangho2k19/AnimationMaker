@@ -600,17 +600,11 @@ async def verify_credentials(req: VerifyCredentialsRequest):
             except Exception as e:
                 return {"provider": "nvidia", "valid": False, "message": f"NVIDIA NIM connection error: {str(e)[:140]}"}
 
-        if p == "neural_love":
-            k = (raw_key or saved.get("neural_love_key") or "").strip()
-            if not k:
-                return {"provider": "neural_love", "valid": False, "message": "No Neural.love API key configured."}
-            return {"provider": "neural_love", "valid": len(k) >= 12, "authenticated": len(k) >= 12, "message": "Neural.love API key format verified."}
-
         return {"provider": p, "valid": False, "message": f"Unknown provider '{p}'."}
 
     if req.check_all:
         providers_to_check = ["gemini", "gemini_cookie"]
-        for extra_p, cred_field in [("openai", "openai_api_key"), ("claude", "claude_api_key"), ("deepseek", "deepseek_api_key"), ("nvidia", "nvidia_api_key"), ("neural_love", "neural_love_key")]:
+        for extra_p, cred_field in [("openai", "openai_api_key"), ("claude", "claude_api_key"), ("deepseek", "deepseek_api_key"), ("nvidia", "nvidia_api_key")]:
             if saved.get(cred_field):
                 providers_to_check.append(extra_p)
         results = {}
@@ -2728,7 +2722,7 @@ async def generate_flowkit_scene_video(project_id: str, scene_idx: int):
     img_path = p_dir / f"scene_{scene_idx + 1}.jpg"
     if not img_path.exists():
         img_mode = (project.get("image_mode") or "gemini").lower()
-        if img_mode not in ("manual", "puter") or not char_img_paths:
+        if img_mode != "manual" or not char_img_paths:
             await pipeline.generate_scene_image(project_id, scene_idx)
             project = pipeline.get_project(project_id)
             scene = project["scenes"][scene_idx]

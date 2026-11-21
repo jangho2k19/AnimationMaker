@@ -559,13 +559,13 @@ class AniStoryApp {
 
     // Modal Settings Extra Keys
     this.selectSettingsImageMode = document.getElementById("selectSettingsImageMode");
-    this.inputNeuralLoveApiKey = document.getElementById("inputNeuralLoveApiKey");
     this.inputOpenAiApiKey = document.getElementById("inputOpenAiApiKey");
     this.inputClaudeApiKey = document.getElementById("inputClaudeApiKey");
     this.inputDeepSeekApiKey = document.getElementById("inputDeepSeekApiKey");
     this.inputNvidiaApiKey = document.getElementById("inputNvidiaApiKey");
     this.inputGeminiCookie = document.getElementById("inputGeminiCookie");
     this.inputGeminiCookieTs = document.getElementById("inputGeminiCookieTs");
+    this.btnClearSettingsGeminiCookie = document.getElementById("btnClearSettingsGeminiCookie");
     this.btnDetectModels = document.getElementById("btnDetectModels");
     this.badgeProviderHint = document.getElementById("badgeProviderHint");
     this.labelProviderKey = document.getElementById("labelProviderKey");
@@ -1449,7 +1449,6 @@ class AniStoryApp {
       if (this.inputGeminiCookieTs) {
         this.inputGeminiCookieTs.value = localStorage.getItem("anistory_gemini_cookie_psidts") || "";
       }
-      if (this.inputNeuralLoveApiKey) this.inputNeuralLoveApiKey.value = localStorage.getItem("anistory_key_neural_love") || "";
       if (this.inputOpenAiApiKey) this.inputOpenAiApiKey.value = localStorage.getItem("anistory_key_openai") || "";
       if (this.inputClaudeApiKey) this.inputClaudeApiKey.value = localStorage.getItem("anistory_key_claude") || "";
       if (this.inputDeepSeekApiKey) this.inputDeepSeekApiKey.value = localStorage.getItem("anistory_key_deepseek") || "";
@@ -1459,6 +1458,25 @@ class AniStoryApp {
         this.checkSettingsAutoPaint.checked = localStorage.getItem("anistory_autopaint") === "true";
       }
       this.modalSettings.classList.add("active");
+    });
+    if (this.btnClearSettingsGeminiCookie) {
+      this.btnClearSettingsGeminiCookie.addEventListener("click", () => {
+        if (this.inputGeminiCookie) this.inputGeminiCookie.value = "";
+        if (this.inputGeminiCookieTs) this.inputGeminiCookieTs.value = "";
+        if (this.settingsGeminiCookieVerifyStatus) this.settingsGeminiCookieVerifyStatus.style.display = "none";
+        this.showToast("🧹 Cleared Gemini Cookie fields — click 'Save Preferences' to apply.");
+      });
+    }
+    // Show / Hide secret eye toggles
+    document.querySelectorAll(".btn-toggle-secret").forEach((eyeBtn) => {
+      eyeBtn.addEventListener("click", () => {
+        const targetId = eyeBtn.getAttribute("data-target");
+        const inputEl = targetId ? document.getElementById(targetId) : null;
+        if (!inputEl) return;
+        const isHidden = inputEl.type === "password";
+        inputEl.type = isHidden ? "text" : "password";
+        eyeBtn.textContent = isHidden ? "🙈" : "👁️";
+      });
     });
     this.btnCloseSettings.addEventListener("click", () => this.modalSettings.classList.remove("active"));
     this.btnSaveSettings.addEventListener("click", () => {
@@ -1499,7 +1517,6 @@ class AniStoryApp {
       }
       this.hasServerGeminiKey = Boolean(geminiVal);
 
-      if (this.inputNeuralLoveApiKey) localStorage.setItem("anistory_key_neural_love", this.inputNeuralLoveApiKey.value.trim());
       if (this.inputOpenAiApiKey) localStorage.setItem("anistory_key_openai", this.inputOpenAiApiKey.value.trim());
       if (this.inputClaudeApiKey) localStorage.setItem("anistory_key_claude", this.inputClaudeApiKey.value.trim());
       if (this.inputDeepSeekApiKey) localStorage.setItem("anistory_key_deepseek", this.inputDeepSeekApiKey.value.trim());
@@ -1524,7 +1541,6 @@ class AniStoryApp {
           gemini_api_key: geminiVal,
           gemini_cookie_psid: this.inputGeminiCookie ? this.inputGeminiCookie.value.trim() : "",
           gemini_cookie_psidts: this.inputGeminiCookieTs ? this.inputGeminiCookieTs.value.trim() : "",
-          neural_love_key: this.inputNeuralLoveApiKey ? this.inputNeuralLoveApiKey.value.trim() : "",
           openai_api_key: this.inputOpenAiApiKey ? this.inputOpenAiApiKey.value.trim() : "",
           claude_api_key: this.inputClaudeApiKey ? this.inputClaudeApiKey.value.trim() : "",
           deepseek_api_key: this.inputDeepSeekApiKey ? this.inputDeepSeekApiKey.value.trim() : "",
@@ -1540,17 +1556,19 @@ class AniStoryApp {
       }
     });
 
-    // Image Painting Mode Toggles (Google Gemini Imagen 3 vs FlowKit Character Ref vs Storyboard Only)
+    // Image Painting Mode Toggles (Google Gemini Imagen 3 vs Cloud AI Art Pollinations vs FlowKit Character Ref vs Storyboard Only)
     const toggleImageModeHandler = () => {
-      const modes = ["gemini", "flowkit", "manual"];
+      const modes = ["gemini", "pollinations", "flowkit", "manual"];
       const currentIdx = Math.max(0, modes.indexOf(this.imageMode));
       const nextMode = modes[(currentIdx + 1) % modes.length];
       this.setImageMode(nextMode);
       const label = nextMode === "gemini"
         ? "✨ Google Gemini / Imagen 3"
-        : (nextMode === "flowkit"
-          ? "🎬 FlowKit Character Ref Image"
-          : "📝 Storyboard Only (No AI Paint)");
+        : (nextMode === "pollinations"
+          ? "☁️ Free Cloud AI Art (Pollinations Flux)"
+          : (nextMode === "flowkit"
+            ? "🎬 FlowKit Character Ref Image"
+            : "📝 Storyboard Only (No AI Paint)"));
       this.showToast(`Switched Image Mode to: ${label}`);
       this.addAiLog("info", "Switch Paint Mode", label, `Default image painting engine switched to ${label}.`);
     };
@@ -2489,10 +2507,6 @@ class AniStoryApp {
         const creds = await resp.json();
         this.hasServerGeminiCookie = Boolean(creds.has_gemini_cookie || creds.gemini_cookie_psid);
         this.hasServerGeminiKey = Boolean(creds.has_gemini_api_key);
-        if (creds.neural_love_key && !localStorage.getItem("anistory_key_neural_love")) {
-          localStorage.setItem("anistory_key_neural_love", creds.neural_love_key);
-          if (this.inputNeuralLoveApiKey) this.inputNeuralLoveApiKey.value = creds.neural_love_key;
-        }
         if (creds.gemini_cookie_psid && !localStorage.getItem("anistory_gemini_cookie_psid")) {
           localStorage.setItem("anistory_gemini_cookie_psid", creds.gemini_cookie_psid);
           if (creds.gemini_cookie_psidts) {
@@ -2575,6 +2589,10 @@ class AniStoryApp {
         this.badgeImageMode.textContent = "📝 Storyboard Only (No AI Painting)";
         this.badgeImageMode.style.background = "rgba(16, 185, 129, 0.2)";
         this.badgeImageMode.style.color = "#6ee7b7";
+      } else if (mode === "pollinations") {
+        this.badgeImageMode.textContent = "☁️ Free Cloud AI Art (Pollinations Flux)";
+        this.badgeImageMode.style.background = "rgba(56, 189, 248, 0.2)";
+        this.badgeImageMode.style.color = "#7dd3fc";
       } else if (mode === "flowkit") {
         this.badgeImageMode.textContent = "🎬 FlowKit Character Ref Image";
         this.badgeImageMode.style.background = "rgba(14, 165, 233, 0.2)";
@@ -2588,6 +2606,8 @@ class AniStoryApp {
     if (this.descImageMode) {
       if (mode === "manual") {
         this.descImageMode.textContent = "AI is dedicated exclusively to the storyboard. Scenes use SVG placeholders and user-uploaded media.";
+      } else if (mode === "pollinations") {
+        this.descImageMode.textContent = "Free Cloud AI Art powered by Pollinations Flux — no API key or cookie required.";
       } else if (mode === "flowkit") {
         this.descImageMode.textContent = "FlowKit / Google Flow image generation with automatic Character Portrait References across scenes.";
       } else {
@@ -2596,7 +2616,9 @@ class AniStoryApp {
     }
     if (this.btnToggleImageMode) {
       if (mode === "gemini") {
-        this.btnToggleImageMode.innerHTML = `<span>🎬</span> Switch to FlowKit Character Ref`;
+        this.btnToggleImageMode.innerHTML = `<span>☁️</span> Switch to Cloud AI Art`;
+      } else if (mode === "pollinations") {
+        this.btnToggleImageMode.innerHTML = `<span>🎬</span> Switch to FlowKit Char Ref`;
       } else if (mode === "flowkit") {
         this.btnToggleImageMode.innerHTML = `<span>📝</span> Switch to Storyboard Only`;
       } else {
@@ -2610,6 +2632,9 @@ class AniStoryApp {
       if (mode === "manual") {
         this.iconImageModeStage2.textContent = "📝";
         this.textImageModeStage2.textContent = "Paint: Storyboard Only";
+      } else if (mode === "pollinations") {
+        this.iconImageModeStage2.textContent = "☁️";
+        this.textImageModeStage2.textContent = "Paint: Cloud AI Art";
       } else if (mode === "flowkit") {
         this.iconImageModeStage2.textContent = "🎬";
         this.textImageModeStage2.textContent = "Paint: FlowKit Char Ref";
@@ -4679,7 +4704,7 @@ CRITICAL INSTRUCTION 1 - VOICEOVER NARRATION MUST TIE DIRECTLY TO THE STORY:
 
 CRITICAL INSTRUCTION 2 - SEPARATE PROMPTS FOR IMAGE & VIDEO:${isDialogueCinema ? `\n- DIALOGUE FILM (CAMERA ON SPEAKING CHARACTER MANDATE): Whenever a character speaks in a scene, frame the camera DIRECTLY ON THE SPEAKING CHARACTER (Medium Close-Up on the active speaker's face & upper body, or Over-The-Shoulder shot looking at the speaking character). Use Shot-Reverse-Shot editing across conversational turns so each scene focuses on whichever character is currently speaking, explicitly naming the active speaker in both "visual_prompt" and "acting_prompt", and set "camera_motion" to "speaker_focus".` : ""}
 Every scene MUST have TWO SEPARATE, DISTINCT prompts:
-1. "visual_prompt" (STILL IMAGE PROMPT for Midjourney / Google Imagen 3 / Puter):
+1. "visual_prompt" (STILL IMAGE PROMPT for Midjourney / Google Imagen 3):
    - Detailed visual description of the frozen single frame in ${styleName} art style.
    - Describe character visual features & outfit consistently, environment setting, color palette, lighting atmosphere, and composition.
    - ${this.selectedStyleKey === "comic" ? 'Include graphic-novel speech bubble(s) with the spoken dialogue text (e.g. Comic speech bubble from [Speaker]: "[Dialogue]"). Do NOT include time ranges (like 0-3s) or camera moves.' : 'Do NOT include time ranges (like 0-3s), camera moves, speech text, or negative prompts.'}
@@ -7594,7 +7619,7 @@ ${isAutoScenes
       text += `🎭 Archetype: ${sc.archetype || "Standard"}\n`;
       text += `🎥 Camera Motion: ${sc.camera_motion || "zoom_in"}\n`;
       text += `🎙️ Voiceover: "${sc.narration || ""}"\n`;
-      text += `\n🎨 Visual Image Prompt (Midjourney / Imagen 3 / Puter):\n${sc.visual_prompt || ""}\n`;
+      text += `\n🎨 Visual Image Prompt (Midjourney / Imagen 3):\n${sc.visual_prompt || ""}\n`;
       text += `\n🎬 Acting Video Prompt (Google Flow / Veo 3 / Kling):\n${sc.acting_prompt || ""}\n`;
       text += `\n\n`;
     });
