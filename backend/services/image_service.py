@@ -1072,8 +1072,20 @@ class ImageService:
                     print(f"Generated {label} using Gemini Pro Web Session with {len(req_files or [])} reference(s)!")
                     return output_path
                 else:
-                    reply_hint = (resp.text or "").strip()[:160]
-                    gemini_error = f"Gemini Web replied without an image ({reply_hint or 'session is in unauthenticated Guest mode'})."
+                    acct_status = getattr(resp, "account_status", "UNKNOWN")
+                    reply_hint = (resp.text or "").strip()[:180]
+                    if acct_status == "UNAUTHENTICATED" or any(
+                        phrase in (resp.text or "").lower()
+                        for phrase in ["signed out", "can't create", "cannot generate", "search for images"]
+                    ):
+                        gemini_error = (
+                            "Cookie session is in Guest Mode (UNAUTHENTICATED — Chrome/Brave rotated or invalidated __Secure-1PSIDTS). "
+                            "Google Gemini Web blocks Imagen 3 image creation in Guest Mode (only Text AI works in Guest Mode). "
+                            "Fix: Copy fresh __Secure-1PSID + __Secure-1PSIDTS from an Incognito window and close that tab immediately so Chrome does not rotate it, "
+                            "OR switch the Task Paint Engine to '🌐 Cloud AI Art (Pollinations Flux)'."
+                        )
+                    else:
+                        gemini_error = f"Gemini Web replied without a generated image ({reply_hint or 'no image returned'})."
             except Exception as e:
                 gemini_error = str(e).strip() or f"{type(e).__name__}: Gemini Web session request failed."
 

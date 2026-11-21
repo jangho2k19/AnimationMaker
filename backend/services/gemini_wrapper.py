@@ -20,14 +20,47 @@ class GeminiImage:
     title: str = ""
     alt: str = ""
     raw_image: Any = None
+    is_generated: bool = True
 
     async def save(self, path: Union[str, Path], filename: Optional[str] = None) -> str:
         """Saves the generated image to local disk."""
         dest_dir = Path(path)
         dest_dir.mkdir(parents=True, exist_ok=True)
         if self.raw_image and hasattr(self.raw_image, "save"):
-            saved_path = await self.raw_image.save(path=str(dest_dir), filename=filename)
-            return str(saved_path)
+            try:
+                from curl_cffi.requests import AsyncSession
+                from curl_cffi import CurlHttpVersion
+                from gemini_webapi.constants import BROWSER_TYPE
+                client_ref = getattr(self.raw_image, "client_ref", None)
+                cookies = getattr(client_ref, "cookies", None) if client_ref else None
+                impersonate = getattr(client_ref, "impersonate", BROWSER_TYPE) if client_ref else BROWSER_TYPE
+                async with AsyncSession(
+                    impersonate=impersonate,
+                    allow_redirects=True,
+                    http_version=CurlHttpVersion.NONE,
+                    cookies=cookies,
+                ) as dl_client:
+                    saved_path = await self.raw_image.save(
+                        path=str(dest_dir),
+                        filename=filename,
+                        client=dl_client,
+                    )
+                    if saved_path and Path(saved_path).exists():
+                        return str(saved_path)
+            except Exception as e_save:
+                logger.warning(f"Primary GeminiImage.save encountered error ({e_save}); trying direct URL fallback...")
+                if self.url and self.url.startswith("https://") and "127.0.0.1" not in self.url and "localhost" not in self.url:
+                    import httpx
+                    target_name = filename or f"gemini_img_{uuid.uuid4().hex[:8]}.jpg"
+                    if not Path(target_name).suffix:
+                        target_name = f"{target_name}.jpg"
+                    dest_file = dest_dir / target_name
+                    async with httpx.AsyncClient(follow_redirects=True, timeout=25.0) as hclient:
+                        r = await hclient.get(self.url)
+                        r.raise_for_status()
+                        dest_file.write_bytes(r.content)
+                        return str(dest_file.resolve())
+                raise
         raise RuntimeError("No underlying image object available to save.")
 
 
@@ -62,10 +95,12 @@ class GeminiResponse:
     text: str
     thoughts: Optional[str] = None
     images: List[GeminiImage] = field(default_factory=list)
+    web_images: List[GeminiImage] = field(default_factory=list)
     model_used: Optional[str] = None
     citations: List[Any] = field(default_factory=list)
     candidates: List[Any] = field(default_factory=list)
     raw_output: Any = None
+    account_status: str = "UNKNOWN"
 
     @property
     def has_images(self) -> bool:
@@ -180,31 +215,63 @@ class GeminiWebWrapper:
         return cls._instance
 
     @staticmethod
-    def extract_cookie_pair(cookie_input: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-        """Extracts (__Secure-1PSID, __Secure-1PSIDTS) from cookie string, header, or combined token."""
+    def extract_all_cookies(cookie_input: Optional[str]) -> Dict[str, str]:
+        """Extracts all Google session cookies from a raw cookie string, header, pipe pair, or JSON export."""
         if not cookie_input:
-            return None, None
+            return {}
         raw = str(cookie_input).strip()
+        if raw.lower().startswith("cookie:"):
+            raw = raw[7:].strip()
 
-        psid = None
-        psidts = None
+        jar: Dict[str, str] = {}
 
-        if "__Secure-1PSID" in raw:
-            m_psid = re.search(r"__Secure-1PSID=([A-Za-z0-9_\-\.]+)", raw)
-            if m_psid:
-                psid = m_psid.group(1).strip()
-            m_ts = re.search(r"__Secure-1PSIDTS=([A-Za-z0-9_\-\.]+)", raw)
-            if m_ts:
-                psidts = m_ts.group(1).strip()
+        # 1. JSON array (Cookie-Editor / EditThisCookie) or JSON dict
+        if (raw.startswith("[") and raw.endswith("]")) or (raw.startswith("{") and raw.endswith("}")):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, dict) and item.get("name") and item.get("value"):
+                            jar[str(item["name"]).strip()] = str(item["value"]).strip()
+                elif isinstance(parsed, dict):
+                    inner = parsed.get("cookies", parsed)
+                    if isinstance(inner, dict):
+                        for k, v in inner.items():
+                            if v:
+                                jar[str(k).strip()] = str(v).strip()
+            except Exception:
+                pass
 
-        if not psid:
+        # 2. Semicolon-separated Cookie header string
+        if ";" in raw or "=" in raw:
+            for part in raw.split(";"):
+                part = part.strip()
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip('"')
+                    if k and v and " " not in k:
+                        jar[k] = v
+
+        # 3. Pipe-separated __Secure-1PSID|__Secure-1PSIDTS
+        if "__Secure-1PSID" not in jar:
             if "|" in raw:
-                parts = raw.split("|", 1)
-                psid = parts[0].strip()
-                psidts = parts[1].strip()
-            elif not raw.startswith("{"):
-                psid = raw
+                p1, p2 = raw.split("|", 1)
+                if p1.strip():
+                    jar["__Secure-1PSID"] = p1.strip()
+                if p2.strip():
+                    jar["__Secure-1PSIDTS"] = p2.strip()
+            elif not raw.startswith("{") and not raw.startswith("[") and "=" not in raw:
+                jar["__Secure-1PSID"] = raw
 
+        return jar
+
+    @staticmethod
+    def extract_cookie_pair(cookie_input: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+        """Extracts (__Secure-1PSID, __Secure-1PSIDTS) from cookie string, header, JSON, or combined token."""
+        jar = GeminiWebWrapper.extract_all_cookies(cookie_input)
+        psid = jar.get("__Secure-1PSID") or jar.get("__Secure-3PSID")
+        psidts = jar.get("__Secure-1PSIDTS") or jar.get("__Secure-3PSIDTS")
         return psid, psidts
 
     def _get_active_credentials(self) -> Tuple[Optional[str], Optional[str]]:
@@ -325,6 +392,14 @@ class GeminiWebWrapper:
                     auto_refresh=True,
                     refresh_interval=300
                 )
+                extra_jar = getattr(self, "_extra_cookies", None) or {}
+                if extra_jar and hasattr(self.client, "_cookies"):
+                    for ck_name, ck_val in extra_jar.items():
+                        if ck_name not in ("__Secure-1PSID", "__Secure-1PSIDTS") and ck_val:
+                            try:
+                                self.client._cookies.set(ck_name, ck_val, domain=".google.com", secure=True)
+                            except Exception:
+                                pass
             else:
                 logger.info("No explicit PSID provided; attempting Method B auto-discovery (cache/browser)...")
                 self.client = GeminiClient(
@@ -532,36 +607,56 @@ class GeminiWebWrapper:
         return None
 
     def _wrap_output(self, output: Any, model_name: Optional[str] = None) -> GeminiResponse:
-        """Wraps gemini_webapi.ModelOutput into a clean GeminiResponse."""
-        images: List[GeminiImage] = []
+        """Wraps gemini_webapi.ModelOutput into a clean GeminiResponse.
+        Strictly separates AI-generated images (GeneratedImage) from web search images (WebImage)
+        so web search results returned in Guest Mode are never mistaken for Imagen 3 creations.
+        """
+        generated_imgs: List[GeminiImage] = []
+        web_imgs: List[GeminiImage] = []
 
-        # 1. Top-level images on ModelOutput
-        if hasattr(output, "images") and output.images:
+        # Inspect candidates first so we strictly separate generated_images from web_images
+        if hasattr(output, "candidates") and output.candidates:
+            for cand in output.candidates:
+                cand_gen = getattr(cand, "generated_images", None) or []
+                for img in cand_gen:
+                    url = getattr(img, "url", "") or ""
+                    title = getattr(img, "title", "") or ""
+                    alt = getattr(img, "alt", "") or ""
+                    generated_imgs.append(GeminiImage(url=url, title=title, alt=alt, raw_image=img, is_generated=True))
+
+                cand_web = getattr(cand, "web_images", None) or []
+                for img in cand_web:
+                    url = getattr(img, "url", "") or ""
+                    title = getattr(img, "title", "") or ""
+                    alt = getattr(img, "alt", "") or ""
+                    web_imgs.append(GeminiImage(url=url, title=title, alt=alt, raw_image=img, is_generated=False))
+
+        # Fallback: if output.images exists without candidates, filter by class name GeneratedImage
+        if not generated_imgs and not web_imgs and hasattr(output, "images") and output.images:
             for img in output.images:
+                cls_name = type(img).__name__
                 url = getattr(img, "url", "") or ""
                 title = getattr(img, "title", "") or ""
                 alt = getattr(img, "alt", "") or ""
-                images.append(GeminiImage(url=url, title=title, alt=alt, raw_image=img))
+                if cls_name == "GeneratedImage":
+                    generated_imgs.append(GeminiImage(url=url, title=title, alt=alt, raw_image=img, is_generated=True))
+                else:
+                    web_imgs.append(GeminiImage(url=url, title=title, alt=alt, raw_image=img, is_generated=False))
 
-        # 2. Candidate level images
-        if not images and hasattr(output, "candidates") and output.candidates:
-            for cand in output.candidates:
-                cand_imgs = getattr(cand, "generated_images", None) or getattr(cand, "images", None)
-                if cand_imgs:
-                    for img in cand_imgs:
-                        url = getattr(img, "url", "") or ""
-                        title = getattr(img, "title", "") or ""
-                        alt = getattr(img, "alt", "") or ""
-                        images.append(GeminiImage(url=url, title=title, alt=alt, raw_image=img))
+        acct_status = "UNKNOWN"
+        if self.client and getattr(self.client, "account_status", None) is not None:
+            acct_status = getattr(self.client.account_status, "name", str(self.client.account_status))
 
         return GeminiResponse(
             text=getattr(output, "text", "") or "",
             thoughts=getattr(output, "thoughts", None),
-            images=images,
+            images=generated_imgs,
+            web_images=web_imgs,
             model_used=model_name,
             citations=getattr(output, "citations", []) or [],
             candidates=getattr(output, "candidates", []) or [],
-            raw_output=output
+            raw_output=output,
+            account_status=acct_status,
         )
 
     async def generate_content(
@@ -581,7 +676,13 @@ class GeminiWebWrapper:
 
         for attempt in range(max_attempts):
             try:
-                psid, psidts = self.extract_cookie_pair(cookie_override) if cookie_override else (None, None)
+                if cookie_override:
+                    all_cks = self.extract_all_cookies(cookie_override)
+                    self._extra_cookies = all_cks
+                    psid = all_cks.get("__Secure-1PSID") or all_cks.get("__Secure-3PSID")
+                    psidts = all_cks.get("__Secure-1PSIDTS") or all_cks.get("__Secure-3PSIDTS")
+                else:
+                    psid, psidts = None, None
                 client = await self.get_client(psid_override=psid, psidts_override=psidts)
 
                 chosen_model = self.resolve_model(client, model) if model else None

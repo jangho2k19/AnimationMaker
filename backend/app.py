@@ -464,7 +464,11 @@ async def verify_credentials(req: VerifyCredentialsRequest):
                         "authenticated": False,
                         "mode": "guest_fallback",
                         "account_status": acct_name,
-                        "message": f"Cookie connected in Guest Mode ({acct_name}: Chrome/Brave rotated __Secure-1PSIDTS). Text AI works ({reply_snippet or 'OK'}); Images use Cloud AI fallback."
+                        "message": (
+                            f"Cookie connected in Guest Mode ({acct_name}: Chrome/Brave rotated __Secure-1PSIDTS). "
+                            f"Text AI works ({reply_snippet or 'OK'}), but Google blocks Imagen 3 Cookie Painting in Guest Mode. "
+                            f"Tip: Copy __Secure-1PSID + __Secure-1PSIDTS from an Incognito tab and close that tab immediately, or set Paint Engine to Cloud AI Art (Pollinations Flux)."
+                        )
                     }
             except Exception as e:
                 return {
