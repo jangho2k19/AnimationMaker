@@ -308,23 +308,59 @@ class SaveCredentialsRequest(BaseModel):
 
 @app.post("/api/save-credentials")
 async def save_credentials(req: SaveCredentialsRequest):
-    from backend.config import save_server_credentials
+    from backend.config import get_server_credentials, save_server_credentials
+    from backend.services.gemini_wrapper import GeminiWebWrapper
+
+    existing = get_server_credentials()
+    wrapper = GeminiWebWrapper.get_instance()
     creds_dict = {}
-    if req.gemini_api_key: creds_dict["gemini_api_key"] = req.gemini_api_key
-    if req.gemini_cookie_psid: creds_dict["gemini_cookie_psid"] = req.gemini_cookie_psid
-    if req.gemini_cookie_psidts: creds_dict["gemini_cookie_psidts"] = req.gemini_cookie_psidts
-    if req.neural_love_key: creds_dict["neural_love_key"] = req.neural_love_key
-    if req.openai_api_key: creds_dict["openai_api_key"] = req.openai_api_key
-    if req.claude_api_key: creds_dict["claude_api_key"] = req.claude_api_key
-    if req.deepseek_api_key: creds_dict["deepseek_api_key"] = req.deepseek_api_key
-    if req.nvidia_api_key: creds_dict["nvidia_api_key"] = req.nvidia_api_key
+
+    if req.gemini_api_key is not None:
+        gk = req.gemini_api_key.strip()
+        if gk.startswith("g.a") or "__Secure-1PSID" in gk:
+            # User pasted a Gemini Web Cookie into the API Key field: route it to cookie storage
+            if not (req.gemini_cookie_psid or "").strip():
+                req.gemini_cookie_psid = gk
+            if existing.get("gemini_api_key", "").startswith("g.a"):
+                creds_dict["gemini_api_key"] = ""
+        elif gk:
+            creds_dict["gemini_api_key"] = gk
+
+    if req.gemini_cookie_psid is not None:
+        raw_psid_in = req.gemini_cookie_psid.strip()
+        parsed_psid, parsed_ts = wrapper.extract_cookie_pair(raw_psid_in) if raw_psid_in else (None, None)
+        clean_psid = parsed_psid or raw_psid_in
+        if clean_psid:
+            prev_psid = existing.get("gemini_cookie_psid", "")
+            prev_ts = existing.get("gemini_cookie_psidts", "")
+            creds_dict["gemini_cookie_psid"] = clean_psid
+            explicit_ts = (req.gemini_cookie_psidts or "").strip() if req.gemini_cookie_psidts is not None else ""
+            if parsed_ts:
+                creds_dict["gemini_cookie_psidts"] = parsed_ts
+            elif explicit_ts and (explicit_ts != prev_ts or clean_psid == prev_psid):
+                creds_dict["gemini_cookie_psidts"] = explicit_ts
+            elif clean_psid != prev_psid or (req.gemini_cookie_psidts is not None and not explicit_ts):
+                # Do not pair a newly pasted __Secure-1PSID with a stale __Secure-1PSIDTS from an old session
+                creds_dict["gemini_cookie_psidts"] = ""
+    elif req.gemini_cookie_psidts is not None:
+        creds_dict["gemini_cookie_psidts"] = req.gemini_cookie_psidts.strip()
+
+    if req.neural_love_key: creds_dict["neural_love_key"] = req.neural_love_key.strip()
+    if req.openai_api_key: creds_dict["openai_api_key"] = req.openai_api_key.strip()
+    if req.claude_api_key: creds_dict["claude_api_key"] = req.claude_api_key.strip()
+    if req.deepseek_api_key: creds_dict["deepseek_api_key"] = req.deepseek_api_key.strip()
+    if req.nvidia_api_key: creds_dict["nvidia_api_key"] = req.nvidia_api_key.strip()
     try:
         save_server_credentials(creds_dict)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save credentials: {e}")
-    if "gemini_cookie_psid" in creds_dict or "gemini_cookie_psidts" in creds_dict:
+    if any(k in creds_dict for k in ("gemini_cookie_psid", "gemini_cookie_psidts", "gemini_api_key")):
+        try:
+            await wrapper.invalidate_session()
+        except Exception:
+            pass
         try:
             from backend.services.gemini_web_session import GeminiWebSessionManager
             await GeminiWebSessionManager.get_instance().invalidate()

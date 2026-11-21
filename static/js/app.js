@@ -1440,12 +1440,30 @@ class AniStoryApp {
       localStorage.setItem("anistory_gemini_key", geminiVal);
 
       if (this.inputGeminiCookie) {
-        const psid = this.inputGeminiCookie.value.trim();
-        const psidts = this.inputGeminiCookieTs ? this.inputGeminiCookieTs.value.trim() : "";
+        const prevPsid = localStorage.getItem("anistory_gemini_cookie_psid") || "";
+        const prevPsidts = localStorage.getItem("anistory_gemini_cookie_psidts") || "";
+        const rawCookieIn = this.inputGeminiCookie.value.trim();
+        let psid = rawCookieIn;
+        let psidts = this.inputGeminiCookieTs ? this.inputGeminiCookieTs.value.trim() : "";
+        if (rawCookieIn.includes("|")) {
+          const parts = rawCookieIn.split("|");
+          psid = (parts[0] || "").trim();
+          if ((parts[1] || "").trim()) {
+            psidts = parts[1].trim();
+            if (this.inputGeminiCookieTs) this.inputGeminiCookieTs.value = psidts;
+          }
+        } else if (psid && psid !== prevPsid && psidts && psidts === prevPsidts) {
+          // Clear stale __Secure-1PSIDTS from previous session if only __Secure-1PSID was replaced
+          psidts = "";
+          if (this.inputGeminiCookieTs) this.inputGeminiCookieTs.value = "";
+        }
         localStorage.setItem("anistory_gemini_cookie_psid", psid);
         localStorage.setItem("anistory_gemini_cookie_psidts", psidts);
         const combined = psidts ? `${psid}|${psidts}` : psid;
         localStorage.setItem("anistory_key_gemini_cookie", combined);
+        if (this.currentProject) {
+          this.currentProject.api_key = combined;
+        }
       }
 
       if (this.inputNeuralLoveApiKey) localStorage.setItem("anistory_key_neural_love", this.inputNeuralLoveApiKey.value.trim());
@@ -5043,14 +5061,43 @@ ${isAutoScenes
         localStorage.setItem(`anistory_key_${pKey}`, val);
         if (pKey === "gemini") localStorage.setItem("anistory_gemini_key", val);
         if (pKey === "gemini_cookie") {
+          const prevPsid = localStorage.getItem("anistory_gemini_cookie_psid") || "";
           if (val.includes("|") || val.includes("__Secure-1PSIDTS") || val.startsWith("{")) {
             localStorage.setItem("anistory_key_gemini_cookie", val);
+            const parts = val.split("|");
+            localStorage.setItem("anistory_gemini_cookie_psid", (parts[0] || "").trim());
+            if ((parts[1] || "").trim()) {
+              localStorage.setItem("anistory_gemini_cookie_psidts", parts[1].trim());
+            }
           } else {
+            if (val && val !== prevPsid) {
+              localStorage.setItem("anistory_gemini_cookie_psidts", "");
+            }
             const savedTs = localStorage.getItem("anistory_gemini_cookie_psidts") || "";
             const combined = savedTs ? `${val}|${savedTs}` : val;
             localStorage.setItem("anistory_key_gemini_cookie", combined);
+            localStorage.setItem("anistory_gemini_cookie_psid", val);
           }
-          localStorage.setItem("anistory_gemini_cookie_psid", val.split("|")[0].trim());
+        }
+      });
+      this.inputProviderKey.addEventListener("change", () => {
+        const pKey = this.selectAiProvider ? this.selectAiProvider.value : "";
+        const val = this.inputProviderKey.value.trim();
+        if (!val) return;
+        if (pKey === "gemini_cookie") {
+          const psid = localStorage.getItem("anistory_gemini_cookie_psid") || val.split("|")[0].trim();
+          const psidts = localStorage.getItem("anistory_gemini_cookie_psidts") || (val.includes("|") ? val.split("|")[1].trim() : "");
+          fetch("/api/save-credentials", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ gemini_cookie_psid: psid, gemini_cookie_psidts: psidts })
+          }).catch(() => {});
+        } else if (pKey === "gemini") {
+          fetch("/api/save-credentials", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ gemini_api_key: val })
+          }).catch(() => {});
         }
       });
     }

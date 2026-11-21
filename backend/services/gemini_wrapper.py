@@ -32,6 +32,31 @@ class GeminiImage:
 
 
 @dataclass
+class _ReentrantAsyncLock:
+    """Re-entrant asyncio lock so gemini_webapi's @retry_on_error inside client.init() never self-deadlocks."""
+    def __init__(self):
+        self._lock = asyncio.Lock()
+        self._owner = None
+        self._depth = 0
+
+    async def __aenter__(self):
+        task = asyncio.current_task()
+        if task is not None and self._owner is task:
+            self._depth += 1
+            return self
+        await self._lock.acquire()
+        self._owner = task
+        self._depth = 1
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self._depth -= 1
+        if self._depth <= 0:
+            self._owner = None
+            self._depth = 0
+            self._lock.release()
+
+
 class GeminiResponse:
     """Structured response from Gemini Web containing text, thoughts, images, and metadata."""
     text: str
@@ -295,27 +320,79 @@ class GeminiWebWrapper:
                     refresh_interval=300
                 )
 
-            await asyncio.wait_for(
-                self.client.init(
-                    timeout=20,
-                    auto_close=False,
-                    auto_refresh=True,
-                    refresh_interval=300
-                ),
-                timeout=25
-            )
+            # Prevent gemini_webapi's @retry_on_error decorator from self-deadlocking client._lock during init()
+            self.client._lock = _ReentrantAsyncLock()
 
-            if getattr(self.client, "account_status", None) and self.client.account_status.name == "UNAUTHENTICATED":
+            try:
+                await asyncio.wait_for(
+                    self.client.init(
+                        timeout=15,
+                        auto_close=False,
+                        auto_refresh=True,
+                        refresh_interval=300
+                    ),
+                    timeout=18
+                )
+            except Exception as init_err:
                 self._initialized = False
+                self._purge_cookie_cache()
+                err_txt = str(init_err).strip()
+                if not err_txt or "status code 400" in err_txt.lower() or isinstance(init_err, TimeoutError):
+                    raise RuntimeError(
+                        "Google Gemini Web Cookie (__Secure-1PSID / __Secure-1PSIDTS) is expired or unauthenticated. "
+                        "Please open gemini.google.com, copy fresh __Secure-1PSID and __Secure-1PSIDTS cookies, and save them in Settings ⚙️."
+                    ) from init_err
+                raise
+
+            build_lbl = str(getattr(self.client, "build_label", "") or "").lower()
+            if (
+                (getattr(self.client, "account_status", None) and self.client.account_status.name == "UNAUTHENTICATED")
+                or "identityfrontend" in build_lbl
+            ):
+                self._initialized = False
+                self._purge_cookie_cache()
                 raise RuntimeError(
-                    "Google Gemini Session is UNAUTHENTICATED or cookies have expired. "
-                    "Please update cookies in Settings or cookies.json."
+                    "Google Gemini Web Cookie (__Secure-1PSID / __Secure-1PSIDTS) is expired or unauthenticated. "
+                    "Please open gemini.google.com, copy fresh __Secure-1PSID and __Secure-1PSIDTS cookies, and save them in Settings ⚙️."
                 )
 
             self._initialized = True
             self._watcher_task = asyncio.create_task(self._cookie_sync_loop())
 
             return self.client
+
+    def _purge_cookie_cache(self):
+        """Removes stale gemini_webapi temp cache files so expired cached jars never shadow newly saved cookies."""
+        try:
+            from gemini_webapi.utils.rotate_1psidts import _get_cookie_cache_dir
+            cache_dir = _get_cookie_cache_dir()
+            if cache_dir and cache_dir.exists():
+                for f in cache_dir.glob(".cached_cookies_*.json"):
+                    try:
+                        f.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+        except Exception:
+            pass
+
+    async def invalidate_session(self):
+        """Resets cached GeminiClient state and purges temp cookie cache when credentials change in Settings."""
+        self._purge_cookie_cache()
+        if self._watcher_task:
+            try:
+                self._watcher_task.cancel()
+            except Exception:
+                pass
+            self._watcher_task = None
+        if self.client:
+            try:
+                await self.client.close()
+            except Exception:
+                pass
+        self.client = None
+        self._initialized = False
+        self.psid = None
+        self.psidts = None
 
     async def refresh_session(self, force: bool = False) -> bool:
         """

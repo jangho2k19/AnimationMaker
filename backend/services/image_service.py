@@ -1020,14 +1020,17 @@ class ImageService:
             # 4b. Google Gemini Web Session Cookie (__Secure-1PSID) — natively supports multi-file references!
             from backend.config import get_server_credentials
             s_creds = get_server_credentials()
-            saved_psid = s_creds.get("gemini_cookie_psid")
-            saved_psidts = s_creds.get("gemini_cookie_psidts")
-            cookie_input = eff_api_key if is_cookie_key else (f"{saved_psid}|{saved_psidts}" if saved_psidts else saved_psid)
-            psid, psidts = self._parse_gemini_cookie_pair(cookie_input)
-            if not psid:
+            saved_psid = (s_creds.get("gemini_cookie_psid") or "").strip()
+            saved_psidts = (s_creds.get("gemini_cookie_psidts") or "").strip()
+            eff_psid, eff_psidts = self._parse_gemini_cookie_pair(eff_api_key if is_cookie_key else "")
+
+            # Prefer freshly saved server credentials if project's cached cookie is older/different
+            if saved_psid and saved_psid != eff_psid:
                 psid = saved_psid
-            if not psidts:
-                psidts = saved_psidts or psidts
+                psidts = saved_psidts
+            else:
+                psid = eff_psid or saved_psid
+                psidts = eff_psidts or (saved_psidts if psid == saved_psid else "")
 
             if psid:
                 combined_cookie = f"{psid}|{psidts}" if psidts else psid
@@ -1056,11 +1059,13 @@ class ImageService:
                         print(f"Generated {label} using Gemini Pro Web Session with {len(req_files or [])} reference(s)!")
                         return output_path
                     else:
-                        gemini_error = "Gemini returned response without image content. Try again or verify session cookies."
+                        gemini_error = "Gemini returned a text reply without an image. Please try again or verify your Gemini Web cookies."
                 except Exception as e:
-                    gemini_error = str(e)
+                    gemini_error = str(e).strip() or f"{type(e).__name__}: Gemini Web session request failed. Please update your __Secure-1PSID and __Secure-1PSIDTS cookies in Settings ⚙️."
 
-            err_msg = gemini_error or "Google Gemini Imagen 3 generation failed. Please verify your Gemini API key or ensure cookies are valid."
+            err_msg = (gemini_error or "").strip() or "Please verify your Gemini API key or update __Secure-1PSID / __Secure-1PSIDTS cookies in Settings ⚙️."
+            if err_msg.lower().startswith("google gemini"):
+                raise RuntimeError(err_msg)
             raise RuntimeError(f"Google Gemini Imagen 3 generation failed: {err_msg}")
 
         raise RuntimeError(f"Unsupported image generation mode '{image_mode}'.")
