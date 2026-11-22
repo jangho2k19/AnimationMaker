@@ -1556,19 +1556,21 @@ class AniStoryApp {
       }
     });
 
-    // Image Painting Mode Toggles (Google Gemini Imagen 3 vs Cloud AI Art Pollinations vs FlowKit Character Ref vs Storyboard Only)
+    // Image Painting Mode Toggles (Antigravity AI vs Google Gemini Imagen 3 vs Cloud AI Art Pollinations vs FlowKit Character Ref vs Storyboard Only)
     const toggleImageModeHandler = () => {
-      const modes = ["gemini", "pollinations", "flowkit", "manual"];
+      const modes = ["antigravity", "gemini", "pollinations", "flowkit", "manual"];
       const currentIdx = Math.max(0, modes.indexOf(this.imageMode));
       const nextMode = modes[(currentIdx + 1) % modes.length];
       this.setImageMode(nextMode);
-      const label = nextMode === "gemini"
-        ? "✨ Google Gemini / Imagen 3"
-        : (nextMode === "pollinations"
-          ? "☁️ Free Cloud AI Art (Pollinations Flux)"
-          : (nextMode === "flowkit"
-            ? "🎬 FlowKit Character Ref Image"
-            : "📝 Storyboard Only (No AI Paint)"));
+      const label = nextMode === "antigravity"
+        ? "🚀 Antigravity AI (Local CLI)"
+        : (nextMode === "gemini"
+          ? "✨ Google Gemini / Imagen 3"
+          : (nextMode === "pollinations"
+            ? "☁️ Free Cloud AI Art (Pollinations Flux)"
+            : (nextMode === "flowkit"
+              ? "🎬 FlowKit Character Ref Image"
+              : "📝 Storyboard Only (No AI Paint)")));
       this.showToast(`Switched Image Mode to: ${label}`);
       this.addAiLog("info", "Switch Paint Mode", label, `Default image painting engine switched to ${label}.`);
     };
@@ -2585,7 +2587,11 @@ class AniStoryApp {
 
   applyImageModeUI(mode) {
     if (this.badgeImageMode) {
-      if (mode === "manual") {
+      if (mode === "antigravity") {
+        this.badgeImageMode.textContent = "🚀 Antigravity AI (Local CLI)";
+        this.badgeImageMode.style.background = "rgba(139, 92, 246, 0.25)";
+        this.badgeImageMode.style.color = "#ddd6fe";
+      } else if (mode === "manual") {
         this.badgeImageMode.textContent = "📝 Storyboard Only (No AI Painting)";
         this.badgeImageMode.style.background = "rgba(16, 185, 129, 0.2)";
         this.badgeImageMode.style.color = "#6ee7b7";
@@ -2604,7 +2610,9 @@ class AniStoryApp {
       }
     }
     if (this.descImageMode) {
-      if (mode === "manual") {
+      if (mode === "antigravity") {
+        this.descImageMode.textContent = "High-fidelity AI image generation powered directly by your signed-in local Antigravity CLI (agy).";
+      } else if (mode === "manual") {
         this.descImageMode.textContent = "AI is dedicated exclusively to the storyboard. Scenes use SVG placeholders and user-uploaded media.";
       } else if (mode === "pollinations") {
         this.descImageMode.textContent = "Free Cloud AI Art powered by Pollinations Flux — no API key or cookie required.";
@@ -2615,21 +2623,26 @@ class AniStoryApp {
       }
     }
     if (this.btnToggleImageMode) {
-      if (mode === "gemini") {
+      if (mode === "antigravity") {
+        this.btnToggleImageMode.innerHTML = `<span>✨</span> Switch to Gemini Imagen 3`;
+      } else if (mode === "gemini") {
         this.btnToggleImageMode.innerHTML = `<span>☁️</span> Switch to Cloud AI Art`;
       } else if (mode === "pollinations") {
         this.btnToggleImageMode.innerHTML = `<span>🎬</span> Switch to FlowKit Char Ref`;
       } else if (mode === "flowkit") {
         this.btnToggleImageMode.innerHTML = `<span>📝</span> Switch to Storyboard Only`;
       } else {
-        this.btnToggleImageMode.innerHTML = `<span>✨</span> Switch to Google Gemini Imagen 3`;
+        this.btnToggleImageMode.innerHTML = `<span>🚀</span> Switch to Antigravity AI`;
       }
     }
     if (this.selectSettingsImageMode) {
       this.selectSettingsImageMode.value = (mode === "server" || mode === "neural_love" || mode === "puter") ? "gemini" : mode;
     }
     if (this.textImageModeStage2 && this.iconImageModeStage2) {
-      if (mode === "manual") {
+      if (mode === "antigravity") {
+        this.iconImageModeStage2.textContent = "🚀";
+        this.textImageModeStage2.textContent = "Paint: Antigravity AI";
+      } else if (mode === "manual") {
         this.iconImageModeStage2.textContent = "📝";
         this.textImageModeStage2.textContent = "Paint: Storyboard Only";
       } else if (mode === "pollinations") {
@@ -5446,7 +5459,10 @@ ${isAutoScenes
 
     let provider = defaultProvider;
     let imageMode = val;
-    if (val === "gemini_api") {
+    if (val === "antigravity") {
+      provider = "antigravity";
+      imageMode = "antigravity";
+    } else if (val === "gemini_api") {
       provider = "gemini";
       imageMode = "gemini_api";
     } else if (val === "gemini_cookie") {
@@ -8025,13 +8041,15 @@ ${isAutoScenes
       }
       this.currentProject = await resp.json();
       this.saveActiveProjectState();
-      const modeLabel = scenePaintMode === "flowkit"
-        ? "FlowKit Char-Ref"
-        : (scenePaintMode === "pollinations"
-          ? "Pollinations Flux"
-          : (scenePaintMode === "openai"
-            ? "OpenAI DALL-E 3"
-            : "Google Imagen 3"));
+      const modeLabel = scenePaintMode === "antigravity"
+        ? "Antigravity AI"
+        : (scenePaintMode === "flowkit"
+          ? "FlowKit Char-Ref"
+          : (scenePaintMode === "pollinations"
+            ? "Pollinations Flux"
+            : (scenePaintMode === "openai"
+              ? "OpenAI DALL-E 3"
+              : "Google Imagen 3")));
       const charImgsCount = (this.currentProject.character_profiles || []).filter(p => p && p.image_path).length;
       const refNote = charImgsCount > 0 ? ` + ${charImgsCount} Character Ref` : "";
       this.showToast(`Scene ${sceneIdx + 1} painted with ${modeLabel}${refNote}! 🎨✨`);

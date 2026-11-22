@@ -867,6 +867,21 @@ class ImageService:
             flow_ratio = "IMAGE_ASPECT_RATIO_SQUARE"
             dalle_size = "1024x1024"
 
+        # 0. Antigravity AI (Local CLI `agy` -> image-generator subagent)
+        if image_mode == "antigravity":
+            saved = await self._generate_with_antigravity(
+                prompt=multimodal_prompt or full_prompt,
+                output_path=output_path,
+                width=width,
+                height=height,
+                aspect_ratio=imagen_ratio,
+                req_files=req_files,
+            )
+            if saved and os.path.exists(output_path):
+                print(f"Generated {label} using Antigravity AI (Local CLI)!")
+                return output_path
+            raise RuntimeError("Antigravity AI image generation failed to produce an image file.")
+
         # 1. Google Flow Bridge (FlowKit) with native character_media_ids
         if image_mode == "flowkit":
             from backend.services.flowkit_service import FlowKitService
@@ -1480,3 +1495,135 @@ class ImageService:
             else:
                 psid = s
         return psid, psidts
+
+    @staticmethod
+    def _find_antigravity_cli() -> Optional[str]:
+        """Locates the installed Antigravity CLI executable (`agy` / `agy.exe`)."""
+        import shutil
+        env_path = (os.environ.get("AGY_CLI_PATH") or "").strip()
+        if env_path and os.path.exists(env_path):
+            return env_path
+        found = shutil.which("agy") or shutil.which("agy.exe")
+        if found:
+            return found
+        home = Path.home()
+        for cand in [
+            home / ".gemini" / "bin" / "agy.exe",
+            home / ".gemini" / "bin" / "agy",
+            Path(r"C:\Users\Po\.gemini\bin\agy.exe"),
+        ]:
+            if cand.exists():
+                return str(cand)
+        return None
+
+    async def _generate_with_antigravity(
+        self,
+        prompt: str,
+        output_path: str,
+        width: int = 1280,
+        height: int = 720,
+        aspect_ratio: str = "16:9",
+        req_files: Optional[list] = None,
+    ) -> bool:
+        """
+        Generates an image using the local Antigravity CLI (`agy --print`) and its
+        built-in `image-generator` subagent, then fits and saves it to `output_path`.
+        """
+        import asyncio
+        import time
+
+        agy_bin = self._find_antigravity_cli()
+        if not agy_bin:
+            raise RuntimeError(
+                "Antigravity CLI (agy.exe) not found. Please install Antigravity CLI or set AGY_CLI_PATH."
+            )
+
+        clean_prompt = (prompt or "").strip()[:2400]
+        ref_lines = ""
+        valid_refs = [os.path.abspath(str(p)) for p in (req_files or []) if p and os.path.exists(str(p))]
+        if valid_refs:
+            ref_lines = (
+                "\nReference character/continuity image files (keep character face, hair, and outfit visually consistent with these):\n"
+                + "\n".join(f"- {rp}" for rp in valid_refs[:4])
+                + "\n"
+            )
+
+        cli_prompt = (
+            f"Use the image-generator subagent to generate a single high-quality image with aspect ratio {aspect_ratio} "
+            f"(target {width}x{height}):\n"
+            f"{clean_prompt}\n"
+            f"{ref_lines}"
+            f"Requirements: clean illustration, strictly NO text, NO watermark. "
+            f"Reply with ONLY the absolute saved file path of the generated image."
+        )
+
+        started_ts = time.time()
+        proc = await asyncio.create_subprocess_exec(
+            agy_bin,
+            "--print",
+            cli_prompt,
+            "--disable-slash-commands",
+            "--output-format",
+            "text",
+            "--print-timeout",
+            "150s",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=165.0)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            raise RuntimeError("Antigravity CLI image generation timed out after 165s.")
+
+        stdout_txt = (stdout_bytes or b"").decode("utf-8", errors="ignore").strip()
+        stderr_txt = (stderr_bytes or b"").decode("utf-8", errors="ignore").strip()
+
+        if proc.returncode != 0:
+            err_msg = (stderr_txt or stdout_txt or f"Exit code {proc.returncode}")[:300]
+            raise RuntimeError(f"Antigravity CLI exited with error ({proc.returncode}): {err_msg}")
+
+        # 1. Extract generated image path from stdout (supports Windows & POSIX paths)
+        combined_out = f"{stdout_txt}\n{stderr_txt}"
+        candidate_paths = []
+        for pattern in [
+            r'([A-Za-z]:[\\/][^\r\n"\'\`<>|]+?\.(?:jpg|jpeg|png|webp))',
+            r'(/[^\r\n"\'\`<>|\s]+?\.(?:jpg|jpeg|png|webp))',
+        ]:
+            for m in re.findall(pattern, combined_out, flags=re.IGNORECASE):
+                p_clean = m.strip().strip(".,;)")
+                if os.path.exists(p_clean) and os.path.abspath(p_clean) not in valid_refs:
+                    candidate_paths.append(p_clean)
+
+        chosen_src = candidate_paths[-1] if candidate_paths else None
+
+        # 2. Fallback: scan newest image created in ~/.gemini/antigravity-cli/brain/ since started_ts
+        if not chosen_src:
+            brain_dir = Path.home() / ".gemini" / "antigravity-cli" / "brain"
+            if brain_dir.exists():
+                recent = []
+                for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
+                    for f in brain_dir.rglob(ext):
+                        try:
+                            mt = f.stat().st_mtime
+                            if mt >= started_ts - 2.0:
+                                recent.append((mt, str(f)))
+                        except OSError:
+                            pass
+                if recent:
+                    recent.sort(key=lambda x: x[0], reverse=True)
+                    chosen_src = recent[0][1]
+
+        if not chosen_src or not os.path.exists(chosen_src):
+            snippet = stdout_txt[:220] if stdout_txt else stderr_txt[:220]
+            raise RuntimeError(
+                f"Antigravity CLI did not return a saved image path. Output: {snippet or '(empty)'}"
+            )
+
+        with Image.open(chosen_src) as pil_img:
+            fitted = self.fit_image_to_aspect_ratio(pil_img.convert("RGB"), width, height)
+            fitted.save(output_path, "JPEG", quality=95)
+        return True

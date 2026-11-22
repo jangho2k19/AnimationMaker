@@ -283,11 +283,23 @@ AI_PROVIDERS = {
 
 # Image Painting Engine Modes
 IMAGE_MODES = {
+    "antigravity": {
+        "id": "antigravity",
+        "name": "Antigravity AI (Local CLI)",
+        "description": "High-fidelity AI image generation powered directly by your local Antigravity CLI (agy)",
+        "icon": "🚀"
+    },
     "gemini": {
         "id": "gemini",
         "name": "Google Gemini / Imagen 3",
         "description": "High-fidelity Google Imagen 3 visuals powered by your Gemini Key or Cookie",
         "icon": "✨"
+    },
+    "pollinations": {
+        "id": "pollinations",
+        "name": "Cloud AI Art (Pollinations Flux)",
+        "description": "Free Cloud AI Art powered by Pollinations Flux — no API key required",
+        "icon": "☁️"
     },
     "flowkit": {
         "id": "flowkit",
