@@ -831,7 +831,7 @@ async def gemini_web_generate(req: GeminiGenerateRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/gemini/chat")
 async def gemini_web_chat(req: GeminiChatRequest):
@@ -855,7 +855,7 @@ async def gemini_web_chat(req: GeminiChatRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/gemini/generate-image")
 async def gemini_web_generate_image(req: GeminiImageGenRequest):
@@ -887,7 +887,7 @@ async def gemini_web_generate_image(req: GeminiImageGenRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.get("/api/gemini/models")
 async def gemini_web_list_models():
@@ -944,7 +944,7 @@ async def import_project_json_file(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/create-story")
 async def create_story(req: CreateStoryRequest):
@@ -1632,7 +1632,7 @@ async def toggle_project_multivoice(project_id: str, req: Optional[ToggleMultivo
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/toggle-speaker-camera")
 async def toggle_project_speaker_camera(project_id: str, req: Optional[ToggleSpeakerCameraRequest] = None):
@@ -1642,7 +1642,7 @@ async def toggle_project_speaker_camera(project_id: str, req: Optional[ToggleSpe
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 class ToggleDialogueOnlyRequest(BaseModel):
     enable: Optional[bool] = None
@@ -1781,7 +1781,7 @@ async def set_project_character_voice(project_id: str, req: SetCharacterVoiceReq
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 # ====================================================================
 # CHARACTER STUDIO (IMAGES & OPTIONAL VOICES) ENDPOINTS
@@ -1828,7 +1828,7 @@ async def generate_draft_character_portrait(req: GenerateDraftCharacterPortraitR
         rel_path = str(out_file.relative_to(OUTPUT_DIR)).replace("\\", "/")
         return {"status": "ok", "image_path": rel_path, "media_url": f"/media/{rel_path}"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/characters/delete-draft-portrait")
 async def delete_draft_character_portrait(req: DeleteDraftPortraitRequest):
@@ -1876,7 +1876,7 @@ async def parse_characters_import(req: ParseCharactersImportRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/characters/analyze-from-story")
 async def analyze_characters_from_story(req: AnalyzeStoryCharactersRequest):
@@ -1921,7 +1921,7 @@ async def analyze_characters_from_story(req: AnalyzeStoryCharactersRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/characters/import-txt")
 async def import_characters_txt(
@@ -1953,7 +1953,7 @@ async def import_characters_txt(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/characters/import")
 async def import_project_characters(project_id: str, req: BulkImportCharactersRequest):
@@ -1994,7 +1994,7 @@ async def import_project_characters(project_id: str, req: BulkImportCharactersRe
             "project": updated,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.get("/api/characters/library")
 async def list_shared_character_library(query: str = ""):
@@ -2044,7 +2044,7 @@ async def save_to_shared_character_library(req: SaveCharacterLibraryRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/characters/library/save-project/{project_id}")
 async def save_project_characters_to_library(project_id: str):
@@ -2055,7 +2055,7 @@ async def save_project_characters_to_library(project_id: str):
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.delete("/api/characters/library/{lib_id}")
 async def delete_shared_character(lib_id: str):
@@ -2083,7 +2083,7 @@ async def import_project_characters_from_library(project_id: str, req: ImportLib
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.get("/api/projects/{project_id}/characters")
 async def list_project_characters(project_id: str):
@@ -2110,7 +2110,7 @@ async def upsert_project_character(project_id: str, req: UpsertCharacterProfileR
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.delete("/api/projects/{project_id}/characters/{char_id}")
 async def delete_project_character(project_id: str, char_id: str, keep_files: bool = False):
@@ -2124,7 +2124,7 @@ async def delete_project_character(project_id: str, char_id: str, keep_files: bo
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/characters/{char_id}/generate-image")
 async def generate_project_character_image(project_id: str, char_id: str, req: Optional[GenerateCharacterImageRequest] = None):
@@ -2149,7 +2149,7 @@ async def generate_project_character_image(project_id: str, char_id: str, req: O
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/characters/generate-all-images")
 async def generate_all_project_character_images(project_id: str, req: Optional[GenerateAllCharacterImagesRequest] = None):
@@ -2178,7 +2178,7 @@ async def generate_all_project_character_images(project_id: str, req: Optional[G
             "project": updated
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/characters/{char_id}/upload-image")
 async def upload_project_character_image(project_id: str, char_id: str, file: UploadFile = File(...)):
@@ -2220,7 +2220,7 @@ async def set_project_scene_characters(project_id: str, scene_idx: int, req: Set
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/toggle-video-char-refs")
 async def toggle_project_video_char_refs(project_id: str, req: Optional[ToggleVideoCharRefsRequest] = None):
@@ -2242,7 +2242,7 @@ async def auto_cast_project_voices(project_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/upload-image/{scene_idx}")
 async def upload_scene_image(project_id: str, scene_idx: int, file: UploadFile = File(...)):
@@ -2310,7 +2310,7 @@ async def regenerate_scene_image(project_id: str, scene_idx: int, req: Optional[
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/generate-images")
 async def generate_all_images(project_id: str, req: Optional[RegenerateImageRequest] = None):
@@ -2332,7 +2332,7 @@ async def generate_all_images(project_id: str, req: Optional[RegenerateImageRequ
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/regenerate-audio/{scene_idx}")
 async def regenerate_scene_audio(project_id: str, scene_idx: int):
@@ -2342,7 +2342,7 @@ async def regenerate_scene_audio(project_id: str, scene_idx: int):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/audition-voice")
 async def audition_voice(req: AuditionVoiceRequest):
@@ -2447,7 +2447,7 @@ async def audition_voice(req: AuditionVoiceRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 # In-memory tracking for concurrent background rendering tasks
 active_render_tasks: Dict[str, asyncio.Task] = {}
@@ -2583,7 +2583,7 @@ async def render_scene_video_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.post("/api/projects/{project_id}/render-all-scene-videos")
 async def render_all_scene_videos_endpoint(
@@ -2613,7 +2613,7 @@ async def render_all_scene_videos_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=(str(e).strip() or repr(e)))
 
 @app.get("/api/projects/{project_id}/download-scene-video/{scene_idx}")
 async def download_scene_video(project_id: str, scene_idx: int):

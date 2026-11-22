@@ -1530,6 +1530,7 @@ class ImageService:
         built-in `image-generator` subagent, then fits and saves it to `output_path`.
         """
         import asyncio
+        import subprocess
         import time
 
         agy_bin = self._find_antigravity_cli()
@@ -1558,7 +1559,7 @@ class ImageService:
         )
 
         started_ts = time.time()
-        proc = await asyncio.create_subprocess_exec(
+        cmd = [
             agy_bin,
             "--print",
             cli_prompt,
@@ -1567,24 +1568,30 @@ class ImageService:
             "text",
             "--print-timeout",
             "150s",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        ]
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
+        def _run_agy():
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=165,
+                creationflags=creationflags,
+            )
+
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=165.0)
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+            proc_res = await asyncio.to_thread(_run_agy)
+        except subprocess.TimeoutExpired:
             raise RuntimeError("Antigravity CLI image generation timed out after 165s.")
+        except Exception as sub_err:
+            raise RuntimeError(f"Failed to launch Antigravity CLI ({agy_bin}): {sub_err or repr(sub_err)}") from sub_err
 
-        stdout_txt = (stdout_bytes or b"").decode("utf-8", errors="ignore").strip()
-        stderr_txt = (stderr_bytes or b"").decode("utf-8", errors="ignore").strip()
+        stdout_txt = (proc_res.stdout or b"").decode("utf-8", errors="ignore").strip()
+        stderr_txt = (proc_res.stderr or b"").decode("utf-8", errors="ignore").strip()
 
-        if proc.returncode != 0:
-            err_msg = (stderr_txt or stdout_txt or f"Exit code {proc.returncode}")[:300]
-            raise RuntimeError(f"Antigravity CLI exited with error ({proc.returncode}): {err_msg}")
+        if proc_res.returncode != 0:
+            err_msg = (stderr_txt or stdout_txt or f"Exit code {proc_res.returncode}")[:300]
+            raise RuntimeError(f"Antigravity CLI exited with error ({proc_res.returncode}): {err_msg}")
 
         # 1. Extract generated image path from stdout (supports Windows & POSIX paths)
         combined_out = f"{stdout_txt}\n{stderr_txt}"
