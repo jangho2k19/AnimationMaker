@@ -244,11 +244,16 @@
                   <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                     <div>
                       <strong style="font-size:12px; color:#e9d5ff;">🎛️ Select AI Type / Model for Each Task &amp; Step</strong>
-                      <p class="hint-text" style="margin:2px 0 0 0; font-size:11px;">Customize which AI Provider, Model, or Paint Engine processes each pipeline step (or keep <em>Use Default</em>).</p>
+                      <p class="hint-text" style="margin:2px 0 0 0; font-size:11px;">Models are rated per activity (⭐ score + live success tracking). Click <strong>Auto-Select Best</strong> anytime to pick top-rated defaults.</p>
                     </div>
-                    <button id="btnResetTaskModels" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 8px; font-size:10.5px;" title="Reset all task models to use the Default Provider &amp; Model">
-                      ↺ Reset All to Default
-                    </button>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                      <button id="btnAutoSelectBestModels" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 9px; font-size:10.5px; border-color:rgba(250,204,21,0.55); color:#fde047;" title="Automatically select the highest-rated AI model and paint engine for every activity">
+                        ⭐ Auto-Select Best
+                      </button>
+                      <button id="btnResetTaskModels" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 8px; font-size:10.5px;" title="Reset all task models to use the Default Provider &amp; Model">
+                        ↺ Reset All
+                      </button>
+                    </div>
                   </div>
 
                   <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:8px;">
@@ -258,18 +263,19 @@
                       <div style="display:flex; gap:5px;">
                         <select id="selectTaskCharProvider" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>🔗 Use Default Provider</option>
-                          <option value="gemini">✨ Gemini (API)</option>
-                          <option value="gemini_cookie">🍪 Gemini Cookie</option>
-                          <option value="openai">🟢 OpenAI</option>
-                          <option value="claude">🟣 Claude</option>
-                          <option value="deepseek">🐋 DeepSeek</option>
-                          <option value="nvidia">⚡ NVIDIA NIM</option>
-                          <option value="builtin">🏛️ Built-in Offline</option>
+                          <option value="gemini">✨ Gemini (API) — ⭐ 9.6 Best</option>
+                          <option value="claude">🟣 Claude — ⭐ 9.5</option>
+                          <option value="openai">🟢 OpenAI — ⭐ 9.4</option>
+                          <option value="deepseek">🐋 DeepSeek — ⭐ 8.9</option>
+                          <option value="gemini_cookie">🍪 Gemini Cookie — ⭐ 8.5</option>
+                          <option value="nvidia">⚡ NVIDIA NIM — ⭐ 8.4</option>
+                          <option value="builtin">🏛️ Built-in Offline — ⭐ 6.5</option>
                         </select>
                         <select id="selectTaskCharModel" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>Default Model</option>
                         </select>
                       </div>
+                      <div id="ratingHintChar" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 2: Storyboard & Screenplay Generation -->
@@ -278,18 +284,19 @@
                       <div style="display:flex; gap:5px;">
                         <select id="selectTaskStoryProvider" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>🔗 Use Default Provider</option>
-                          <option value="gemini">✨ Gemini (API)</option>
-                          <option value="gemini_cookie">🍪 Gemini Cookie</option>
-                          <option value="openai">🟢 OpenAI</option>
-                          <option value="claude">🟣 Claude</option>
-                          <option value="deepseek">🐋 DeepSeek</option>
-                          <option value="nvidia">⚡ NVIDIA NIM</option>
-                          <option value="builtin">🏛️ Built-in Offline</option>
+                          <option value="gemini">✨ Gemini (API) — ⭐ 9.7 Best</option>
+                          <option value="claude">🟣 Claude — ⭐ 9.6</option>
+                          <option value="openai">🟢 OpenAI — ⭐ 9.3</option>
+                          <option value="deepseek">🐋 DeepSeek — ⭐ 9.0</option>
+                          <option value="gemini_cookie">🍪 Gemini Cookie — ⭐ 8.6</option>
+                          <option value="nvidia">⚡ NVIDIA NIM — ⭐ 8.4</option>
+                          <option value="builtin">🏛️ Built-in Offline — ⭐ 6.8</option>
                         </select>
                         <select id="selectTaskStoryModel" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>Default Model</option>
                         </select>
                       </div>
+                      <div id="ratingHintStory" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 3: Character Portrait Painting -->
@@ -297,14 +304,15 @@
                       <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🖼️ Step 1C/2A: Character Portrait Painting</label>
                       <select id="selectTaskPortraitEngine" class="styled-select compact-select" style="width:100%; font-size:11px; padding:4px 6px;">
                         <option value="default" selected>🔗 Use Default Paint Engine</option>
-                        <option value="antigravity">🚀 Antigravity AI (Local CLI Image Generator)</option>
-                        <option value="gemini_api">✨ Gemini API Multimodal Image</option>
-                        <option value="gemini_cookie">🍪 Gemini Web Cookie (Imagen 3)</option>
-                        <option value="flowkit">🌊 FlowKit Character Ref Bridge</option>
-                        <option value="openai">🟢 OpenAI DALL-E 3</option>
-                        <option value="pollinations">☁️ Free Cloud AI Art (Pollinations Flux)</option>
-                        <option value="manual">📝 Placeholder Only (No AI Paint)</option>
+                        <option value="antigravity">🚀 Antigravity AI (Local CLI) — ⭐ 9.8 Best</option>
+                        <option value="flowkit">🌊 FlowKit Character Ref — ⭐ 9.4</option>
+                        <option value="gemini_api">✨ Gemini API Multimodal — ⭐ 9.0</option>
+                        <option value="openai">🟢 OpenAI DALL-E 3 — ⭐ 8.8</option>
+                        <option value="pollinations">☁️ Free Cloud AI Art (Pollinations) — ⭐ 8.4</option>
+                        <option value="gemini_cookie">🍪 Gemini Web Cookie — ⭐ 7.8</option>
+                        <option value="manual">📝 Placeholder Only — ⭐ 5.0</option>
                       </select>
+                      <div id="ratingHintPortrait" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 4: Scene Image Painting -->
@@ -312,14 +320,15 @@
                       <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🎨 Step 2B: Scene Keyframe Painting</label>
                       <select id="selectTaskScenePaintEngine" class="styled-select compact-select" style="width:100%; font-size:11px; padding:4px 6px;">
                         <option value="default" selected>🔗 Use Default Paint Engine</option>
-                        <option value="antigravity">🚀 Antigravity AI (Local CLI Image Generator)</option>
-                        <option value="gemini_api">✨ Gemini API Multimodal Image</option>
-                        <option value="gemini_cookie">🍪 Gemini Web Cookie (Imagen 3)</option>
-                        <option value="flowkit">🌊 FlowKit Character Ref Bridge</option>
-                        <option value="openai">🟢 OpenAI DALL-E 3</option>
-                        <option value="pollinations">☁️ Free Cloud AI Art (Pollinations Flux)</option>
-                        <option value="manual">📝 Storyboard Only (No AI Paint)</option>
+                        <option value="antigravity">🚀 Antigravity AI (Local CLI) — ⭐ 9.8 Best</option>
+                        <option value="flowkit">🌊 FlowKit Character Ref — ⭐ 9.5</option>
+                        <option value="gemini_api">✨ Gemini API Multimodal — ⭐ 9.0</option>
+                        <option value="openai">🟢 OpenAI DALL-E 3 — ⭐ 8.7</option>
+                        <option value="pollinations">☁️ Free Cloud AI Art (Pollinations) — ⭐ 8.4</option>
+                        <option value="gemini_cookie">🍪 Gemini Web Cookie — ⭐ 7.8</option>
+                        <option value="manual">📝 Storyboard Only — ⭐ 5.0</option>
                       </select>
+                      <div id="ratingHintScene" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 5: Video Prompt Refinement & Dialogue Sync -->
@@ -328,27 +337,29 @@
                       <div style="display:flex; gap:5px;">
                         <select id="selectTaskRefineProvider" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>🔗 Use Default Provider</option>
-                          <option value="gemini">✨ Gemini (API)</option>
-                          <option value="gemini_cookie">🍪 Gemini Cookie</option>
-                          <option value="openai">🟢 OpenAI</option>
-                          <option value="claude">🟣 Claude</option>
-                          <option value="deepseek">🐋 DeepSeek</option>
-                          <option value="nvidia">⚡ NVIDIA NIM</option>
-                          <option value="builtin">🏛️ Built-in Director Engine</option>
+                          <option value="gemini">✨ Gemini (API) — ⭐ 9.5 Best</option>
+                          <option value="openai">🟢 OpenAI — ⭐ 9.0</option>
+                          <option value="claude">🟣 Claude — ⭐ 9.0</option>
+                          <option value="deepseek">🐋 DeepSeek — ⭐ 8.8</option>
+                          <option value="gemini_cookie">🍪 Gemini Cookie — ⭐ 8.4</option>
+                          <option value="nvidia">⚡ NVIDIA NIM — ⭐ 8.2</option>
+                          <option value="builtin">🏛️ Built-in Director — ⭐ 7.5</option>
                         </select>
                         <select id="selectTaskRefineModel" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>Default Model</option>
                         </select>
                       </div>
+                      <div id="ratingHintRefine" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 6: Scene Video Animation Engine (Step 2/3) -->
                     <div style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
                       <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🎥 Step 3: Video Motion &amp; Render Engine</label>
                       <select id="selectTaskVideoEngine" class="styled-select compact-select" style="width:100%; font-size:11px; padding:4px 6px;">
-                        <option value="ken_burns" selected>🎬 2.5D Cinematic Ken Burns (30 FPS Fast)</option>
-                        <option value="flowkit_veo">⚡ Google Flow / Veo 3 AI Acting (FlowKit)</option>
+                        <option value="ken_burns" selected>🎬 2.5D Cinematic Ken Burns (30 FPS) — ⭐ 9.4 Best Default</option>
+                        <option value="flowkit_veo">⚡ Google Flow / Veo 3 AI Acting — ⭐ 9.6 (FlowKit)</option>
                       </select>
+                      <div id="ratingHintVideo" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
                   </div>
                 </div>
@@ -1844,6 +1855,6 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
   <!-- Notification Toast Container -->
   <div id="toastNotification" class="toast-popup"></div>
 
-  <script src="/js/app.js?v=5.0"></script>
+  <script src="/js/app.js?v=5.1"></script>
 </body>
 </html>

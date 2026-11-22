@@ -628,6 +628,8 @@ async def verify_credentials(req: VerifyCredentialsRequest):
 
 @app.get("/api/config")
 async def get_config():
+    from backend.config import ACTIVITY_MODEL_RATINGS
+    from backend.services.image_service import ImageService
     return {
         "art_styles": ART_STYLES,
         "storyboard_skills": STORYBOARD_SKILLS,
@@ -636,7 +638,9 @@ async def get_config():
         "ai_providers": AI_PROVIDERS,
         "image_modes": IMAGE_MODES,
         "duration_presets": DURATION_PRESETS,
-        "video_dimensions": VIDEO_DIMENSIONS
+        "video_dimensions": VIDEO_DIMENSIONS,
+        "activity_model_ratings": ACTIVITY_MODEL_RATINGS,
+        "has_antigravity_cli": bool(ImageService._find_antigravity_cli()),
     }
 
 @app.post("/api/analyze-storyboard-input")

@@ -581,6 +581,7 @@ class AniStoryApp {
     // Per-Task / Step AI Type & Model Selector elements
     this.btnToggleTaskModels = document.getElementById("btnToggleTaskModels");
     this.taskModelsConfigPanel = document.getElementById("taskModelsConfigPanel");
+    this.btnAutoSelectBestModels = document.getElementById("btnAutoSelectBestModels");
     this.btnResetTaskModels = document.getElementById("btnResetTaskModels");
     this.selectTaskCharProvider = document.getElementById("selectTaskCharProvider");
     this.selectTaskCharModel = document.getElementById("selectTaskCharModel");
@@ -591,6 +592,12 @@ class AniStoryApp {
     this.selectTaskRefineProvider = document.getElementById("selectTaskRefineProvider");
     this.selectTaskRefineModel = document.getElementById("selectTaskRefineModel");
     this.selectTaskVideoEngine = document.getElementById("selectTaskVideoEngine");
+    this.ratingHintChar = document.getElementById("ratingHintChar");
+    this.ratingHintStory = document.getElementById("ratingHintStory");
+    this.ratingHintPortrait = document.getElementById("ratingHintPortrait");
+    this.ratingHintScene = document.getElementById("ratingHintScene");
+    this.ratingHintRefine = document.getElementById("ratingHintRefine");
+    this.ratingHintVideo = document.getElementById("ratingHintVideo");
 
     // AI Execution & Error Log Box elements
     this.btnToggleAiLogBox = document.getElementById("btnToggleAiLogBox");
@@ -1611,6 +1618,9 @@ class AniStoryApp {
           ? `<span>🎛️ AI Models per Task/Step ▾</span>`
           : `<span>🎛️ AI Models per Task/Step ▴</span>`;
       });
+    }
+    if (this.btnAutoSelectBestModels) {
+      this.btnAutoSelectBestModels.addEventListener("click", () => this.autoSelectBestModels(false));
     }
     if (this.btnResetTaskModels) {
       this.btnResetTaskModels.addEventListener("click", () => this.resetAllTaskModelsToDefault());
@@ -5320,6 +5330,171 @@ ${isAutoScenes
       this.selectTaskScenePaintEngine.value = "default";
       localStorage.setItem("anistory_task_scene_paint_engine", "default");
     }
+
+    // Prefer the highest-rated available models/engines as default when user has not explicitly customized them
+    if (!localStorage.getItem("anistory_best_defaults_applied_v1")) {
+      this.autoSelectBestModels(true);
+      localStorage.setItem("anistory_best_defaults_applied_v1", "1");
+    }
+
+    // Re-render live activity rating hints whenever any task dropdown changes
+    [
+      this.selectTaskCharProvider, this.selectTaskCharModel,
+      this.selectTaskStoryProvider, this.selectTaskStoryModel,
+      this.selectTaskPortraitEngine, this.selectTaskScenePaintEngine,
+      this.selectTaskRefineProvider, this.selectTaskRefineModel,
+      this.selectTaskVideoEngine
+    ].forEach(el => {
+      if (el) el.addEventListener("change", () => this.renderActivityRatingHints());
+    });
+    this.renderActivityRatingHints();
+  }
+
+  getModelActivityStats() {
+    try {
+      const raw = localStorage.getItem("anistory_model_activity_stats");
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  recordModelActivityResult(taskLabel, engineLabel, isSuccess) {
+    const t = String(taskLabel || "").toLowerCase();
+    let actKey = null;
+    if (t.includes("character") && !t.includes("portrait")) actKey = "characters";
+    else if (t.includes("storyboard") || t.includes("ad storyboard")) actKey = "storyboard";
+    else if (t.includes("portrait")) actKey = "portrait";
+    else if (t.includes("paint scene")) actKey = "scene";
+    else if (t.includes("refine") || t.includes("dialogue")) actKey = "refine";
+    else if (t.includes("veo") || t.includes("render") || t.includes("animate")) actKey = "video";
+    if (!actKey) return;
+
+    const cleanEngine = String(engineLabel || "").split("(")[0].split("/")[0].trim().toLowerCase();
+    if (!cleanEngine) return;
+
+    const stats = this.getModelActivityStats();
+    const k = `${actKey}::${cleanEngine}`;
+    const cur = stats[k] || { ok: 0, fail: 0 };
+    if (isSuccess) cur.ok += 1;
+    else cur.fail += 1;
+    stats[k] = cur;
+    try {
+      localStorage.setItem("anistory_model_activity_stats", JSON.stringify(stats));
+    } catch {}
+    this.renderActivityRatingHints();
+  }
+
+  getEffectiveActivityScore(activityKey, idVal) {
+    const cfg = this.config?.activity_model_ratings?.[activityKey];
+    const list = cfg?.ratings || [];
+    const target = String(idVal || "").toLowerCase();
+    const entry = list.find(r => (r.engine || r.provider || "").toLowerCase() === target);
+    const baseScore = entry ? Number(entry.score || 8.0) : 8.0;
+    const stats = this.getModelActivityStats();
+    const st = stats[`${activityKey}::${target}`];
+    if (!st || (st.ok + st.fail) === 0) {
+      return { score: baseScore, entry, stats: null };
+    }
+    const adj = Math.min(0.3, st.ok * 0.1) - Math.min(2.5, st.fail * 0.6);
+    const eff = Math.max(1.0, Math.min(10.0, +(baseScore + adj).toFixed(1)));
+    return { score: eff, entry, stats: st };
+  }
+
+  renderActivityRatingHints() {
+    const fmtHint = (actKey, activeId, bestLabel) => {
+      const { score, entry, stats } = this.getEffectiveActivityScore(actKey, activeId);
+      const rateTxt = stats ? ` • Live: ${stats.ok}✓/${stats.fail}✗` : "";
+      const tierTxt = entry?.tier ? ` [${entry.tier}]` : "";
+      const reasonTxt = entry?.reason ? ` — ${entry.reason}` : "";
+      return `⭐ ${score.toFixed(1)}/10${tierTxt}${rateTxt}${reasonTxt || (bestLabel ? ` (Best: ${bestLabel})` : "")}`;
+    };
+
+    const charCfg = this.getTaskAiConfig("characters");
+    if (this.ratingHintChar) this.ratingHintChar.textContent = fmtHint("characters", charCfg.provider, "Gemini 3.5 Flash");
+
+    const storyCfg = this.getTaskAiConfig("storyboard");
+    if (this.ratingHintStory) this.ratingHintStory.textContent = fmtHint("storyboard", storyCfg.provider, "Gemini 3.5 Flash");
+
+    const portCfg = this.getTaskImageConfig("portrait");
+    if (this.ratingHintPortrait) this.ratingHintPortrait.textContent = fmtHint("portrait", portCfg.imageMode, "Antigravity AI");
+
+    const sceneCfg = this.getTaskImageConfig("scene");
+    if (this.ratingHintScene) this.ratingHintScene.textContent = fmtHint("scene", sceneCfg.imageMode, "Antigravity AI");
+
+    const refCfg = this.getTaskAiConfig("refine");
+    if (this.ratingHintRefine) this.ratingHintRefine.textContent = fmtHint("refine", refCfg.provider, "Gemini 3.5 Flash");
+
+    const vidEngine = this.selectTaskVideoEngine ? this.selectTaskVideoEngine.value : "ken_burns";
+    if (this.ratingHintVideo) this.ratingHintVideo.textContent = fmtHint("video", vidEngine, "2.5D Ken Burns");
+  }
+
+  autoSelectBestModels(silent = false) {
+    const hasAgy = Boolean(this.config?.has_antigravity_cli);
+    const bestPaintEngine = hasAgy ? "antigravity" : "pollinations";
+
+    // 1. Pick best default text/storyboard provider & model (Gemini 3.5 Flash)
+    if (this.selectAiProvider) {
+      this.selectAiProvider.value = "gemini";
+      localStorage.setItem("anistory_cfg_provider", "gemini");
+    }
+    if (this.selectAiModel) {
+      const has35 = Array.from(this.selectAiModel.options).some(o => o.value === "gemini-3.5-flash");
+      if (has35) {
+        this.selectAiModel.value = "gemini-3.5-flash";
+        localStorage.setItem("anistory_cfg_model", "gemini-3.5-flash");
+        localStorage.setItem("anistory_model_gemini", "gemini-3.5-flash");
+      }
+    }
+
+    // 2. Pick best default Paint Engine (Antigravity AI ⭐ 9.8 if CLI available, else Pollinations Flux)
+    this.setImageMode(bestPaintEngine);
+
+    // 3. Apply best per-activity selections
+    const setPair = (pSel, mSel, pKey, mKey, prov, mod) => {
+      if (pSel) {
+        pSel.value = prov;
+        localStorage.setItem(pKey, prov);
+      }
+      if (mSel) {
+        if (prov === "default") {
+          mSel.value = "default";
+          mSel.disabled = true;
+          localStorage.setItem(mKey, "default");
+        } else {
+          mSel.disabled = false;
+          const exists = Array.from(mSel.options).some(o => o.value === mod);
+          if (exists) {
+            mSel.value = mod;
+            localStorage.setItem(mKey, mod);
+          }
+        }
+      }
+    };
+
+    setPair(this.selectTaskCharProvider, this.selectTaskCharModel, "anistory_task_char_provider", "anistory_task_char_model", "default", "default");
+    setPair(this.selectTaskStoryProvider, this.selectTaskStoryModel, "anistory_task_story_provider", "anistory_task_story_model", "default", "default");
+    setPair(this.selectTaskRefineProvider, this.selectTaskRefineModel, "anistory_task_refine_provider", "anistory_task_refine_model", "default", "default");
+
+    if (this.selectTaskPortraitEngine) {
+      this.selectTaskPortraitEngine.value = bestPaintEngine;
+      localStorage.setItem("anistory_task_portrait_engine", bestPaintEngine);
+    }
+    if (this.selectTaskScenePaintEngine) {
+      this.selectTaskScenePaintEngine.value = bestPaintEngine;
+      localStorage.setItem("anistory_task_scene_paint_engine", bestPaintEngine);
+    }
+    if (this.selectTaskVideoEngine) {
+      this.selectTaskVideoEngine.value = "ken_burns";
+      localStorage.setItem("anistory_task_video_engine", "ken_burns");
+    }
+
+    this.renderActivityRatingHints();
+    if (!silent) {
+      const paintLabel = bestPaintEngine === "antigravity" ? "Antigravity AI (⭐ 9.8)" : "Pollinations Flux (⭐ 8.4)";
+      this.showToast(`⭐ Auto-selected best rated models: Gemini 3.5 Flash (Text) + ${paintLabel} (Paint)!`);
+      this.addAiLog("info", "Auto-Select Best Models", `gemini-3.5-flash + ${bestPaintEngine}`, `Applied highest-rated models per activity.`);
+    }
   }
 
   addAiLog(level = "info", taskLabel = "AI Task", engineLabel = "", message = "") {
@@ -5342,6 +5517,9 @@ ${isAutoScenes
     }
     if (level === "error" && this.aiExecutionLogPanel) {
       this.aiExecutionLogPanel.style.display = "block";
+    }
+    if (level === "success" || level === "error") {
+      this.recordModelActivityResult(taskLabel, engineLabel, level === "success");
     }
     this.renderAiLogs();
   }

@@ -315,6 +315,85 @@ IMAGE_MODES = {
     }
 }
 
+# Activity-Based Model & Engine Ratings (1.0 - 10.0 scale)
+# Used to show per-activity star ratings and automatically select the best default model for each step.
+ACTIVITY_MODEL_RATINGS = {
+    "characters": {
+        "label": "Step 1A: Character Analysis & Create",
+        "best_provider": "gemini",
+        "best_model": "gemini-3.5-flash",
+        "ratings": [
+            {"provider": "gemini", "model": "gemini-3.5-flash", "score": 9.6, "tier": "Best", "reason": "Fastest structured cast JSON & Vietnamese/English accuracy", "recommended": True},
+            {"provider": "claude", "model": "claude-sonnet-4-5", "score": 9.5, "tier": "Great", "reason": "Rich character visual traits & consistent dialogue voices"},
+            {"provider": "openai", "model": "gpt-4o", "score": 9.4, "tier": "Great", "reason": "Reliable structured character extraction"},
+            {"provider": "gemini", "model": "gemini-3.1-flash-lite", "score": 9.1, "tier": "Fast", "reason": "Ultra-fast lightweight character parsing"},
+            {"provider": "deepseek", "model": "deepseek-chat", "score": 8.9, "tier": "Good", "reason": "Strong low-cost multilingual extraction"},
+            {"provider": "gemini_cookie", "model": "gemini-flash-advanced", "score": 8.5, "tier": "Web", "reason": "No API quota; depends on browser cookie session"},
+            {"provider": "builtin", "model": "story_architect", "score": 6.5, "tier": "Offline", "reason": "Zero-cost local heuristic parser"}
+        ]
+    },
+    "storyboard": {
+        "label": "Step 1B: Storyboard & Screenplay",
+        "best_provider": "gemini",
+        "best_model": "gemini-3.5-flash",
+        "ratings": [
+            {"provider": "gemini", "model": "gemini-3.5-flash", "score": 9.7, "tier": "Best", "reason": "Best balance of cinematic pacing, dialogue & valid JSON", "recommended": True},
+            {"provider": "gemini", "model": "gemini-2.5-pro", "score": 9.6, "tier": "Pro", "reason": "Deep dramatic reasoning for complex multi-act stories"},
+            {"provider": "claude", "model": "claude-sonnet-4-5", "score": 9.6, "tier": "Pro", "reason": "Award-grade emotional narration & vivid scene prose"},
+            {"provider": "openai", "model": "gpt-4o", "score": 9.3, "tier": "Great", "reason": "Consistent multi-scene JSON formatting"},
+            {"provider": "deepseek", "model": "deepseek-reasoner", "score": 9.0, "tier": "Good", "reason": "Strong plot structure reasoning"},
+            {"provider": "gemini_cookie", "model": "gemini-pro-advanced", "score": 8.6, "tier": "Web", "reason": "Pro web model without API quota"},
+            {"provider": "builtin", "model": "story_architect", "score": 6.8, "tier": "Offline", "reason": "Instant offline storyboard generator"}
+        ]
+    },
+    "portrait": {
+        "label": "Step 1C/2A: Character Portrait Painting",
+        "best_engine": "antigravity",
+        "ratings": [
+            {"engine": "antigravity", "score": 9.8, "tier": "Best", "reason": "Top portrait fidelity via local Antigravity CLI (no API quota/cookie expiry)", "recommended": True},
+            {"engine": "flowkit", "score": 9.4, "tier": "Great", "reason": "High quality via Google Flow Chrome Extension"},
+            {"engine": "gemini_api", "score": 9.0, "tier": "Great", "reason": "Official Gemini multimodal image API (requires billing quota)"},
+            {"engine": "openai", "score": 8.8, "tier": "Good", "reason": "Clean stylized DALL-E 3 portraits"},
+            {"engine": "pollinations", "score": 8.4, "tier": "Free", "reason": "Free Cloud AI Art (Pollinations Flux), no key required"},
+            {"engine": "gemini_cookie", "score": 7.8, "tier": "Web", "reason": "Requires authenticated non-rotated Google web cookie"},
+            {"engine": "manual", "score": 5.0, "tier": "Manual", "reason": "Placeholder only — upload your own character art"}
+        ]
+    },
+    "scene": {
+        "label": "Step 2B: Scene Keyframe Painting",
+        "best_engine": "antigravity",
+        "ratings": [
+            {"engine": "antigravity", "score": 9.8, "tier": "Best", "reason": "Best scene art & character consistency via local Antigravity CLI", "recommended": True},
+            {"engine": "flowkit", "score": 9.5, "tier": "Great", "reason": "Native Google Flow character-reference scene painting"},
+            {"engine": "gemini_api", "score": 9.0, "tier": "Great", "reason": "Multimodal character-ref API (requires billing quota)"},
+            {"engine": "openai", "score": 8.7, "tier": "Good", "reason": "Crisp DALL-E 3 scene keyframes"},
+            {"engine": "pollinations", "score": 8.4, "tier": "Free", "reason": "Free Cloud AI Art (Pollinations Flux), fast & no key"},
+            {"engine": "gemini_cookie", "score": 7.8, "tier": "Web", "reason": "Requires authenticated non-rotated Google web cookie"},
+            {"engine": "manual", "score": 5.0, "tier": "Manual", "reason": "Storyboard-only placeholders / manual uploads"}
+        ]
+    },
+    "refine": {
+        "label": "Step 2C: Prompt Refine & Dialogue Sync",
+        "best_provider": "gemini",
+        "best_model": "gemini-3.5-flash",
+        "ratings": [
+            {"provider": "gemini", "model": "gemini-3.5-flash", "score": 9.5, "tier": "Best", "reason": "Fast, cinematic 8-second acting prompt upgrades", "recommended": True},
+            {"provider": "gemini", "model": "gemini-3.1-flash-lite", "score": 9.2, "tier": "Fast", "reason": "Sub-second prompt polishing"},
+            {"provider": "openai", "model": "gpt-4o-mini", "score": 9.0, "tier": "Fast", "reason": "Quick & clean prompt formatting"},
+            {"provider": "claude", "model": "claude-haiku-4-5", "score": 9.0, "tier": "Fast", "reason": "Sharp cinematic prose refinement"},
+            {"provider": "builtin", "model": "story_architect", "score": 7.5, "tier": "Offline", "reason": "Instant built-in director prompt formatter"}
+        ]
+    },
+    "video": {
+        "label": "Step 3: Video Motion & Render Engine",
+        "best_engine": "ken_burns",
+        "ratings": [
+            {"engine": "ken_burns", "score": 9.4, "tier": "Best", "reason": "Fast, 100% reliable local 30 FPS 2.5D Ken Burns + voice + captions", "recommended": True},
+            {"engine": "flowkit_veo", "score": 9.6, "tier": "AI Acting", "reason": "Full AI character acting via Google Veo 3 (requires FlowKit Extension)"}
+        ]
+    }
+}
+
 # Target Video Duration Presets
 DURATION_PRESETS = [
     {"seconds": 30, "label": "30s — Social Short / Reels"},
