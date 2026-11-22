@@ -10,6 +10,7 @@ PROJECTS_DIR = OUTPUT_DIR / "projects"
 CACHE_DIR = OUTPUT_DIR / "cache"
 CHARACTER_LIBRARY_DIR = OUTPUT_DIR / "characters_library"
 CREDENTIALS_FILE = OUTPUT_DIR / "credentials.json"
+MODEL_RATINGS_FILE = OUTPUT_DIR / "model_activity_ratings.json"
 
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -315,84 +316,137 @@ IMAGE_MODES = {
     }
 }
 
-# Activity-Based Model & Engine Ratings (1.0 - 10.0 scale)
-# Used to show per-activity star ratings and automatically select the best default model for each step.
-ACTIVITY_MODEL_RATINGS = {
-    "characters": {
-        "label": "Step 1A: Character Analysis & Create",
-        "best_provider": "gemini",
-        "best_model": "gemini-3.5-flash",
-        "ratings": [
-            {"provider": "gemini", "model": "gemini-3.5-flash", "score": 9.6, "tier": "Best", "reason": "Fastest structured cast JSON & Vietnamese/English accuracy", "recommended": True},
-            {"provider": "claude", "model": "claude-sonnet-4-5", "score": 9.5, "tier": "Great", "reason": "Rich character visual traits & consistent dialogue voices"},
-            {"provider": "openai", "model": "gpt-4o", "score": 9.4, "tier": "Great", "reason": "Reliable structured character extraction"},
-            {"provider": "gemini", "model": "gemini-3.1-flash-lite", "score": 9.1, "tier": "Fast", "reason": "Ultra-fast lightweight character parsing"},
-            {"provider": "deepseek", "model": "deepseek-chat", "score": 8.9, "tier": "Good", "reason": "Strong low-cost multilingual extraction"},
-            {"provider": "gemini_cookie", "model": "gemini-flash-advanced", "score": 8.5, "tier": "Web", "reason": "No API quota; depends on browser cookie session"},
-            {"provider": "builtin", "model": "story_architect", "score": 6.5, "tier": "Offline", "reason": "Zero-cost local heuristic parser"}
-        ]
-    },
-    "storyboard": {
-        "label": "Step 1B: Storyboard & Screenplay",
-        "best_provider": "gemini",
-        "best_model": "gemini-3.5-flash",
-        "ratings": [
-            {"provider": "gemini", "model": "gemini-3.5-flash", "score": 9.7, "tier": "Best", "reason": "Best balance of cinematic pacing, dialogue & valid JSON", "recommended": True},
-            {"provider": "gemini", "model": "gemini-2.5-pro", "score": 9.6, "tier": "Pro", "reason": "Deep dramatic reasoning for complex multi-act stories"},
-            {"provider": "claude", "model": "claude-sonnet-4-5", "score": 9.6, "tier": "Pro", "reason": "Award-grade emotional narration & vivid scene prose"},
-            {"provider": "openai", "model": "gpt-4o", "score": 9.3, "tier": "Great", "reason": "Consistent multi-scene JSON formatting"},
-            {"provider": "deepseek", "model": "deepseek-reasoner", "score": 9.0, "tier": "Good", "reason": "Strong plot structure reasoning"},
-            {"provider": "gemini_cookie", "model": "gemini-pro-advanced", "score": 8.6, "tier": "Web", "reason": "Pro web model without API quota"},
-            {"provider": "builtin", "model": "story_architect", "score": 6.8, "tier": "Offline", "reason": "Instant offline storyboard generator"}
-        ]
-    },
-    "portrait": {
-        "label": "Step 1C/2A: Character Portrait Painting",
-        "best_engine": "antigravity",
-        "ratings": [
-            {"engine": "antigravity", "score": 9.8, "tier": "Best", "reason": "Top portrait fidelity via local Antigravity CLI (no API quota/cookie expiry)", "recommended": True},
-            {"engine": "flowkit", "score": 9.4, "tier": "Great", "reason": "High quality via Google Flow Chrome Extension"},
-            {"engine": "gemini_api", "score": 9.0, "tier": "Great", "reason": "Official Gemini multimodal image API (requires billing quota)"},
-            {"engine": "openai", "score": 8.8, "tier": "Good", "reason": "Clean stylized DALL-E 3 portraits"},
-            {"engine": "pollinations", "score": 8.4, "tier": "Free", "reason": "Free Cloud AI Art (Pollinations Flux), no key required"},
-            {"engine": "gemini_cookie", "score": 7.8, "tier": "Web", "reason": "Requires authenticated non-rotated Google web cookie"},
-            {"engine": "manual", "score": 5.0, "tier": "Manual", "reason": "Placeholder only — upload your own character art"}
-        ]
-    },
-    "scene": {
-        "label": "Step 2B: Scene Keyframe Painting",
-        "best_engine": "antigravity",
-        "ratings": [
-            {"engine": "antigravity", "score": 9.8, "tier": "Best", "reason": "Best scene art & character consistency via local Antigravity CLI", "recommended": True},
-            {"engine": "flowkit", "score": 9.5, "tier": "Great", "reason": "Native Google Flow character-reference scene painting"},
-            {"engine": "gemini_api", "score": 9.0, "tier": "Great", "reason": "Multimodal character-ref API (requires billing quota)"},
-            {"engine": "openai", "score": 8.7, "tier": "Good", "reason": "Crisp DALL-E 3 scene keyframes"},
-            {"engine": "pollinations", "score": 8.4, "tier": "Free", "reason": "Free Cloud AI Art (Pollinations Flux), fast & no key"},
-            {"engine": "gemini_cookie", "score": 7.8, "tier": "Web", "reason": "Requires authenticated non-rotated Google web cookie"},
-            {"engine": "manual", "score": 5.0, "tier": "Manual", "reason": "Storyboard-only placeholders / manual uploads"}
-        ]
-    },
-    "refine": {
-        "label": "Step 2C: Prompt Refine & Dialogue Sync",
-        "best_provider": "gemini",
-        "best_model": "gemini-3.5-flash",
-        "ratings": [
-            {"provider": "gemini", "model": "gemini-3.5-flash", "score": 9.5, "tier": "Best", "reason": "Fast, cinematic 8-second acting prompt upgrades", "recommended": True},
-            {"provider": "gemini", "model": "gemini-3.1-flash-lite", "score": 9.2, "tier": "Fast", "reason": "Sub-second prompt polishing"},
-            {"provider": "openai", "model": "gpt-4o-mini", "score": 9.0, "tier": "Fast", "reason": "Quick & clean prompt formatting"},
-            {"provider": "claude", "model": "claude-haiku-4-5", "score": 9.0, "tier": "Fast", "reason": "Sharp cinematic prose refinement"},
-            {"provider": "builtin", "model": "story_architect", "score": 7.5, "tier": "Offline", "reason": "Instant built-in director prompt formatter"}
-        ]
-    },
-    "video": {
-        "label": "Step 3: Video Motion & Render Engine",
-        "best_engine": "ken_burns",
-        "ratings": [
-            {"engine": "ken_burns", "score": 9.4, "tier": "Best", "reason": "Fast, 100% reliable local 30 FPS 2.5D Ken Burns + voice + captions", "recommended": True},
-            {"engine": "flowkit_veo", "score": 9.6, "tier": "AI Acting", "reason": "Full AI character acting via Google Veo 3 (requires FlowKit Extension)"}
-        ]
-    }
-}
+# Real Activity-Based Model Ratings (persisted in output/model_activity_ratings.json)
+# Only models/engines actually present in the app's lists are rated, strictly from real app runs.
+VALID_RATING_ACTIVITIES = ("characters", "storyboard", "portrait", "scene", "refine", "video")
+
+def compute_real_activity_score(stats: dict) -> float:
+    """Computes a real 0.0-5.0 star score purely from actual app execution history."""
+    ok = int(stats.get("successes", 0) or 0)
+    fail = int(stats.get("failures", 0) or 0)
+    total = ok + fail
+    if total <= 0:
+        return 0.0
+    # Reliability-first Bayesian smoothed score (1-5 scale) with slight speed bonus for fast reliable models
+    reliability = (ok + 0.5) / (total + 1.0)
+    score = reliability * 5.0
+    avg_ms = float(stats.get("avg_duration_ms", 0) or 0)
+    if ok > 0 and avg_ms > 0:
+        # Up to +0.2 bonus for fast responses (<5s), -0.15 for very slow (>60s)
+        if avg_ms <= 5000:
+            score += 0.15
+        elif avg_ms > 60000:
+            score -= 0.15
+    return round(max(0.5, min(5.0, score)), 2)
+
+def get_model_activity_ratings() -> dict:
+    """Loads persisted real activity ratings and enriches each entry with computed score & best-per-activity."""
+    raw = {}
+    if MODEL_RATINGS_FILE.exists():
+        try:
+            with open(MODEL_RATINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    raw = data
+        except Exception as e:
+            print(f"[config] Warning: could not read {MODEL_RATINGS_FILE.name}: {e}")
+
+    activities = raw.get("activities", {}) if isinstance(raw.get("activities"), dict) else {}
+    best_by_activity = {}
+    for act in VALID_RATING_ACTIVITIES:
+        act_map = activities.get(act, {})
+        if not isinstance(act_map, dict):
+            act_map = {}
+            activities[act] = act_map
+        best_key = None
+        best_tuple = None
+        for m_key, st in act_map.items():
+            if not isinstance(st, dict):
+                continue
+            ok = int(st.get("successes", 0) or 0)
+            fail = int(st.get("failures", 0) or 0)
+            st["total_runs"] = ok + fail
+            st["score"] = compute_real_activity_score(st)
+            st["success_rate"] = round((ok / (ok + fail)) * 100, 1) if (ok + fail) > 0 else 0.0
+            if ok > 0:
+                avg_ms = float(st.get("avg_duration_ms", 999999) or 999999)
+                rank_tuple = (st["score"], ok, -fail, -avg_ms)
+                if best_tuple is None or rank_tuple > best_tuple:
+                    best_tuple = rank_tuple
+                    best_key = m_key
+        if best_key:
+            best_by_activity[act] = {
+                "key": best_key,
+                "provider": act_map[best_key].get("provider", ""),
+                "model": act_map[best_key].get("model", ""),
+                "score": act_map[best_key].get("score", 0.0),
+                "successes": act_map[best_key].get("successes", 0),
+                "failures": act_map[best_key].get("failures", 0),
+                "avg_duration_ms": act_map[best_key].get("avg_duration_ms", 0),
+            }
+    return {"activities": activities, "best_by_activity": best_by_activity}
+
+def record_model_activity_rating(
+    activity: str,
+    provider: str,
+    model: str = "",
+    success: bool = True,
+    duration_ms: int = 0,
+    error: str = ""
+) -> dict:
+    """Records a real model/engine execution result for an activity and atomically persists it."""
+    import time as _time
+    act = (activity or "").strip().lower()
+    if act not in VALID_RATING_ACTIVITIES:
+        return get_model_activity_ratings()
+    prov = (provider or "").strip().lower()
+    mod = (model or "").strip()
+    if not prov:
+        return get_model_activity_ratings()
+    m_key = f"{prov}::{mod}" if mod else prov
+
+    current = get_model_activity_ratings()
+    activities = current["activities"]
+    act_map = activities.setdefault(act, {})
+    entry = act_map.get(m_key, {
+        "provider": prov,
+        "model": mod,
+        "successes": 0,
+        "failures": 0,
+        "total_duration_ms": 0,
+        "avg_duration_ms": 0,
+    })
+    if success:
+        entry["successes"] = int(entry.get("successes", 0)) + 1
+    else:
+        entry["failures"] = int(entry.get("failures", 0)) + 1
+
+    dur = max(0, int(duration_ms or 0))
+    runs = entry["successes"] + entry["failures"]
+    if dur > 0:
+        entry["total_duration_ms"] = int(entry.get("total_duration_ms", 0)) + dur
+        entry["avg_duration_ms"] = int(entry["total_duration_ms"] / max(1, runs))
+    entry["last_status"] = "success" if success else "error"
+    entry["last_error"] = "" if success else str(error or "")[:200]
+    entry["last_used_at"] = int(_time.time())
+    entry["total_runs"] = runs
+    entry["score"] = compute_real_activity_score(entry)
+    act_map[m_key] = entry
+
+    tmp_file = MODEL_RATINGS_FILE.with_suffix(".json.tmp")
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump({"activities": activities}, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_file, MODEL_RATINGS_FILE)
+    return get_model_activity_ratings()
+
+def reset_model_activity_ratings() -> dict:
+    """Clears all persisted real activity ratings."""
+    if MODEL_RATINGS_FILE.exists():
+        try:
+            MODEL_RATINGS_FILE.unlink()
+        except OSError:
+            pass
+    return get_model_activity_ratings()
 
 # Target Video Duration Presets
 DURATION_PRESETS = [

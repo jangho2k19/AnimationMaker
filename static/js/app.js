@@ -5331,13 +5331,16 @@ ${isAutoScenes
       localStorage.setItem("anistory_task_scene_paint_engine", "default");
     }
 
-    // Prefer the highest-rated available models/engines as default when user has not explicitly customized them
-    if (!localStorage.getItem("anistory_best_defaults_applied_v1")) {
+    // Hydrate real server-persisted activity ratings
+    this.realActivityRatings = this.config?.activity_model_ratings || { activities: {}, best_by_activity: {} };
+    this._taskStartTimes = {};
+
+    // Prefer the best-rated model from real app activities when user has not manually locked another choice
+    if (!localStorage.getItem("anistory_task_manual_override")) {
       this.autoSelectBestModels(true);
-      localStorage.setItem("anistory_best_defaults_applied_v1", "1");
     }
 
-    // Re-render live activity rating hints whenever any task dropdown changes
+    // Re-render real activity rating hints whenever any task dropdown changes
     [
       this.selectTaskCharProvider, this.selectTaskCharModel,
       this.selectTaskStoryProvider, this.selectTaskStoryModel,
@@ -5345,155 +5348,217 @@ ${isAutoScenes
       this.selectTaskRefineProvider, this.selectTaskRefineModel,
       this.selectTaskVideoEngine
     ].forEach(el => {
-      if (el) el.addEventListener("change", () => this.renderActivityRatingHints());
+      if (el) {
+        el.addEventListener("change", () => {
+          localStorage.setItem("anistory_task_manual_override", "1");
+          this.renderActivityRatingHints();
+        });
+      }
     });
     this.renderActivityRatingHints();
   }
 
-  getModelActivityStats() {
-    try {
-      const raw = localStorage.getItem("anistory_model_activity_stats");
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  }
-
-  recordModelActivityResult(taskLabel, engineLabel, isSuccess) {
+  _resolveActivityKeyFromTask(taskLabel) {
     const t = String(taskLabel || "").toLowerCase();
-    let actKey = null;
-    if (t.includes("character") && !t.includes("portrait")) actKey = "characters";
-    else if (t.includes("storyboard") || t.includes("ad storyboard")) actKey = "storyboard";
-    else if (t.includes("portrait")) actKey = "portrait";
-    else if (t.includes("paint scene")) actKey = "scene";
-    else if (t.includes("refine") || t.includes("dialogue")) actKey = "refine";
-    else if (t.includes("veo") || t.includes("render") || t.includes("animate")) actKey = "video";
-    if (!actKey) return;
-
-    const cleanEngine = String(engineLabel || "").split("(")[0].split("/")[0].trim().toLowerCase();
-    if (!cleanEngine) return;
-
-    const stats = this.getModelActivityStats();
-    const k = `${actKey}::${cleanEngine}`;
-    const cur = stats[k] || { ok: 0, fail: 0 };
-    if (isSuccess) cur.ok += 1;
-    else cur.fail += 1;
-    stats[k] = cur;
-    try {
-      localStorage.setItem("anistory_model_activity_stats", JSON.stringify(stats));
-    } catch {}
-    this.renderActivityRatingHints();
+    if (t.includes("character") && !t.includes("portrait")) return "characters";
+    if (t.includes("storyboard") || t.includes("ad storyboard")) return "storyboard";
+    if (t.includes("portrait")) return "portrait";
+    if (t.includes("paint scene")) return "scene";
+    if (t.includes("refine") || t.includes("dialogue")) return "refine";
+    if (t.includes("veo") || t.includes("render") || t.includes("animate")) return "video";
+    return null;
   }
 
-  getEffectiveActivityScore(activityKey, idVal) {
-    const cfg = this.config?.activity_model_ratings?.[activityKey];
-    const list = cfg?.ratings || [];
-    const target = String(idVal || "").toLowerCase();
-    const entry = list.find(r => (r.engine || r.provider || "").toLowerCase() === target);
-    const baseScore = entry ? Number(entry.score || 8.0) : 8.0;
-    const stats = this.getModelActivityStats();
-    const st = stats[`${activityKey}::${target}`];
-    if (!st || (st.ok + st.fail) === 0) {
-      return { score: baseScore, entry, stats: null };
+  _parseProviderModelFromEngineTag(engineLabel) {
+    const raw = String(engineLabel || "").trim();
+    if (!raw) return { provider: "", model: "" };
+    if (raw.includes("/")) {
+      const [p, m] = raw.split("/", 2);
+      return { provider: p.trim().toLowerCase(), model: m.trim() };
     }
-    const adj = Math.min(0.3, st.ok * 0.1) - Math.min(2.5, st.fail * 0.6);
-    const eff = Math.max(1.0, Math.min(10.0, +(baseScore + adj).toFixed(1)));
-    return { score: eff, entry, stats: st };
+    const base = raw.split("(")[0].trim().toLowerCase();
+    return { provider: base, model: "" };
+  }
+
+  recordModelActivityResult(taskLabel, engineLabel, isSuccess, errorMsg = "") {
+    const actKey = this._resolveActivityKeyFromTask(taskLabel);
+    if (!actKey) return;
+    const { provider, model } = this._parseProviderModelFromEngineTag(engineLabel);
+    if (!provider) return;
+
+    const timerKey = `${actKey}::${provider}::${model}`;
+    const started = this._taskStartTimes?.[timerKey] || 0;
+    const durationMs = started > 0 ? Math.max(100, Date.now() - started) : 0;
+    if (this._taskStartTimes) delete this._taskStartTimes[timerKey];
+
+    // Persist real activity result to backend output/model_activity_ratings.json
+    fetch("/api/model-ratings/record", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        activity: actKey,
+        provider,
+        model,
+        success: Boolean(isSuccess),
+        duration_ms: durationMs,
+        error: isSuccess ? "" : String(errorMsg || "").slice(0, 200)
+      })
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.activities) {
+          this.realActivityRatings = {
+            activities: data.activities,
+            best_by_activity: data.best_by_activity || {}
+          };
+          this.renderActivityRatingHints();
+        }
+      })
+      .catch(() => {});
+  }
+
+  getRealRatingEntry(activityKey, provider, model = "") {
+    const actMap = this.realActivityRatings?.activities?.[activityKey] || {};
+    const prov = String(provider || "").trim().toLowerCase();
+    const mod = String(model || "").trim();
+    if (mod && actMap[`${prov}::${mod}`]) {
+      return actMap[`${prov}::${mod}`];
+    }
+    if (actMap[prov]) {
+      return actMap[prov];
+    }
+    // Aggregate across models of the same provider if exact model hasn't run yet
+    const matching = Object.values(actMap).filter(st => st && st.provider === prov);
+    if (matching.length === 0) return null;
+    matching.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return matching[0];
+  }
+
+  _annotateSelectWithRealRatings(selectEl, activityKey) {
+    if (!selectEl) return;
+    const actMap = this.realActivityRatings?.activities?.[activityKey] || {};
+    const best = this.realActivityRatings?.best_by_activity?.[activityKey] || null;
+
+    Array.from(selectEl.options).forEach(opt => {
+      if (!opt.dataset.baseLabel) {
+        opt.dataset.baseLabel = opt.textContent;
+      }
+      const val = (opt.value || "").trim().toLowerCase();
+      if (!val || val === "default") {
+        opt.textContent = opt.dataset.baseLabel;
+        return;
+      }
+      const st = this.getRealRatingEntry(activityKey, val, "");
+      if (st && st.total_runs > 0) {
+        const isBest = best && best.provider === val;
+        const bestTag = isBest ? " Best" : "";
+        opt.textContent = `${opt.dataset.baseLabel} — ⭐ ${Number(st.score).toFixed(1)}/5 (${st.successes}✓/${st.failures}✗)${bestTag}`;
+      } else {
+        opt.textContent = opt.dataset.baseLabel;
+      }
+    });
   }
 
   renderActivityRatingHints() {
-    const fmtHint = (actKey, activeId, bestLabel) => {
-      const { score, entry, stats } = this.getEffectiveActivityScore(actKey, activeId);
-      const rateTxt = stats ? ` • Live: ${stats.ok}✓/${stats.fail}✗` : "";
-      const tierTxt = entry?.tier ? ` [${entry.tier}]` : "";
-      const reasonTxt = entry?.reason ? ` — ${entry.reason}` : "";
-      return `⭐ ${score.toFixed(1)}/10${tierTxt}${rateTxt}${reasonTxt || (bestLabel ? ` (Best: ${bestLabel})` : "")}`;
+    this._annotateSelectWithRealRatings(this.selectTaskCharProvider, "characters");
+    this._annotateSelectWithRealRatings(this.selectTaskStoryProvider, "storyboard");
+    this._annotateSelectWithRealRatings(this.selectTaskPortraitEngine, "portrait");
+    this._annotateSelectWithRealRatings(this.selectTaskScenePaintEngine, "scene");
+    this._annotateSelectWithRealRatings(this.selectTaskRefineProvider, "refine");
+    this._annotateSelectWithRealRatings(this.selectTaskVideoEngine, "video");
+
+    const fmtHint = (actKey, activeProvider, activeModel = "") => {
+      const st = this.getRealRatingEntry(actKey, activeProvider, activeModel);
+      const best = this.realActivityRatings?.best_by_activity?.[actKey] || null;
+      if (!st || !st.total_runs) {
+        if (best) {
+          const bName = best.model ? `${best.provider} / ${best.model}` : best.provider;
+          return `Not run yet • Best in app: ${bName} (⭐ ${Number(best.score).toFixed(1)}/5, ${best.successes}✓/${best.failures}✗)`;
+        }
+        return `No runs yet — ratings update automatically from real app runs.`;
+      }
+      const avgSec = st.avg_duration_ms ? ` • avg ${(st.avg_duration_ms / 1000).toFixed(1)}s` : "";
+      const isBest = best && best.provider === st.provider && (!best.model || best.model === st.model);
+      const bestNote = isBest
+        ? " • 🏆 Best rated"
+        : (best ? ` • Best: ${best.model ? `${best.provider}/${best.model}` : best.provider} (⭐ ${Number(best.score).toFixed(1)}/5)` : "");
+      return `⭐ ${Number(st.score).toFixed(1)}/5 (${st.successes}✓/${st.failures}✗ • ${st.success_rate}%${avgSec})${bestNote}`;
     };
 
     const charCfg = this.getTaskAiConfig("characters");
-    if (this.ratingHintChar) this.ratingHintChar.textContent = fmtHint("characters", charCfg.provider, "Gemini 3.5 Flash");
+    if (this.ratingHintChar) this.ratingHintChar.textContent = fmtHint("characters", charCfg.provider, charCfg.model);
 
     const storyCfg = this.getTaskAiConfig("storyboard");
-    if (this.ratingHintStory) this.ratingHintStory.textContent = fmtHint("storyboard", storyCfg.provider, "Gemini 3.5 Flash");
+    if (this.ratingHintStory) this.ratingHintStory.textContent = fmtHint("storyboard", storyCfg.provider, storyCfg.model);
 
     const portCfg = this.getTaskImageConfig("portrait");
-    if (this.ratingHintPortrait) this.ratingHintPortrait.textContent = fmtHint("portrait", portCfg.imageMode, "Antigravity AI");
+    if (this.ratingHintPortrait) this.ratingHintPortrait.textContent = fmtHint("portrait", portCfg.imageMode, "");
 
     const sceneCfg = this.getTaskImageConfig("scene");
-    if (this.ratingHintScene) this.ratingHintScene.textContent = fmtHint("scene", sceneCfg.imageMode, "Antigravity AI");
+    if (this.ratingHintScene) this.ratingHintScene.textContent = fmtHint("scene", sceneCfg.imageMode, "");
 
     const refCfg = this.getTaskAiConfig("refine");
-    if (this.ratingHintRefine) this.ratingHintRefine.textContent = fmtHint("refine", refCfg.provider, "Gemini 3.5 Flash");
+    if (this.ratingHintRefine) this.ratingHintRefine.textContent = fmtHint("refine", refCfg.provider, refCfg.model);
 
     const vidEngine = this.selectTaskVideoEngine ? this.selectTaskVideoEngine.value : "ken_burns";
-    if (this.ratingHintVideo) this.ratingHintVideo.textContent = fmtHint("video", vidEngine, "2.5D Ken Burns");
+    if (this.ratingHintVideo) this.ratingHintVideo.textContent = fmtHint("video", vidEngine, "");
   }
 
   autoSelectBestModels(silent = false) {
-    const hasAgy = Boolean(this.config?.has_antigravity_cli);
-    const bestPaintEngine = hasAgy ? "antigravity" : "pollinations";
+    const bestMap = this.realActivityRatings?.best_by_activity || {};
+    let appliedCount = 0;
 
-    // 1. Pick best default text/storyboard provider & model (Gemini 3.5 Flash)
-    if (this.selectAiProvider) {
-      this.selectAiProvider.value = "gemini";
-      localStorage.setItem("anistory_cfg_provider", "gemini");
-    }
-    if (this.selectAiModel) {
-      const has35 = Array.from(this.selectAiModel.options).some(o => o.value === "gemini-3.5-flash");
-      if (has35) {
-        this.selectAiModel.value = "gemini-3.5-flash";
-        localStorage.setItem("anistory_cfg_model", "gemini-3.5-flash");
-        localStorage.setItem("anistory_model_gemini", "gemini-3.5-flash");
-      }
-    }
-
-    // 2. Pick best default Paint Engine (Antigravity AI ⭐ 9.8 if CLI available, else Pollinations Flux)
-    this.setImageMode(bestPaintEngine);
-
-    // 3. Apply best per-activity selections
-    const setPair = (pSel, mSel, pKey, mKey, prov, mod) => {
-      if (pSel) {
-        pSel.value = prov;
-        localStorage.setItem(pKey, prov);
-      }
-      if (mSel) {
-        if (prov === "default") {
-          mSel.value = "default";
-          mSel.disabled = true;
-          localStorage.setItem(mKey, "default");
-        } else {
-          mSel.disabled = false;
-          const exists = Array.from(mSel.options).some(o => o.value === mod);
-          if (exists) {
-            mSel.value = mod;
-            localStorage.setItem(mKey, mod);
-          }
+    const applyBestProviderPair = (actKey, pSel, mSel, pKey, mKey) => {
+      const best = bestMap[actKey];
+      if (!best || !pSel) return;
+      const optExists = Array.from(pSel.options).some(o => o.value === best.provider);
+      if (!optExists) return;
+      pSel.value = best.provider;
+      localStorage.setItem(pKey, best.provider);
+      pSel.dispatchEvent(new Event("change"));
+      if (mSel && best.model) {
+        const mExists = Array.from(mSel.options).some(o => o.value === best.model);
+        if (mExists) {
+          mSel.value = best.model;
+          localStorage.setItem(mKey, best.model);
         }
       }
+      appliedCount++;
     };
 
-    setPair(this.selectTaskCharProvider, this.selectTaskCharModel, "anistory_task_char_provider", "anistory_task_char_model", "default", "default");
-    setPair(this.selectTaskStoryProvider, this.selectTaskStoryModel, "anistory_task_story_provider", "anistory_task_story_model", "default", "default");
-    setPair(this.selectTaskRefineProvider, this.selectTaskRefineModel, "anistory_task_refine_provider", "anistory_task_refine_model", "default", "default");
+    const applyBestSingleSelect = (actKey, sel, storageKey, isDefaultPaint = false) => {
+      const best = bestMap[actKey];
+      if (!best || !sel) return;
+      const optExists = Array.from(sel.options).some(o => o.value === best.provider);
+      if (!optExists) return;
+      sel.value = best.provider;
+      localStorage.setItem(storageKey, best.provider);
+      if (isDefaultPaint && ["antigravity", "gemini", "pollinations", "flowkit", "manual"].includes(best.provider)) {
+        this.setImageMode(best.provider);
+      }
+      appliedCount++;
+    };
 
-    if (this.selectTaskPortraitEngine) {
-      this.selectTaskPortraitEngine.value = bestPaintEngine;
-      localStorage.setItem("anistory_task_portrait_engine", bestPaintEngine);
-    }
-    if (this.selectTaskScenePaintEngine) {
-      this.selectTaskScenePaintEngine.value = bestPaintEngine;
-      localStorage.setItem("anistory_task_scene_paint_engine", bestPaintEngine);
-    }
-    if (this.selectTaskVideoEngine) {
-      this.selectTaskVideoEngine.value = "ken_burns";
-      localStorage.setItem("anistory_task_video_engine", "ken_burns");
+    applyBestProviderPair("characters", this.selectTaskCharProvider, this.selectTaskCharModel, "anistory_task_char_provider", "anistory_task_char_model");
+    applyBestProviderPair("storyboard", this.selectTaskStoryProvider, this.selectTaskStoryModel, "anistory_task_story_provider", "anistory_task_story_model");
+    applyBestSingleSelect("portrait", this.selectTaskPortraitEngine, "anistory_task_portrait_engine", true);
+    applyBestSingleSelect("scene", this.selectTaskScenePaintEngine, "anistory_task_scene_paint_engine", false);
+    applyBestProviderPair("refine", this.selectTaskRefineProvider, this.selectTaskRefineModel, "anistory_task_refine_provider", "anistory_task_refine_model");
+    applyBestSingleSelect("video", this.selectTaskVideoEngine, "anistory_task_video_engine", false);
+
+    // Clear manual override flag when user explicitly asks to auto-select best rated
+    if (!silent) {
+      localStorage.removeItem("anistory_task_manual_override");
     }
 
     this.renderActivityRatingHints();
     if (!silent) {
-      const paintLabel = bestPaintEngine === "antigravity" ? "Antigravity AI (⭐ 9.8)" : "Pollinations Flux (⭐ 8.4)";
-      this.showToast(`⭐ Auto-selected best rated models: Gemini 3.5 Flash (Text) + ${paintLabel} (Paint)!`);
-      this.addAiLog("info", "Auto-Select Best Models", `gemini-3.5-flash + ${bestPaintEngine}`, `Applied highest-rated models per activity.`);
+      if (appliedCount > 0) {
+        this.showToast(`⭐ Selected best-rated models from your real app runs across ${appliedCount} activity step(s)!`);
+        this.addAiLog("info", "Select Best Rated Models", `${appliedCount} steps`, `Applied top-performing models from real activity history.`);
+      } else {
+        this.showToast("No real activity runs recorded yet — run your tasks first so the app can rate each model!", false);
+      }
     }
   }
 
@@ -5515,11 +5580,21 @@ ${isAutoScenes
     if (this.aiExecutionLogs.length > 200) {
       this.aiExecutionLogs.shift();
     }
+    if (level === "info") {
+      const actKey = this._resolveActivityKeyFromTask(taskLabel);
+      if (actKey) {
+        const { provider, model } = this._parseProviderModelFromEngineTag(engineLabel);
+        if (provider) {
+          if (!this._taskStartTimes) this._taskStartTimes = {};
+          this._taskStartTimes[`${actKey}::${provider}::${model}`] = Date.now();
+        }
+      }
+    }
     if (level === "error" && this.aiExecutionLogPanel) {
       this.aiExecutionLogPanel.style.display = "block";
     }
     if (level === "success" || level === "error") {
-      this.recordModelActivityResult(taskLabel, engineLabel, level === "success");
+      this.recordModelActivityResult(taskLabel, engineLabel, level === "success", message);
     }
     this.renderAiLogs();
   }

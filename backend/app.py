@@ -626,9 +626,40 @@ async def verify_credentials(req: VerifyCredentialsRequest):
     )
     return {"status": "ok", **single_res}
 
+class RecordModelRatingRequest(BaseModel):
+    activity: str
+    provider: str
+    model: Optional[str] = ""
+    success: bool = True
+    duration_ms: Optional[int] = 0
+    error: Optional[str] = ""
+
+@app.get("/api/model-ratings")
+async def get_real_model_ratings():
+    from backend.config import get_model_activity_ratings
+    return {"status": "ok", **get_model_activity_ratings()}
+
+@app.post("/api/model-ratings/record")
+async def record_real_model_rating(req: RecordModelRatingRequest):
+    from backend.config import record_model_activity_rating
+    updated = record_model_activity_rating(
+        activity=req.activity,
+        provider=req.provider,
+        model=req.model or "",
+        success=bool(req.success),
+        duration_ms=int(req.duration_ms or 0),
+        error=req.error or "",
+    )
+    return {"status": "ok", **updated}
+
+@app.post("/api/model-ratings/reset")
+async def reset_real_model_ratings():
+    from backend.config import reset_model_activity_ratings
+    return {"status": "ok", **reset_model_activity_ratings()}
+
 @app.get("/api/config")
 async def get_config():
-    from backend.config import ACTIVITY_MODEL_RATINGS
+    from backend.config import get_model_activity_ratings
     from backend.services.image_service import ImageService
     return {
         "art_styles": ART_STYLES,
@@ -639,7 +670,7 @@ async def get_config():
         "image_modes": IMAGE_MODES,
         "duration_presets": DURATION_PRESETS,
         "video_dimensions": VIDEO_DIMENSIONS,
-        "activity_model_ratings": ACTIVITY_MODEL_RATINGS,
+        "activity_model_ratings": get_model_activity_ratings(),
         "has_antigravity_cli": bool(ImageService._find_antigravity_cli()),
     }
 
