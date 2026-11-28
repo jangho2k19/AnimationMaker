@@ -1166,6 +1166,7 @@ class AnimationPipeline:
             if cand_p.exists():
                 acting_video_full = str(cand_p)
 
+        sub_style_key = "editorial_cartoon" if project.get("art_style") == "editorial_cartoon" else "default"
         await asyncio.to_thread(
             engine.render_scene_clip,
             image_path=img_full,
@@ -1176,7 +1177,8 @@ class AnimationPipeline:
             duration=duration,
             enable_subtitles=enable_subtitles,
             enable_voiceover=enable_voiceover,
-            source_video_path=acting_video_full
+            source_video_path=acting_video_full,
+            subtitle_style=sub_style_key
         )
 
         scene["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
@@ -1423,6 +1425,7 @@ class AnimationPipeline:
 
             motion = scene.get("camera_motion", "zoom_in")
 
+            sub_style_key = "editorial_cartoon" if project.get("art_style") == "editorial_cartoon" else "default"
             await asyncio.to_thread(
                 engine.render_scene_clip,
                 image_path=img_full,
@@ -1433,7 +1436,8 @@ class AnimationPipeline:
                 duration=scene.get("duration", 4.0),
                 enable_subtitles=enable_subtitles,
                 enable_voiceover=scene_has_voice,
-                source_video_path=acting_video_full
+                source_video_path=acting_video_full,
+                subtitle_style=sub_style_key
             )
             scene["video_path"] = str(clip_file.relative_to(PROJECTS_DIR.parent)).replace("\\", "/")
             scene_clips.append(str(clip_file))

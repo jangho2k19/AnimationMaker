@@ -6,7 +6,7 @@ import urllib.parse
 from pathlib import Path
 import httpx
 from PIL import Image, ImageDraw, ImageFont
-from backend.config import ART_STYLES, SPEAKER_FOCUS_PROMPT_SUFFIX, is_comic_style
+from backend.config import ART_STYLES, SPEAKER_FOCUS_PROMPT_SUFFIX, is_comic_style, is_editorial_cartoon_style
 
 class OrientationMismatchError(RuntimeError):
     """Raised when a generated image has opposite orientation (e.g. portrait for landscape) so it can be retried once."""
@@ -71,16 +71,19 @@ class ImageService:
             camera_on_speaker = True
 
         # Auto-harmonize style if the visual prompt explicitly specifies 3D Pixar, Ghibli, Realistic, or Stick Figure
-        if any(k in lower_base for k in ("pixar", "3d animated", "3d animation", "disney 3d")):
-            effective_style = "pixar"
-        elif any(k in lower_base for k in ("studio ghibli", "ghibli", "2d hand-drawn", "cel-shaded anime")):
-            effective_style = "ghibli"
-        elif any(k in lower_base for k in ("raw photograph", "photorealistic", "live-action")):
-            effective_style = "realistic"
-        elif any(k in lower_base for k in ("stick figure", "stickman", "stick figures", "stick-figure", "người que")):
-            effective_style = "stick_figure"
-        elif is_comic_style(effective_style) or any(k in lower_base for k in ("comic book", "graphic novel panel")):
-            effective_style = "comic"
+        # Skip auto-harmonization when explicit editorial_cartoon or explainer_3d style is active
+        # (so mentions of "stick-figure NPCs" inside editorial_cartoon are never hijacked to stick_figure).
+        if not is_editorial_cartoon_style(effective_style) and effective_style != "explainer_3d":
+            if any(k in lower_base for k in ("pixar", "3d animated", "3d animation", "disney 3d")):
+                effective_style = "pixar"
+            elif any(k in lower_base for k in ("studio ghibli", "ghibli", "2d hand-drawn", "cel-shaded anime")):
+                effective_style = "ghibli"
+            elif any(k in lower_base for k in ("raw photograph", "photorealistic", "live-action")):
+                effective_style = "realistic"
+            elif any(k in lower_base for k in ("stick figure", "stickman", "stick figures", "stick-figure", "người que")):
+                effective_style = "stick_figure"
+            elif is_comic_style(effective_style) or any(k in lower_base for k in ("comic book", "graphic novel panel")):
+                effective_style = "comic"
 
         style_info = ART_STYLES.get(effective_style, ART_STYLES["ghibli"])
         suffix = style_info.get("prompt_suffix", "")
@@ -133,6 +136,8 @@ class ImageService:
             anti_text = ", textless RAW photograph, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark, not cartoon, not 3D render, not illustration, not painting"
         elif effective_style == "stick_figure":
             anti_text = ", clean textless stickman illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark, not photorealistic, no realistic human faces, no detailed skin, no 3D rendering"
+        elif is_editorial_cartoon_style(effective_style):
+            anti_text = ", clean 2D editorial cartoon illustration, crisp legible short labels or numbers ONLY on in-scene props like whiteboards, charts, clipboards, or screens when specified, strictly NO speech bubbles, NO dialogue bubbles, NO floating subtitles, NO watermark"
         else:
             anti_text = ", clean textless illustration, no speech bubbles, no dialogue bubbles, no words, no letters, no subtitles, no watermark"
         return f"{clean_base}{disambiguation_addon}{char_addon}{suffix}{speaker_addon}{anti_text}"
@@ -962,6 +967,7 @@ class ImageService:
                     aspect_ratio=imagen_ratio,
                     req_files=req_files,
                     enforce_orientation=enforce_orientation,
+                    allow_diegetic_text=is_editorial_cartoon_style(style_key),
                 )
                 if saved and os.path.exists(output_path):
                     print(f"Generated {label} using Antigravity AI (Local CLI)!")
@@ -1173,8 +1179,13 @@ class ImageService:
             try:
                 from backend.services.gemini_wrapper import GeminiWebWrapper
                 wrapper = GeminiWebWrapper.get_instance()
+                cookie_text_rule = (
+                    "Clean 2D editorial comic illustration; allow short labels/numbers only on in-scene props if described; no speech bubbles, no subtitles, no watermark."
+                    if is_editorial_cartoon_style(style_key)
+                    else "Clean illustration without text, no speech bubbles, no words."
+                )
                 resp = await wrapper.generate_content(
-                    multimodal_prompt or f"Generate an image of: {full_prompt[:2800]}. Clean illustration without text, no speech bubbles, no words.",
+                    multimodal_prompt or f"Generate an image of: {full_prompt[:2800]}. {cookie_text_rule}",
                     files=req_files or None,
                     cookie_override=combined_cookie
                 )
@@ -1660,6 +1671,7 @@ class ImageService:
         aspect_ratio: str = "16:9",
         req_files: Optional[list] = None,
         enforce_orientation: bool = True,
+        allow_diegetic_text: bool = False,
     ) -> bool:
         """
         Generates an image using the local Antigravity CLI (`agy --print`) and its
@@ -1685,12 +1697,17 @@ class ImageService:
                 + "\n"
             )
 
+        req_text_line = (
+            "Requirements: clean 2D editorial cartoon illustration; allow short legible numbers or chart labels ONLY inside in-scene props (whiteboards, screens, clipboards, signs) if described in the prompt; strictly NO speech bubbles, NO floating subtitles, NO watermark. "
+            if allow_diegetic_text
+            else "Requirements: clean illustration, strictly NO text, NO watermark. "
+        )
         cli_prompt = (
             f"Use the image-generator subagent to generate a single high-quality image with aspect ratio {aspect_ratio} "
             f"(target {width}x{height}):\n"
             f"{clean_prompt}\n"
             f"{ref_lines}"
-            f"Requirements: clean illustration, strictly NO text, NO watermark. "
+            f"{req_text_line}"
             f"Reply with ONLY the absolute saved file path of the generated image."
         )
 

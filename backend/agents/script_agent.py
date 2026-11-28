@@ -131,7 +131,7 @@ class ScriptAgent:
         extracted character roster with immutable visual anchors, and chronological
         scene-by-scene beat & dialogue allocation).
         """
-        from backend.config import STORYBOARD_SKILLS, is_comic_style
+        from backend.config import STORYBOARD_SKILLS, is_comic_style, is_editorial_cartoon_style
 
         raw = (idea or "").strip()
         lang = cls.detect_language(f"{title or ''} {raw}", fallback=language)
@@ -177,6 +177,8 @@ class ScriptAgent:
             if chosen_skill_key == "auto":
                 if (art_style or "").strip().lower() == "explainer_3d":
                     chosen_skill_key = "educational_explainer"
+                elif is_editorial_cartoon_style(art_style):
+                    chosen_skill_key = "editorial_cartoon_essay"
                 elif is_comic_style(art_style):
                     chosen_skill_key = "comic_graphic_novel"
             skill_info = STORYBOARD_SKILLS.get(chosen_skill_key, STORYBOARD_SKILLS["cinematic_storyteller"])
@@ -256,6 +258,8 @@ class ScriptAgent:
         if chosen_skill_key not in STORYBOARD_SKILLS or chosen_skill_key == "auto":
             if is_comic_style(art_style):
                 chosen_skill_key = "comic_graphic_novel"
+            elif is_editorial_cartoon_style(art_style):
+                chosen_skill_key = "editorial_cartoon_essay"
             elif (art_style or "").strip().lower() == "explainer_3d":
                 chosen_skill_key = "educational_explainer"
             elif genre == "comedy_satire":
@@ -1162,6 +1166,96 @@ Return ONLY raw JSON matching this structure:
       "archetype": "3D Cutaway Explainer",
       "visual_prompt": "Precision Blender 3D studio cutaway render of [exact mechanism/object] in clean 3/4 cross-section view, brushed aluminum and machined steel PBR materials, translucent cutaway cylinder wall showing [exact physical state and color-coded flow], clean studio rim lighting against uncluttered dark-slate background, ultra-sharp macro scientific visualization, no text, no labels, no watermark.",
       "acting_prompt": "Clean 3/4 technical cutaway shot of [mechanism] on a studio stage. The camera executes a smooth, steady slow push-in maintaining locked spatial orientation. 0-3s: [exact starting state of components]. 3-6s: [visible cause-and-effect physical process and flow motion]. 6-8s: [resulting end state holding cleanly for transition]. Crisp architectural studio rim lighting with 50mm macro depth of field.\\n\\nAudio: clean low mechanical hum, no background music.\\nSFX: subtle metallic click and pressurized airflow hiss.\\nNegative: subtitles, captions, text labels, watermark, human characters, cartoon faces, distorted geometry, morphing parts.",
+      "narration": "...",
+      "dialogues": [
+        {{"speaker": "Narrator", "text": "..."}}
+      ],
+      "camera_motion": "zoom_in"
+    }}
+  ]
+}}"""
+
+        is_editorial_cartoon_essay = (
+            (director_skill or "").strip().lower() == "editorial_cartoon_essay"
+            or (art_style or "").strip().lower() in ("editorial_cartoon", "editorial_explainer", "video_essay")
+            or (analysis.get("director_skill") == "editorial_cartoon_essay")
+        )
+        if is_editorial_cartoon_essay:
+            essay_scene_guide = (
+                "an optimal number of scenes (typically 6–8 scenes: 1 Paradox Hook + 1 Context Setup + 2–3 Data & Concrete Visual Metaphor scenes + 1 Root Cause Breakdown + 1 Sharp Concluding Takeaway)"
+                if is_auto_scenes
+                else f"exactly {num_scenes} scenes progressing through Paradox Hook → Context → Data + Visual Metaphor → Root Causes → Sharp Takeaway"
+            )
+            essay_chars_rule = (
+                preset_chars_block
+                if preset_chars_block
+                else (
+                    "- SINGLE LOCKED MASCOT HOST (STRICT): Invent EXACTLY ONE original, memorable 2D chibi cartoon narrator host in `\"characters\"` "
+                    "(formatted strictly as `\"Host Name: round chibi head, thick black ink outlines, expressive glasses, signature quirky hat/mascot prop, plaid vest and tie, thin cartoon arms and legs\"`). "
+                    "Keep this EXACT host visually identical across every scene. Cast ALL background people/workers/officials strictly as minimalist cream-white oval-headed stick-figure NPCs with simple dot eyes."
+                )
+            )
+            return f"""You are a master 2D Editorial Cartoon Video Essayist & Storyboard Director (Đầu Tôm Economy, Kurzgesagt storytelling clarity & Infographics Show pacing).
+Transform the provided topic/idea into a sharp, high-retention 2D editorial cartoon video essay storyboard tailored for 8-second illustrated & lightly animated scenes.
+
+Topic / Script Input:
+\"\"\"
+{clean_idea_strip}
+\"\"\"
+
+Parameters:
+- {title_clause}
+- Target Audience: {audience} | Art Style: {art_style} | Narration & Script Language: {lang_display}
+- {pacing_param}
+- Scene Count: {essay_scene_guide}
+{essay_chars_rule}
+{analysis["prompt_blueprint"]}
+
+2D EDITORIAL CARTOON VIDEO ESSAY DIRECTIVES (MANDATORY):
+1. VIDEO ESSAY NARRATIVE ARC (NOT GENERIC FICTION):
+   - Follow a crisp analytical essay structure:
+     * Paradox / Surprising Question Hook (immediately challenge an everyday assumption).
+     * Real-World Context (relatable sidewalk café, office, factory, market, or port setting).
+     * Hard Numbers + Concrete Visual Metaphors (translate abstract statistics into everyday physical comparisons: a giant cake with one tiny thin slice on a plate, tall stacks of `$100` bills vs a tiny `$19` stack, flagged calendars, stamped warning notices).
+     * Root Causes & Deeper Insight → Sharp Concluding Takeaway.
+   - Change scene location or prop every 1–2 sentences so the visuals evolve dynamically with the argument.
+
+2. SEPARATE ENGLISH PROMPTS FOR IMAGE & VIDEO (MANDATORY):
+   - ALWAYS write both `visual_prompt` and `acting_prompt` in **ENGLISH** (even when `title` and `narration` are in Tiếng Việt).
+   - a) `visual_prompt` (STILL 2D EDITORIAL COMIC KEYFRAME):
+        * Describe a warm muted 2D hand-drawn editorial comic illustration with medium-thick clean black ink outlines, soft flat cel shading, and warm vintage beige/sage-green tones.
+        * Feature the locked 2D chibi cartoon host with a clear emotion/pose matching the beat (shocked, pointing at board, worried, analytical). Background people MUST be minimalist cream-white oval-headed stick-figure NPCs with simple dot eyes.
+        * Include concrete visual metaphors and diegetic props (whiteboard bar chart, classroom chalkboard, clipboard, laptop alert, calendar, stacks of money, sliced cake) with short, crisp, legible labels or numbers ONLY inside props when citing data (1–4 words max, e.g., `"35%"`, `"FDI 77%"`, `"$500B"`, `"19 ngày"`).
+        * STRICT PROHIBITION: NO speech bubbles, NO dialogue balloons, NO floating subtitles, NO watermarks, NO camera motion verbs.
+   - b) `acting_prompt` (8-SECOND SUBTLE EDITORIAL MOTION PROMPT):
+        * Write 80–120 words of crisp English direction.
+        * [Shot Framing & Camera Motion]: Gentle pan or smooth 3–5% Ken Burns push-in keeping key props and the host cleanly framed.
+        * [Subtle 2D Cartoon Action]:
+          - 0-3s (Start): Host's initial posture and expression in the illustrated scene.
+          - 3-6s (Expressive Reaction & Gesture): Host points at the whiteboard/chart/prop, raises eyebrows, scratches chin, or gasps subtly; small motion in secondary props or stick-figure NPCs in the background.
+          - 6-8s (Settle): Expression and framing settle cleanly for narration beat transition.
+        * Audio: clean understated ambient room/street tone matching the scene (no background music).
+          SFX: 1–2 crisp editorial foley sounds (chalk tap, paper rustle, stamp thud, soft whoosh, coin stack).
+          Negative: speech bubbles, subtitles, floating text, watermark, 3D CGI realism, photorealistic faces, morphing host design.
+
+3. ANALYTICAL VOICEOVER & NARRATOR-ONLY DIALOGUES:
+   - `narration`: Calm, witty, sharp analytical commentary in {"Tiếng Việt (Vietnamese)" if is_vi_lang else "English"} using vivid everyday analogies.
+{pacing_rule}
+   - `dialogues`: Use **Narrator-only**: `[{{"speaker": "Narrator", "text": "<exact narration text>"}}]` (unless user explicitly supplied cast characters above).
+
+Return ONLY raw JSON matching this structure:
+{{
+  "title": "Sharp Video Essay Title",
+  "logline": "1-sentence thesis capturing the core paradox or insight",
+  "characters": "Host Name: round chibi 2D cartoon narrator host, thick black ink outlines, black rectangular glasses, patterned knit vest and tie, thin cartoon limbs, signature whimsical head accessory",
+  "scenes": [
+    {{
+      "scene_number": 1,
+      "title": "Hook / Insight Beat Title",
+      "duration": 8,
+      "archetype": "Editorial Cartoon Beat",
+      "visual_prompt": "Warm muted 2D hand-drawn editorial comic illustration, clean medium-thick black ink outlines and flat cel shading. In a cozy relatable office/street setting, the 2D chibi cartoon host looks startled while pointing at a laptop screen displaying a red stamped notice '35%', minimalist cream-white oval-headed stick-figure NPCs with dot eyes working in the background, crisp diegetic labels only on props, no speech bubbles, no subtitles, no watermark.",
+      "acting_prompt": "Medium 2D editorial cartoon shot framing the chibi host beside a glowing laptop and warm-toned background. Gentle slow camera push-in toward the host and prop. 0-3s: Host leans forward looking at the laptop screen with wide eyes behind rectangular glasses. 3-6s: Host raises one thin cartoon hand pointing emphatically toward the red '35%' stamp as a background stick-figure NPC glances over subtly. 6-8s: Host holds the stunned analytical pose as the screen glow settles.\\n\\nAudio: soft room tone, no background music.\\nSFX: crisp stamp thud and subtle paper rustle.\\nNegative: speech bubbles, subtitles, captions, floating words, watermark, 3D CGI, photorealism.",
       "narration": "...",
       "dialogues": [
         {{"speaker": "Narrator", "text": "..."}}
@@ -3108,6 +3202,7 @@ Return ONLY raw JSON matching this structure:
             "comic": ("Comic Book / Graphic Novel Panel", "masterpiece comic book illustration"),
             "stick_figure": ("Minimalist Stick Figure Animation", "masterpiece stickman animation"),
             "explainer_3d": ("Blender 3D Educational Cutaway Explainer", "precision 3D scientific cutaway render"),
+            "editorial_cartoon": ("2D Editorial Cartoon Video Essay", "warm hand-drawn 2D editorial comic illustration"),
             "realistic": ("Photorealistic cinematic live-action", "masterpiece photography")
         }
         style_tag, render_word = style_name_map.get(art_style, (f"{art_style.capitalize()} art", "masterpiece illustration"))

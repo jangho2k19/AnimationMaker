@@ -96,6 +96,12 @@ ART_STYLES = {
         "prompt_suffix": ", Blender 3D cinematic technical explainer render, precision cutaway cross-section 3D model, realistic PBR materials, clean studio rim lighting, clear visual flow indicators, sharp macro detail, uncluttered dark-slate studio background, scientific visualization masterpiece, no text, no watermark",
         "icon": "🔬",
     },
+    "editorial_cartoon": {
+        "name": "2D Editorial Cartoon Explainer (Đầu Tôm Style)",
+        "description": "Warm hand-drawn 2D comic host, cream stick-figure NPCs, diegetic charts & visual metaphors",
+        "prompt_suffix": ", warm muted 2D hand-drawn editorial comic illustration, medium-thick clean black ink outlines, soft flat cel shading, warm vintage beige and sage-green daylight palette, expressive 2D chibi cartoon narrator host with thin cartoon arms and legs, minimalist cream-white oval-headed stick-figure background NPCs with dot eyes, relatable everyday and economic scene props with clean diegetic charts or labels when specified, cozy editorial graphic novel explainer aesthetic",
+        "icon": "📰",
+    },
 }
 
 
@@ -105,6 +111,15 @@ def is_comic_style(style_key: str) -> bool:
         "comic",
         "comic_dialogue",
         "comic_book",
+    )
+
+
+def is_editorial_cartoon_style(style_key: str) -> bool:
+    """Returns True if the selected art style is 2D Editorial Cartoon Explainer / Video Essay mode."""
+    return (style_key or "").strip().lower() in (
+        "editorial_cartoon",
+        "editorial_explainer",
+        "video_essay",
     )
 
 
@@ -194,6 +209,16 @@ STORYBOARD_SKILLS = {
             "or Scale Journey / Cause & Effect). Preserve consistent camera orientation and spatial landmarks across cutaway and scale transitions. "
             "Every scene's `acting_prompt` MUST show a meaningful subject-space physical process change (mechanism moving, fluid/energy flowing, layer assembling, cause before effect) rather than camera movement alone. "
             "Start with a clean exterior overview and reassemble the complete system at the end."
+        ),
+    },
+    "editorial_cartoon_essay": {
+        "id": "editorial_cartoon_essay",
+        "name": "📰 2D Editorial Cartoon Explainer (Video Essay / Đầu Tôm Style)",
+        "description": "1 locked cartoon host + stick-figure NPCs, diegetic whiteboard charts, concrete visual metaphors & sharp analytical narration.",
+        "directive": (
+            "DIRECTOR SKILL — 2D EDITORIAL CARTOON VIDEO ESSAY (ĐẦU TÔM STYLE): Structure the video essay as Paradox Hook → Context → Hard Data + Concrete Visual Metaphor → Root Causes → Sharp Concluding Takeaway. "
+            "Keep 1 recurring 2D chibi cartoon mascot host across every scene while casting all background people as minimalist cream-white oval-headed stick-figure NPCs with dot eyes. "
+            "Embed key numbers and concepts directly inside diegetic props (whiteboard charts, chalkboards, clipboards, laptop notices, stacks of bills, sliced cakes) paired with sharp, relatable narrator-only commentary."
         ),
     },
 }

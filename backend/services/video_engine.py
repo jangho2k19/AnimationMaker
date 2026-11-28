@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import logging
 import subprocess
@@ -21,6 +22,137 @@ class VideoEngine:
             drive, rest = clean_path.split(":", 1)
             return f"{drive}\\:{rest}"
         return clean_path
+
+    @staticmethod
+    def _format_ass_timestamp(seconds: float) -> str:
+        """Format seconds into H:MM:SS.cc for ASS subtitles."""
+        sec = max(0.0, float(seconds))
+        h = int(sec // 3600)
+        m = int((sec % 3600) // 60)
+        s = int(sec % 60)
+        cs = min(99, int(round((sec - int(sec)) * 100)))
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+    @staticmethod
+    def _parse_srt_cues(srt_path: str) -> List[Dict]:
+        """Parse UTF-8 SRT file into [{start, end, text}, ...]."""
+        with open(srt_path, "r", encoding="utf-8-sig", errors="replace") as f:
+            raw = f.read().replace("\r\n", "\n")
+
+        def _ts_to_sec(ts: str) -> float:
+            hh, mm, ss_ms = ts.strip().split(":")
+            ss, ms = ss_ms.replace(".", ",").split(",")
+            return int(hh) * 3600 + int(mm) * 60 + int(ss) + int(ms) / 1000.0
+
+        cues = []
+        for block in re.split(r"\n\s*\n", raw.strip()):
+            lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+            if not lines:
+                continue
+            ts_idx = next((idx for idx, ln in enumerate(lines) if "-->" in ln), None)
+            if ts_idx is None:
+                continue
+            ts_parts = lines[ts_idx].split("-->")
+            if len(ts_parts) != 2:
+                continue
+            try:
+                start_s = _ts_to_sec(ts_parts[0])
+                end_s = _ts_to_sec(ts_parts[1].split()[0])
+            except Exception:
+                continue
+            text = " ".join(lines[ts_idx + 1:]).strip()
+            text = re.sub(r"<[^>]+>", "", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            if text and end_s > start_s:
+                cues.append({"start": start_s, "end": end_s, "text": text})
+        return cues
+
+    def _build_editorial_ass(self, srt_path: str, ass_path: str) -> str:
+        """
+        Converts an SRT file into bold condensed uppercase ASS subtitles with
+        yellow (`#FFD400` / ASS `&H00D4FF&`) active-word highlighting (Đầu Tôm / Video Essay style).
+        """
+        cues = self._parse_srt_cues(srt_path)
+        font_size = max(24, min(42, int(self.height * 0.052)))
+        margin_v = max(32, min(80, int(self.height * 0.065)))
+
+        header = (
+            "[Script Info]\n"
+            "ScriptType: v4.00+\n"
+            f"PlayResX: {self.width}\n"
+            f"PlayResY: {self.height}\n"
+            "ScaledBorderAndShadow: yes\n\n"
+            "[V4+ Styles]\n"
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+            "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+            "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+            f"Style: Default,Arial,{font_size},&H00FFFFFF,&H0000D4FF,&H00000000,&H80000000,"
+            f"-1,0,0,0,100,100,0.5,0,1,3.5,1.5,2,36,36,{margin_v},1\n\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+
+        dialogue_lines = []
+        for cue in cues:
+            raw_words = cue["text"].split()
+            if not raw_words:
+                continue
+            cue_dur = max(0.15, cue["end"] - cue["start"])
+            # Split long cues into punchy 4-6 word uppercase chunks
+            chunks = []
+            idx = 0
+            while idx < len(raw_words):
+                rem = len(raw_words) - idx
+                step = 5 if rem > 6 else rem
+                chunks.append(raw_words[idx:idx + step])
+                idx += step
+
+            total_words = len(raw_words)
+            cursor = cue["start"]
+            for c_idx, chunk_words in enumerate(chunks):
+                chunk_dur = (
+                    max(0.1, cue["end"] - cursor)
+                    if c_idx == len(chunks) - 1
+                    else cue_dur * (len(chunk_words) / float(total_words))
+                )
+                word_dur = chunk_dur / float(len(chunk_words))
+                # Balance into max 2 lines when > 3 words
+                split_at = (len(chunk_words) + 1) // 2 if len(chunk_words) > 3 else len(chunk_words)
+
+                for active_i in range(len(chunk_words)):
+                    w_start = cursor + active_i * word_dur
+                    w_end = (
+                        cursor + chunk_dur
+                        if active_i == len(chunk_words) - 1
+                        else cursor + (active_i + 1) * word_dur
+                    )
+                    if w_end <= w_start:
+                        w_end = w_start + 0.05
+
+                    rendered_tokens = []
+                    for j, tok in enumerate(chunk_words):
+                        safe_tok = tok.upper().replace("\\", "\\\\").replace("{", "(").replace("}", ")")
+                        if j == active_i:
+                            rendered_tokens.append(r"{\c&H00D4FF&}" + safe_tok + r"{\c&H00FFFFFF&}")
+                        else:
+                            rendered_tokens.append(safe_tok)
+
+                    if split_at < len(rendered_tokens):
+                        line1 = " ".join(rendered_tokens[:split_at])
+                        line2 = " ".join(rendered_tokens[split_at:])
+                        ass_text = f"{line1}\\N{line2}"
+                    else:
+                        ass_text = " ".join(rendered_tokens)
+
+                    dialogue_lines.append(
+                        f"Dialogue: 0,{self._format_ass_timestamp(w_start)},{self._format_ass_timestamp(w_end)},Default,,0,0,0,,{ass_text}"
+                    )
+                cursor += chunk_dur
+
+        Path(ass_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(ass_path, "w", encoding="utf-8-sig") as f:
+            f.write(header + "\n".join(dialogue_lines) + "\n")
+        return ass_path
 
     def _get_zoompan_filter(self, motion_type: str, total_frames: int) -> str:
         """Constructs smooth mathematical Ken Burns camera motions."""
@@ -82,7 +214,8 @@ class VideoEngine:
         duration: float = 4.0,
         enable_subtitles: bool = True,
         enable_voiceover: bool = True,
-        source_video_path: str = None
+        source_video_path: str = None,
+        subtitle_style: str = "default"
     ) -> str:
         """
         Renders a single scene into an MP4 clip:
@@ -134,22 +267,28 @@ class VideoEngine:
             vf_filters.append(zoompan_expr)
 
         if enable_subtitles and srt_path and os.path.exists(srt_path) and os.path.getsize(srt_path) > 5:
-            escaped_srt = self._escape_path_for_ffmpeg_filter(srt_path)
-            font_size = max(16, min(22, int(self.width * 0.026)))
-            margin_v = max(24, min(65, int(self.height * 0.065)))
-            sub_style = (
-                f"FontSize={font_size},"
-                "PrimaryColour=&H00FFFFFF,"
-                "OutlineColour=&H00000000,"
-                "BackColour=&H60000000,"
-                "BorderStyle=1,"
-                "Outline=2.0,"
-                "Shadow=1.0,"
-                f"MarginV={margin_v},"
-                "Alignment=2,"
-                "Spacing=0.5"
-            )
-            vf_filters.append(f"subtitles='{escaped_srt}':force_style='{sub_style}'")
+            if (subtitle_style or "default").strip().lower() == "editorial_cartoon":
+                ass_path = str(Path(srt_path).with_suffix(".editorial.ass"))
+                self._build_editorial_ass(srt_path, ass_path)
+                escaped_ass = self._escape_path_for_ffmpeg_filter(ass_path)
+                vf_filters.append(f"subtitles='{escaped_ass}'")
+            else:
+                escaped_srt = self._escape_path_for_ffmpeg_filter(srt_path)
+                font_size = max(16, min(22, int(self.width * 0.026)))
+                margin_v = max(24, min(65, int(self.height * 0.065)))
+                sub_style = (
+                    f"FontSize={font_size},"
+                    "PrimaryColour=&H00FFFFFF,"
+                    "OutlineColour=&H00000000,"
+                    "BackColour=&H60000000,"
+                    "BorderStyle=1,"
+                    "Outline=2.0,"
+                    "Shadow=1.0,"
+                    f"MarginV={margin_v},"
+                    "Alignment=2,"
+                    "Spacing=0.5"
+                )
+                vf_filters.append(f"subtitles='{escaped_srt}':force_style='{sub_style}'")
 
         vf_chain = ",".join(vf_filters)
         source_has_audio = bool(has_acting_video and self._has_audio_stream(source_video_path))

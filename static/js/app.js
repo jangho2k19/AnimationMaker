@@ -1866,7 +1866,29 @@ class AniStoryApp {
         this.selectDirectorSkill.value = savedSkill;
       }
       this.selectDirectorSkill.addEventListener("change", () => {
-        localStorage.setItem("anistory_cfg_director_skill", this.selectDirectorSkill.value);
+        const skillVal = this.selectDirectorSkill.value;
+        localStorage.setItem("anistory_cfg_director_skill", skillVal);
+        if (skillVal === "editorial_cartoon_essay") {
+          this.selectedStyleKey = "editorial_cartoon";
+          localStorage.setItem("anistory_cfg_art_style", "editorial_cartoon");
+          document.querySelectorAll(".style-card-item").forEach(c => {
+            c.classList.toggle("selected", c.dataset.styleKey === "editorial_cartoon");
+          });
+          if (this.selectArtStyleStage2) {
+            this.selectArtStyleStage2.value = "editorial_cartoon";
+          }
+          this.updateSpeakerCamUI(this.cameraOnSpeaker);
+        } else if (skillVal === "educational_explainer") {
+          this.selectedStyleKey = "explainer_3d";
+          localStorage.setItem("anistory_cfg_art_style", "explainer_3d");
+          document.querySelectorAll(".style-card-item").forEach(c => {
+            c.classList.toggle("selected", c.dataset.styleKey === "explainer_3d");
+          });
+          if (this.selectArtStyleStage2) {
+            this.selectArtStyleStage2.value = "explainer_3d";
+          }
+          this.updateSpeakerCamUI(this.cameraOnSpeaker);
+        }
       });
     }
     if (this.btnDeepAnalyzeInput) {
@@ -6085,6 +6107,16 @@ ${isAutoScenes
         localStorage.setItem("anistory_cfg_art_style", key);
         if (this.selectArtStyleStage2) {
           this.selectArtStyleStage2.value = key;
+        }
+        if (this.selectDirectorSkill) {
+          const curSkill = this.selectDirectorSkill.value;
+          if (key === "editorial_cartoon" && (curSkill === "auto" || curSkill === "educational_explainer")) {
+            this.selectDirectorSkill.value = "editorial_cartoon_essay";
+            localStorage.setItem("anistory_cfg_director_skill", "editorial_cartoon_essay");
+          } else if (key === "explainer_3d" && (curSkill === "auto" || curSkill === "editorial_cartoon_essay")) {
+            this.selectDirectorSkill.value = "educational_explainer";
+            localStorage.setItem("anistory_cfg_director_skill", "educational_explainer");
+          }
         }
         this.updateSpeakerCamUI(this.cameraOnSpeaker);
       });
