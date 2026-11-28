@@ -953,18 +953,51 @@ class ImageService:
 
         # 0. Antigravity AI (Local CLI `agy` -> image-generator subagent)
         if image_mode == "antigravity":
-            saved = await self._generate_with_antigravity(
-                prompt=multimodal_prompt or full_prompt,
-                output_path=output_path,
-                width=width,
-                height=height,
-                aspect_ratio=imagen_ratio,
-                req_files=req_files,
-                enforce_orientation=enforce_orientation,
-            )
-            if saved and os.path.exists(output_path):
-                print(f"Generated {label} using Antigravity AI (Local CLI)!")
-                return output_path
+            try:
+                saved = await self._generate_with_antigravity(
+                    prompt=multimodal_prompt or full_prompt,
+                    output_path=output_path,
+                    width=width,
+                    height=height,
+                    aspect_ratio=imagen_ratio,
+                    req_files=req_files,
+                    enforce_orientation=enforce_orientation,
+                )
+                if saved and os.path.exists(output_path):
+                    print(f"Generated {label} using Antigravity AI (Local CLI)!")
+                    return output_path
+            except Exception as agy_err:
+                err_text = str(agy_err)
+                is_quota = any(
+                    token in err_text for token in ("RESOURCE_EXHAUSTED", "429", "exhausted your capacity", "quota will reset")
+                )
+                if is_quota:
+                    print(f"⚠️ Antigravity AI image quota limit reached (HTTP 429 RESOURCE_EXHAUSTED). Auto-falling back to Free Cloud AI Art (Pollinations Flux) for {label}...")
+                    try:
+                        fallback_path = await self._generate_raw_ai_image_once(
+                            full_prompt=full_prompt,
+                            output_path=output_path,
+                            style_key=style_key,
+                            width=width,
+                            height=height,
+                            image_mode="pollinations",
+                            req_files=req_files,
+                            multimodal_prompt=multimodal_prompt,
+                            seed=seed,
+                            api_key=api_key,
+                            provider=provider,
+                            label=f"{label} [Pollinations Flux Fallback]",
+                            enforce_orientation=enforce_orientation,
+                        )
+                        if fallback_path and os.path.exists(fallback_path):
+                            print(f"Generated {label} successfully via Cloud AI Art fallback (due to Antigravity 429 quota)!")
+                            return fallback_path
+                    except Exception as poll_err:
+                        raise RuntimeError(
+                            f"Antigravity AI image quota exhausted (HTTP 429 RESOURCE_EXHAUSTED), and Cloud AI Art fallback failed: {poll_err}. "
+                            "Please enter a Google Gemini API key or switch Paint Engine in settings."
+                        ) from poll_err
+                raise
             raise RuntimeError("Antigravity AI image generation failed to produce an image file.")
 
         # 1. Google Flow Bridge (FlowKit) with native character_media_ids
@@ -1728,7 +1761,15 @@ class ImageService:
                     chosen_src = recent[0][1]
 
         if not chosen_src or not os.path.exists(chosen_src):
-            snippet = stdout_txt[:220] if stdout_txt else stderr_txt[:220]
+            combined_all = f"{stdout_txt}\n{stderr_txt}"
+            is_quota = any(
+                token in combined_all for token in ("RESOURCE_EXHAUSTED", "429", "exhausted your capacity", "quota will reset")
+            )
+            snippet = stdout_txt[:260] if stdout_txt else stderr_txt[:260]
+            if is_quota:
+                raise RuntimeError(
+                    f"Antigravity CLI image quota limit reached (HTTP 429 RESOURCE_EXHAUSTED): {snippet or '(capacity exhausted)'}"
+                )
             raise RuntimeError(
                 f"Antigravity CLI did not return a saved image path. Output: {snippet or '(empty)'}"
             )

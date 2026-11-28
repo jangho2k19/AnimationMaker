@@ -749,7 +749,7 @@ ACTIVITY_MODEL_RATINGS = {
                 "engine": "antigravity",
                 "score": 9.8,
                 "tier": "Best",
-                "reason": "Top portrait fidelity via local Antigravity CLI (no API quota/cookie expiry)",
+                "reason": "Top portrait fidelity via local Antigravity CLI (auto-failover to Pollinations on quota limit)",
                 "recommended": True,
             },
             {
@@ -798,7 +798,7 @@ ACTIVITY_MODEL_RATINGS = {
                 "engine": "antigravity",
                 "score": 9.8,
                 "tier": "Best",
-                "reason": "Best scene art & character consistency via local Antigravity CLI",
+                "reason": "Best scene art & character consistency via local Antigravity CLI (auto-failover to Pollinations on quota limit)",
                 "recommended": True,
             },
             {
