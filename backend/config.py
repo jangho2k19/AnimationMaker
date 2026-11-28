@@ -10,11 +10,11 @@ PROJECTS_DIR = OUTPUT_DIR / "projects"
 CACHE_DIR = OUTPUT_DIR / "cache"
 CHARACTER_LIBRARY_DIR = OUTPUT_DIR / "characters_library"
 CREDENTIALS_FILE = OUTPUT_DIR / "credentials.json"
-MODEL_RATINGS_FILE = OUTPUT_DIR / "model_activity_ratings.json"
 
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(CHARACTER_LIBRARY_DIR, exist_ok=True)
+
 
 def get_server_credentials() -> dict:
     if CREDENTIALS_FILE.exists():
@@ -26,6 +26,7 @@ def get_server_credentials() -> dict:
             print(f"[config] Warning: could not read {CREDENTIALS_FILE.name}: {e}")
     return {}
 
+
 def save_server_credentials(creds: dict):
     """Merges and atomically persists credentials. Raises on failure so callers can report it."""
     existing = get_server_credentials()
@@ -34,6 +35,7 @@ def save_server_credentials(creds: dict):
     with open(tmp_file, "w", encoding="utf-8") as f:
         json.dump(existing, f, indent=2, ensure_ascii=False)
     os.replace(tmp_file, CREDENTIALS_FILE)
+
 
 # Path to self-contained bundled FFmpeg binary
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
@@ -44,56 +46,66 @@ ART_STYLES = {
         "name": "Studio Ghibli 2D",
         "description": "Lush watercolor backgrounds, hand-drawn anime aesthetic, warm magical lighting",
         "prompt_suffix": ", studio ghibli anime style, hayao miyazaki, lush watercolor backgrounds, soft whimsical lighting, highly detailed, vibrant colors, cinematic 2D animation masterpiece",
-        "icon": "🍃"
+        "icon": "🍃",
     },
     "pixar": {
         "name": "3D Pixar / Disney Style",
         "description": "Charming 3D stylized characters, soft volumetric lighting, raytraced rendering",
         "prompt_suffix": ", 3D animated film render, pixar disney style, cute expressive character design, raytraced global illumination, rich textures, cinematic lighting, 8k render, unreal engine 5 octane render",
-        "icon": "🧸"
+        "icon": "🧸",
     },
     "storybook": {
         "name": "Classic Storybook Fairy Tale",
         "description": "Delicate ink linework, gouache textures, vintage storybook illustration",
         "prompt_suffix": ", children storybook illustration, delicate ink line art, textured gouache painting, beatrix potter style, vintage fairy tale art, soft pastel color palette, whimsical and heartwarming",
-        "icon": "📖"
+        "icon": "📖",
     },
     "anime_cinematic": {
         "name": "Cinematic Shonen / Makoto Shinkai",
         "description": "Atmospheric skies, lens flares, dramatic hyper-detailed modern anime",
         "prompt_suffix": ", makoto shinkai style, breathtaking sky, dramatic lighting, detailed scenery, anime movie still, high quality 4k wallpaper, vibrant colors, emotional cinematic composition",
-        "icon": "✨"
+        "icon": "✨",
     },
     "cyberpunk": {
         "name": "Cyberpunk Neon Sci-Fi",
         "description": "Futuristic neon glows, rain-soaked reflections, high-tech anime",
         "prompt_suffix": ", cyberpunk anime art, glowing holographic neon lights, rainy futuristic cityscape, blade runner aesthetic, cinematic depth of field, detailed synthwave atmosphere",
-        "icon": "🏙️"
+        "icon": "🏙️",
     },
     "comic": {
         "name": "Comic Book (Dialogue in Image)",
         "description": "Bold ink contours, halftone shading & comic speech bubbles with dialogue text in images",
         "prompt_suffix": ", modern comic book graphic novel panel illustration, bold inked outlines, vibrant halftone pop-art colors, dynamic comic framing with clean spacious upper background, into the spiderverse comic book style, expressive comic characters, masterpiece graphic novel art",
-        "icon": "💬"
+        "icon": "💬",
     },
     "stick_figure": {
         "name": "Stick Figure Animation",
         "description": "Minimalist stickman figures, clean line art, dynamic action choreography (Alan Becker / Xiao Xiao style)",
         "prompt_suffix": ", minimalist stick figure animation style, iconic stickman character design, simple circular head, clean bold line-drawn limbs and torso, expressive stick figure posing and energetic action choreography, Alan Becker Animation vs Animator aesthetic, clean high-contrast minimalist background, crisp 2D vector lineart, action silhouette, textless, no photorealistic human faces, no detailed human skin, no complex rendered clothing, classic stickman animation masterpiece",
-        "icon": "🏃"
+        "icon": "🏃",
     },
     "realistic": {
         "name": "Realistic / Live-Action Cinema",
         "description": "Hyper-realistic cinema, 35mm photography, natural lighting & lifelike textures",
         "prompt_suffix": ", photorealistic RAW photograph, cinematic live-action film still, shot on 35mm lens, 8k resolution, ultra-detailed textures, natural dramatic lighting, shallow depth of field, sharp focus, masterpiece photography, lifelike realism",
-        "icon": "📸"
-    }
+        "icon": "📸",
+    },
+    "explainer_3d": {
+        "name": "3D Educational Cutaway / Explainer",
+        "description": "Blender-grade 3D cutaway models, clean studio lighting, glowing flow indicators & technical clarity",
+        "prompt_suffix": ", Blender 3D cinematic technical explainer render, precision cutaway cross-section 3D model, realistic PBR materials, clean studio rim lighting, clear visual flow indicators, sharp macro detail, uncluttered dark-slate studio background, scientific visualization masterpiece, no text, no watermark",
+        "icon": "🔬",
+    },
 }
 
 
 def is_comic_style(style_key: str) -> bool:
     """Returns True if the selected art style is Comic Book / Dialogue-in-Image mode."""
-    return (style_key or "").strip().lower() in ("comic", "comic_dialogue", "comic_book")
+    return (style_key or "").strip().lower() in (
+        "comic",
+        "comic_dialogue",
+        "comic_book",
+    )
 
 
 # Combinable Camera-on-Speaker (Dialogue Film) suffix that works with ANY Visual Animation Style
@@ -110,7 +122,7 @@ STORYBOARD_SKILLS = {
         "id": "auto",
         "name": "🤖 Auto-Detect Best Director Skill",
         "description": "Deep-analyzes your idea, script, or product to automatically apply the optimal storytelling & camera skill.",
-        "directive": ""
+        "directive": "",
     },
     "cinematic_storyteller": {
         "id": "cinematic_storyteller",
@@ -120,7 +132,7 @@ STORYBOARD_SKILLS = {
             "DIRECTOR SKILL — CINEMATIC 3-ACT STORYTELLER: Build a deeply resonant Pixar/Ghibli-grade emotional arc "
             "(Act I: evocative world setup & character desire; Act II: escalating causal stakes & heartfelt interaction; "
             "Act III: transformative climax & poetic visual resolution). Weave recurring visual motifs and atmospheric lighting progressions across scenes."
-        )
+        ),
     },
     "comedy_punchline_master": {
         "id": "comedy_punchline_master",
@@ -131,7 +143,7 @@ STORYBOARD_SKILLS = {
             "Establish the relatable premise clearly in early scenes, build ironic tension through back-and-forth character dialogue, "
             "cut to expressive facial reaction close-ups (`speaker_focus`), and dedicate the final climax scene to delivering the full, "
             "unabridged twist or punchline verbatim with vivid comical facial expressions (shock, wide eyes, deadpan, or laughter)."
-        )
+        ),
     },
     "dialogue_drama_director": {
         "id": "dialogue_drama_director",
@@ -141,7 +153,7 @@ STORYBOARD_SKILLS = {
             "DIRECTOR SKILL — SHOT-REVERSE-SHOT DIALOGUE DIRECTOR: Direct every conversational beat like an award-winning dialogue film. "
             "Alternate camera focus between active speakers using Medium Close-Ups and Over-The-Shoulder Shot-Reverse-Shot framing (`speaker_focus`). "
             "Segment each character's spoken lines cleanly in `dialogues` and highlight subtle micro-expressions, posture shifts, and eye contact."
-        )
+        ),
     },
     "comic_graphic_novel": {
         "id": "comic_graphic_novel",
@@ -150,7 +162,7 @@ STORYBOARD_SKILLS = {
         "directive": (
             "DIRECTOR SKILL — COMIC BOOK & SPEECH BUBBLE DIRECTOR: Compose each scene as a high-impact graphic novel panel with bold ink contours, "
             "dramatic perspective, upper headroom for speech balloons, and punchy, natural character dialogue embedded in comic speech bubbles."
-        )
+        ),
     },
     "viral_hook_retention": {
         "id": "viral_hook_retention",
@@ -159,7 +171,7 @@ STORYBOARD_SKILLS = {
         "directive": (
             "DIRECTOR SKILL — VIRAL HOOK & HIGH-RETENTION PACING: Open Scene 1 with an immediate visual and narrative hook that grabs attention "
             "in the first 1.5 seconds. Maintain relentless causal momentum where each scene ends on a micro-curiosity turn leading into the next beat."
-        )
+        ),
     },
     "commercial_conversion": {
         "id": "commercial_conversion",
@@ -169,76 +181,351 @@ STORYBOARD_SKILLS = {
             "DIRECTOR SKILL — HIGH-CONVERTING PRODUCT COMMERCIAL: Apply proven AIDA & Problem-Agitation-Solution advertising psychology: "
             "1) Relatable pain point or magnetic visual hook; 2) Pristine Hero Product reveal; 3) Macro engineering/ingredient proof of key specs; "
             "4) Aspirational lifestyle transformation; 5) Irresistible offer & urgent Call-to-Action."
-        )
-    }
+        ),
+    },
+    "educational_explainer": {
+        "id": "educational_explainer",
+        "name": "🔬 Educational 3D Explainer Director (How It Works / Cutaway)",
+        "description": "Fact-checked mental model: Exterior Overview → Cutaway / Mechanism → Cause & Effect Flows → Reassembled Whole.",
+        "directive": (
+            "DIRECTOR SKILL — EDUCATIONAL 3D EXPLAINER (BLENDER / SCIENTIFIC VISUALIZATION): Teach a clear, accurate mental model using one primary explainer pattern "
+            "(How It Works: input → transformation → output → control; How It Is Built: result → ordered stages → hidden layers → completed system; "
+            "Inside the System: exterior context → section cutaway → subsystem isolation → reassembled whole; Invisible Flows: consistent color/direction/speed visual grammar; "
+            "or Scale Journey / Cause & Effect). Preserve consistent camera orientation and spatial landmarks across cutaway and scale transitions. "
+            "Every scene's `acting_prompt` MUST show a meaningful subject-space physical process change (mechanism moving, fluid/energy flowing, layer assembling, cause before effect) rather than camera movement alone. "
+            "Start with a clean exterior overview and reassemble the complete system at the end."
+        ),
+    },
 }
 
 # Voices available (Vietnamese Dedicated Neural Personas, Google Gemini Multimodal Voices & International)
 VOICES = [
     # 1. Vietnamese Dedicated Neural Voices & Character Personas (Microsoft Edge Neural — 100% Free & Consistent)
-    {"id": "vi-VN-HoaiMyNeural", "name": "Hoài My (Việt Nam - Nữ chuẩn dịu dàng, tự nhiên)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
-    {"id": "vi-VN-NamMinhNeural", "name": "Nam Minh (Việt Nam - Nam chuẩn truyền cảm, ấm áp)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
-    {"id": "vi-VN-HoaiMyNeural-story", "name": "Thanh Hà Kể Chuyện (Việt Nam - Nữ êm đềm, sâu lắng, cổ tích)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
-    {"id": "vi-VN-NamMinhNeural-story", "name": "Bác Ba Kể Chuyện (Việt Nam - Nam trầm ấm, dân gian & hồi ức)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
-    {"id": "vi-VN-HoaiMyNeural-energetic", "name": "Linh Đan Hoạt Bát (Việt Nam - Nữ vui tươi, nhí nhảnh, thiếu nhi)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
-    {"id": "vi-VN-NamMinhNeural-energetic", "name": "Tí Hon / Minh Khôi (Việt Nam - Nam hài hước, lém lỉnh, truyện cười)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
-    {"id": "vi-VN-NamMinhNeural-heroic", "name": "Quan Đại Nhân / Hùng Dũng (Việt Nam - Nam uy nghiêm, cổ trang & sử thi)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
-    {"id": "vi-VN-HoaiMyNeural-sweet", "name": "Ngọc Lan Ngọt Ngào (Việt Nam - Nữ trong trẻo, thơ mộng & cảm xúc)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
-    {"id": "vi-VN-HoaiMyNeural-drama", "name": "Mai Phương Điện Ảnh (Việt Nam - Nữ kịch tính, sâu sắc & tâm lý)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
-    {"id": "vi-VN-NamMinhNeural-documentary", "name": "Hoàng Quân Thuyết Minh (Việt Nam - Nam điềm đạm, chững chạc, tài liệu)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
-    {"id": "vi-VN-HoaiMyNeural-commercial", "name": "Minh Anh Review (Việt Nam - Nữ năng động, sắc nét, Quảng cáo & Reels)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
-    {"id": "vi-VN-NamMinhNeural-commercial", "name": "Quốc Khánh Review (Việt Nam - Nam hiện đại, cuốn hút, Quảng cáo & TikTok)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
-    {"id": "vi-VN-HoaiMyNeural-elder", "name": "Bà Tiên / Bà Ngoại (Việt Nam - Nữ hiền từ, chậm rãi, cổ tích)", "lang": "vi", "gender": "Female", "group": "vn_neural"},
-    {"id": "vi-VN-NamMinhNeural-elder", "name": "Ông Bụt / Cụ Già Làng (Việt Nam - Nam trầm khàn, thông thái, dân gian)", "lang": "vi", "gender": "Male", "group": "vn_neural"},
-
+    {
+        "id": "vi-VN-HoaiMyNeural",
+        "name": "Hoài My (Việt Nam - Nữ chuẩn dịu dàng, tự nhiên)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-NamMinhNeural",
+        "name": "Nam Minh (Việt Nam - Nam chuẩn truyền cảm, ấm áp)",
+        "lang": "vi",
+        "gender": "Male",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-HoaiMyNeural-story",
+        "name": "Thanh Hà Kể Chuyện (Việt Nam - Nữ êm đềm, sâu lắng, cổ tích)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-NamMinhNeural-story",
+        "name": "Bác Ba Kể Chuyện (Việt Nam - Nam trầm ấm, dân gian & hồi ức)",
+        "lang": "vi",
+        "gender": "Male",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-HoaiMyNeural-energetic",
+        "name": "Linh Đan Hoạt Bát (Việt Nam - Nữ vui tươi, nhí nhảnh, thiếu nhi)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-NamMinhNeural-energetic",
+        "name": "Tí Hon / Minh Khôi (Việt Nam - Nam hài hước, lém lỉnh, truyện cười)",
+        "lang": "vi",
+        "gender": "Male",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-NamMinhNeural-heroic",
+        "name": "Quan Đại Nhân / Hùng Dũng (Việt Nam - Nam uy nghiêm, cổ trang & sử thi)",
+        "lang": "vi",
+        "gender": "Male",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-HoaiMyNeural-sweet",
+        "name": "Ngọc Lan Ngọt Ngào (Việt Nam - Nữ trong trẻo, thơ mộng & cảm xúc)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-HoaiMyNeural-drama",
+        "name": "Mai Phương Điện Ảnh (Việt Nam - Nữ kịch tính, sâu sắc & tâm lý)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-NamMinhNeural-documentary",
+        "name": "Hoàng Quân Thuyết Minh (Việt Nam - Nam điềm đạm, chững chạc, tài liệu)",
+        "lang": "vi",
+        "gender": "Male",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-HoaiMyNeural-commercial",
+        "name": "Minh Anh Review (Việt Nam - Nữ năng động, sắc nét, Quảng cáo & Reels)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-NamMinhNeural-commercial",
+        "name": "Quốc Khánh Review (Việt Nam - Nam hiện đại, cuốn hút, Quảng cáo & TikTok)",
+        "lang": "vi",
+        "gender": "Male",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-HoaiMyNeural-elder",
+        "name": "Bà Tiên / Bà Ngoại (Việt Nam - Nữ hiền từ, chậm rãi, cổ tích)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_neural",
+    },
+    {
+        "id": "vi-VN-NamMinhNeural-elder",
+        "name": "Ông Bụt / Cụ Già Làng (Việt Nam - Nam trầm khàn, thông thái, dân gian)",
+        "lang": "vi",
+        "gender": "Male",
+        "group": "vn_neural",
+    },
     # 2. Google Gemini Native Multimodal Voices (Fluent in Vietnamese & English)
-    {"id": "gemini-Aoede", "name": "✨ Gemini Aoede (Nữ truyền cảm - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Kore", "name": "✨ Gemini Kore (Nữ nhẹ nhàng kể chuyện - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Leda", "name": "✨ Gemini Leda (Nữ trẻ trung, trong sáng - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Zephyr", "name": "✨ Gemini Zephyr (Nữ tươi sáng, năng động - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Callirrhoe", "name": "✨ Gemini Callirrhoe (Nữ dịu dàng, sâu lắng - VN / Global)", "lang": "vi", "gender": "Female", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Puck", "name": "✨ Gemini Puck (Nam hoạt bát, hài hước - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Charon", "name": "✨ Gemini Charon (Nam trầm ấm điện ảnh - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Fenrir", "name": "✨ Gemini Fenrir (Nam hào hùng, uy lực - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Orus", "name": "✨ Gemini Orus (Nam điềm đạm, chững chạc - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
-    {"id": "gemini-Enceladus", "name": "✨ Gemini Enceladus (Nam truyền cảm, sâu sắc - VN / Global)", "lang": "vi", "gender": "Male", "provider": "gemini", "group": "vn_gemini"},
-
+    {
+        "id": "gemini-Aoede",
+        "name": "✨ Gemini Aoede (Nữ truyền cảm - VN / Global)",
+        "lang": "vi",
+        "gender": "Female",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Kore",
+        "name": "✨ Gemini Kore (Nữ nhẹ nhàng kể chuyện - VN / Global)",
+        "lang": "vi",
+        "gender": "Female",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Leda",
+        "name": "✨ Gemini Leda (Nữ trẻ trung, trong sáng - VN / Global)",
+        "lang": "vi",
+        "gender": "Female",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Zephyr",
+        "name": "✨ Gemini Zephyr (Nữ tươi sáng, năng động - VN / Global)",
+        "lang": "vi",
+        "gender": "Female",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Callirrhoe",
+        "name": "✨ Gemini Callirrhoe (Nữ dịu dàng, sâu lắng - VN / Global)",
+        "lang": "vi",
+        "gender": "Female",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Puck",
+        "name": "✨ Gemini Puck (Nam hoạt bát, hài hước - VN / Global)",
+        "lang": "vi",
+        "gender": "Male",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Charon",
+        "name": "✨ Gemini Charon (Nam trầm ấm điện ảnh - VN / Global)",
+        "lang": "vi",
+        "gender": "Male",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Fenrir",
+        "name": "✨ Gemini Fenrir (Nam hào hùng, uy lực - VN / Global)",
+        "lang": "vi",
+        "gender": "Male",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Orus",
+        "name": "✨ Gemini Orus (Nam điềm đạm, chững chạc - VN / Global)",
+        "lang": "vi",
+        "gender": "Male",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
+    {
+        "id": "gemini-Enceladus",
+        "name": "✨ Gemini Enceladus (Nam truyền cảm, sâu sắc - VN / Global)",
+        "lang": "vi",
+        "gender": "Male",
+        "provider": "gemini",
+        "group": "vn_gemini",
+    },
     # 3. Google Translate TTS Vietnamese Voices
-    {"id": "gtts-vi", "name": "Google Voice VN (Việt Nam - Nữ chuẩn Google TTS)", "lang": "vi", "gender": "Female", "group": "vn_gtts"},
-    {"id": "gtts-vi-fast", "name": "Google Voice VN Nhanh (Việt Nam - Nữ đọc nhanh Review / Shorts)", "lang": "vi", "gender": "Female", "group": "vn_gtts"},
-
+    {
+        "id": "gtts-vi",
+        "name": "Google Voice VN (Việt Nam - Nữ chuẩn Google TTS)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_gtts",
+    },
+    {
+        "id": "gtts-vi-fast",
+        "name": "Google Voice VN Nhanh (Việt Nam - Nữ đọc nhanh Review / Shorts)",
+        "lang": "vi",
+        "gender": "Female",
+        "group": "vn_gtts",
+    },
     # 4. International Voices (English, Japanese, French, Spanish)
-    {"id": "en-US-ChristopherNeural", "name": "Christopher (US - Storyteller Male)", "lang": "en", "gender": "Male", "group": "intl"},
-    {"id": "en-US-JennyNeural", "name": "Jenny (US - Warm Expressive Female)", "lang": "en", "gender": "Female", "group": "intl"},
-    {"id": "en-US-GuyNeural", "name": "Guy (US - Casual Friendly Male)", "lang": "en", "gender": "Male", "group": "intl"},
-    {"id": "en-US-AriaNeural", "name": "Aria (US - Clear Narrator Female)", "lang": "en", "gender": "Female", "group": "intl"},
-    {"id": "en-GB-SoniaNeural", "name": "Sonia (British - Elegant Female)", "lang": "en", "gender": "Female", "group": "intl"},
-    {"id": "en-GB-RyanNeural", "name": "Ryan (British - Documentary Male)", "lang": "en", "gender": "Male", "group": "intl"},
-    {"id": "ja-JP-NanamiNeural", "name": "Nanami (Japanese - Female)", "lang": "ja", "gender": "Female", "group": "intl"},
-    {"id": "ja-JP-KeitaNeural", "name": "Keita (Japanese - Male)", "lang": "ja", "gender": "Male", "group": "intl"},
-    {"id": "fr-FR-DeniseNeural", "name": "Denise (French - Female)", "lang": "fr", "gender": "Female", "group": "intl"},
-    {"id": "es-ES-ElviraNeural", "name": "Elvira (Spanish - Female)", "lang": "es", "gender": "Female", "group": "intl"},
+    {
+        "id": "en-US-ChristopherNeural",
+        "name": "Christopher (US - Storyteller Male)",
+        "lang": "en",
+        "gender": "Male",
+        "group": "intl",
+    },
+    {
+        "id": "en-US-JennyNeural",
+        "name": "Jenny (US - Warm Expressive Female)",
+        "lang": "en",
+        "gender": "Female",
+        "group": "intl",
+    },
+    {
+        "id": "en-US-GuyNeural",
+        "name": "Guy (US - Casual Friendly Male)",
+        "lang": "en",
+        "gender": "Male",
+        "group": "intl",
+    },
+    {
+        "id": "en-US-AriaNeural",
+        "name": "Aria (US - Clear Narrator Female)",
+        "lang": "en",
+        "gender": "Female",
+        "group": "intl",
+    },
+    {
+        "id": "en-GB-SoniaNeural",
+        "name": "Sonia (British - Elegant Female)",
+        "lang": "en",
+        "gender": "Female",
+        "group": "intl",
+    },
+    {
+        "id": "en-GB-RyanNeural",
+        "name": "Ryan (British - Documentary Male)",
+        "lang": "en",
+        "gender": "Male",
+        "group": "intl",
+    },
+    {
+        "id": "ja-JP-NanamiNeural",
+        "name": "Nanami (Japanese - Female)",
+        "lang": "ja",
+        "gender": "Female",
+        "group": "intl",
+    },
+    {
+        "id": "ja-JP-KeitaNeural",
+        "name": "Keita (Japanese - Male)",
+        "lang": "ja",
+        "gender": "Male",
+        "group": "intl",
+    },
+    {
+        "id": "fr-FR-DeniseNeural",
+        "name": "Denise (French - Female)",
+        "lang": "fr",
+        "gender": "Female",
+        "group": "intl",
+    },
+    {
+        "id": "es-ES-ElviraNeural",
+        "name": "Elvira (Spanish - Female)",
+        "lang": "es",
+        "gender": "Female",
+        "group": "intl",
+    },
 ]
 
 # Camera Motion presets for Ken Burns effect
 CAMERA_MOTIONS = [
-    {"id": "speaker_focus", "name": "Speaker Close-Up Focus", "description": "Smoothly pushes in on the speaking character's face & expression"},
-    {"id": "zoom_in", "name": "Smooth Zoom In", "description": "Slowly moves in toward the focal subject"},
-    {"id": "zoom_out", "name": "Reveal Zoom Out", "description": "Starts close and widens to reveal the scene"},
-    {"id": "pan_left", "name": "Cinematic Pan Left", "description": "Glides camera horizontally leftward"},
-    {"id": "pan_right", "name": "Cinematic Pan Right", "description": "Glides camera horizontally rightward"},
-    {"id": "subtle_drift", "name": "Subtle Drift", "description": "Gentle atmospheric ambient drift"}
+    {
+        "id": "speaker_focus",
+        "name": "Speaker Close-Up Focus",
+        "description": "Smoothly pushes in on the speaking character's face & expression",
+    },
+    {
+        "id": "zoom_in",
+        "name": "Smooth Zoom In",
+        "description": "Slowly moves in toward the focal subject",
+    },
+    {
+        "id": "zoom_out",
+        "name": "Reveal Zoom Out",
+        "description": "Starts close and widens to reveal the scene",
+    },
+    {
+        "id": "pan_left",
+        "name": "Cinematic Pan Left",
+        "description": "Glides camera horizontally leftward",
+    },
+    {
+        "id": "pan_right",
+        "name": "Cinematic Pan Right",
+        "description": "Glides camera horizontally rightward",
+    },
+    {
+        "id": "subtle_drift",
+        "name": "Subtle Drift",
+        "description": "Gentle atmospheric ambient drift",
+    },
 ]
 
 # Supported LLM Providers
 AI_PROVIDERS = {
+    "antigravity": {
+        "name": "Antigravity AI (Local CLI)",
+        "default_model": "default",
+        "models": ["default"],
+        "icon": "🚀",
+        "key_env": "ANTIGRAVITY_CLI",
+        "placeholder": "Local CLI (~/.gemini/bin/agy) — Signed in, No API Key Required",
+    },
     "gemini": {
         "name": "Google Gemini (Official API Key)",
         "default_model": "gemini-3.5-flash",
-        "models": ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-3.8-flash"],
+        "models": [
+            "gemini-3.5-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash-lite",
+            "gemini-3.8-flash",
+        ],
         "icon": "✨",
         "key_env": "GEMINI_API_KEY",
-        "placeholder": "AIzaSy..."
+        "placeholder": "AIzaSy...",
     },
     "gemini_cookie": {
         "name": "Gemini Pro Web (Cookie / No API Quota)",
@@ -246,7 +533,7 @@ AI_PROVIDERS = {
         "models": ["default", "gemini-2.5-pro", "gemini-2.5-flash"],
         "icon": "🍪",
         "key_env": "GEMINI_COOKIE",
-        "placeholder": "Paste __Secure-1PSID or full Cookie string..."
+        "placeholder": "Paste __Secure-1PSID or full Cookie string...",
     },
     "openai": {
         "name": "OpenAI",
@@ -254,7 +541,7 @@ AI_PROVIDERS = {
         "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
         "icon": "🟢",
         "key_env": "OPENAI_API_KEY",
-        "placeholder": "sk-proj-..."
+        "placeholder": "sk-proj-...",
     },
     "claude": {
         "name": "Anthropic Claude",
@@ -262,7 +549,7 @@ AI_PROVIDERS = {
         "models": ["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-5"],
         "icon": "🟣",
         "key_env": "ANTHROPIC_API_KEY",
-        "placeholder": "sk-ant-..."
+        "placeholder": "sk-ant-...",
     },
     "deepseek": {
         "name": "DeepSeek",
@@ -270,16 +557,21 @@ AI_PROVIDERS = {
         "models": ["deepseek-chat", "deepseek-reasoner"],
         "icon": "🐋",
         "key_env": "DEEPSEEK_API_KEY",
-        "placeholder": "sk-..."
+        "placeholder": "sk-...",
     },
     "nvidia": {
         "name": "NVIDIA NIM",
         "default_model": "meta/llama-3.1-70b-instruct",
-        "models": ["meta/llama-3.1-70b-instruct", "meta/llama-3.3-70b-instruct", "deepseek-ai/deepseek-r1", "nvidia/nemotron-4-340b-instruct"],
+        "models": [
+            "meta/llama-3.1-70b-instruct",
+            "meta/llama-3.3-70b-instruct",
+            "deepseek-ai/deepseek-r1",
+            "nvidia/nemotron-4-340b-instruct",
+        ],
         "icon": "⚡",
         "key_env": "NVIDIA_API_KEY",
-        "placeholder": "nvapi-..."
-    }
+        "placeholder": "nvapi-...",
+    },
 }
 
 # Image Painting Engine Modes
@@ -288,165 +580,336 @@ IMAGE_MODES = {
         "id": "antigravity",
         "name": "Antigravity AI (Local CLI)",
         "description": "High-fidelity AI image generation powered directly by your local Antigravity CLI (agy)",
-        "icon": "🚀"
+        "icon": "🚀",
     },
     "gemini": {
         "id": "gemini",
         "name": "Google Gemini / Imagen 3",
         "description": "High-fidelity Google Imagen 3 visuals powered by your Gemini Key or Cookie",
-        "icon": "✨"
+        "icon": "✨",
     },
     "pollinations": {
         "id": "pollinations",
         "name": "Cloud AI Art (Pollinations Flux)",
         "description": "Free Cloud AI Art powered by Pollinations Flux — no API key required",
-        "icon": "☁️"
+        "icon": "☁️",
     },
     "flowkit": {
         "id": "flowkit",
         "name": "Google Flow Bridge (Character Refs)",
         "description": "Paints via Google Flow Chrome Extension using uploaded Character Reference Images",
-        "icon": "🌊"
+        "icon": "🌊",
     },
     "manual": {
         "id": "manual",
         "name": "Storyboard Only (No AI Painting)",
         "description": "Zero image AI tokens consumed — uses clean SVG storyboard placeholders and manual user image uploads",
-        "icon": "📝"
-    }
+        "icon": "📝",
+    },
 }
 
-# Real Activity-Based Model Ratings (persisted in output/model_activity_ratings.json)
-# Only models/engines actually present in the app's lists are rated, strictly from real app runs.
-VALID_RATING_ACTIVITIES = ("characters", "storyboard", "portrait", "scene", "refine", "video")
-
-def compute_real_activity_score(stats: dict) -> float:
-    """Computes a real 0.0-5.0 star score purely from actual app execution history."""
-    ok = int(stats.get("successes", 0) or 0)
-    fail = int(stats.get("failures", 0) or 0)
-    total = ok + fail
-    if total <= 0:
-        return 0.0
-    # Reliability-first Bayesian smoothed score (1-5 scale) with slight speed bonus for fast reliable models
-    reliability = (ok + 0.5) / (total + 1.0)
-    score = reliability * 5.0
-    avg_ms = float(stats.get("avg_duration_ms", 0) or 0)
-    if ok > 0 and avg_ms > 0:
-        # Up to +0.2 bonus for fast responses (<5s), -0.15 for very slow (>60s)
-        if avg_ms <= 5000:
-            score += 0.15
-        elif avg_ms > 60000:
-            score -= 0.15
-    return round(max(0.5, min(5.0, score)), 2)
-
-def get_model_activity_ratings() -> dict:
-    """Loads persisted real activity ratings and enriches each entry with computed score & best-per-activity."""
-    raw = {}
-    if MODEL_RATINGS_FILE.exists():
-        try:
-            with open(MODEL_RATINGS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    raw = data
-        except Exception as e:
-            print(f"[config] Warning: could not read {MODEL_RATINGS_FILE.name}: {e}")
-
-    activities = raw.get("activities", {}) if isinstance(raw.get("activities"), dict) else {}
-    best_by_activity = {}
-    for act in VALID_RATING_ACTIVITIES:
-        act_map = activities.get(act, {})
-        if not isinstance(act_map, dict):
-            act_map = {}
-            activities[act] = act_map
-        best_key = None
-        best_tuple = None
-        for m_key, st in act_map.items():
-            if not isinstance(st, dict):
-                continue
-            ok = int(st.get("successes", 0) or 0)
-            fail = int(st.get("failures", 0) or 0)
-            st["total_runs"] = ok + fail
-            st["score"] = compute_real_activity_score(st)
-            st["success_rate"] = round((ok / (ok + fail)) * 100, 1) if (ok + fail) > 0 else 0.0
-            if ok > 0:
-                avg_ms = float(st.get("avg_duration_ms", 999999) or 999999)
-                rank_tuple = (st["score"], ok, -fail, -avg_ms)
-                if best_tuple is None or rank_tuple > best_tuple:
-                    best_tuple = rank_tuple
-                    best_key = m_key
-        if best_key:
-            best_by_activity[act] = {
-                "key": best_key,
-                "provider": act_map[best_key].get("provider", ""),
-                "model": act_map[best_key].get("model", ""),
-                "score": act_map[best_key].get("score", 0.0),
-                "successes": act_map[best_key].get("successes", 0),
-                "failures": act_map[best_key].get("failures", 0),
-                "avg_duration_ms": act_map[best_key].get("avg_duration_ms", 0),
-            }
-    return {"activities": activities, "best_by_activity": best_by_activity}
-
-def record_model_activity_rating(
-    activity: str,
-    provider: str,
-    model: str = "",
-    success: bool = True,
-    duration_ms: int = 0,
-    error: str = ""
-) -> dict:
-    """Records a real model/engine execution result for an activity and atomically persists it."""
-    import time as _time
-    act = (activity or "").strip().lower()
-    if act not in VALID_RATING_ACTIVITIES:
-        return get_model_activity_ratings()
-    prov = (provider or "").strip().lower()
-    mod = (model or "").strip()
-    if not prov:
-        return get_model_activity_ratings()
-    m_key = f"{prov}::{mod}" if mod else prov
-
-    current = get_model_activity_ratings()
-    activities = current["activities"]
-    act_map = activities.setdefault(act, {})
-    entry = act_map.get(m_key, {
-        "provider": prov,
-        "model": mod,
-        "successes": 0,
-        "failures": 0,
-        "total_duration_ms": 0,
-        "avg_duration_ms": 0,
-    })
-    if success:
-        entry["successes"] = int(entry.get("successes", 0)) + 1
-    else:
-        entry["failures"] = int(entry.get("failures", 0)) + 1
-
-    dur = max(0, int(duration_ms or 0))
-    runs = entry["successes"] + entry["failures"]
-    if dur > 0:
-        entry["total_duration_ms"] = int(entry.get("total_duration_ms", 0)) + dur
-        entry["avg_duration_ms"] = int(entry["total_duration_ms"] / max(1, runs))
-    entry["last_status"] = "success" if success else "error"
-    entry["last_error"] = "" if success else str(error or "")[:200]
-    entry["last_used_at"] = int(_time.time())
-    entry["total_runs"] = runs
-    entry["score"] = compute_real_activity_score(entry)
-    act_map[m_key] = entry
-
-    tmp_file = MODEL_RATINGS_FILE.with_suffix(".json.tmp")
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump({"activities": activities}, f, indent=2, ensure_ascii=False)
-    os.replace(tmp_file, MODEL_RATINGS_FILE)
-    return get_model_activity_ratings()
-
-def reset_model_activity_ratings() -> dict:
-    """Clears all persisted real activity ratings."""
-    if MODEL_RATINGS_FILE.exists():
-        try:
-            MODEL_RATINGS_FILE.unlink()
-        except OSError:
-            pass
-    return get_model_activity_ratings()
+# Activity-Based Model & Engine Ratings (1.0 - 10.0 scale)
+# Used to show per-activity star ratings and automatically select the best default model for each step.
+ACTIVITY_MODEL_RATINGS = {
+    "characters": {
+        "label": "Step 1A: Character Analysis & Create",
+        "best_provider": "antigravity",
+        "best_model": "default",
+        "ratings": [
+            {
+                "provider": "antigravity",
+                "model": "default",
+                "score": 9.8,
+                "tier": "Best",
+                "reason": "Direct local Antigravity AI execution (signed-in, no API quota or cookie expiry)",
+                "recommended": True,
+            },
+            {
+                "provider": "gemini",
+                "model": "gemini-3.5-flash",
+                "score": 9.6,
+                "tier": "Best",
+                "reason": "Fastest structured cast JSON & Vietnamese/English accuracy",
+                "recommended": True,
+            },
+            {
+                "provider": "claude",
+                "model": "claude-sonnet-4-5",
+                "score": 9.5,
+                "tier": "Great",
+                "reason": "Rich character visual traits & consistent dialogue voices",
+            },
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "score": 9.4,
+                "tier": "Great",
+                "reason": "Reliable structured character extraction",
+            },
+            {
+                "provider": "gemini",
+                "model": "gemini-3.1-flash-lite",
+                "score": 9.1,
+                "tier": "Fast",
+                "reason": "Ultra-fast lightweight character parsing",
+            },
+            {
+                "provider": "deepseek",
+                "model": "deepseek-chat",
+                "score": 8.9,
+                "tier": "Good",
+                "reason": "Strong low-cost multilingual extraction",
+            },
+            {
+                "provider": "gemini_cookie",
+                "model": "gemini-flash-advanced",
+                "score": 8.5,
+                "tier": "Web",
+                "reason": "No API quota; depends on browser cookie session",
+            },
+            {
+                "provider": "builtin",
+                "model": "story_architect",
+                "score": 6.5,
+                "tier": "Offline",
+                "reason": "Zero-cost local heuristic parser",
+            },
+        ],
+    },
+    "storyboard": {
+        "label": "Step 1B: Storyboard & Screenplay",
+        "best_provider": "antigravity",
+        "best_model": "default",
+        "ratings": [
+            {
+                "provider": "antigravity",
+                "model": "default",
+                "score": 9.8,
+                "tier": "Best",
+                "reason": "Direct local Antigravity AI execution (signed-in, no API quota or cookie expiry)",
+                "recommended": True,
+            },
+            {
+                "provider": "gemini",
+                "model": "gemini-3.5-flash",
+                "score": 9.7,
+                "tier": "Best",
+                "reason": "Best balance of cinematic pacing, dialogue & valid JSON",
+                "recommended": True,
+            },
+            {
+                "provider": "gemini",
+                "model": "gemini-2.5-pro",
+                "score": 9.6,
+                "tier": "Pro",
+                "reason": "Deep dramatic reasoning for complex multi-act stories",
+            },
+            {
+                "provider": "claude",
+                "model": "claude-sonnet-4-5",
+                "score": 9.6,
+                "tier": "Pro",
+                "reason": "Award-grade emotional narration & vivid scene prose",
+            },
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "score": 9.3,
+                "tier": "Great",
+                "reason": "Consistent multi-scene JSON formatting",
+            },
+            {
+                "provider": "deepseek",
+                "model": "deepseek-reasoner",
+                "score": 9.0,
+                "tier": "Good",
+                "reason": "Strong plot structure reasoning",
+            },
+            {
+                "provider": "gemini_cookie",
+                "model": "gemini-pro-advanced",
+                "score": 8.6,
+                "tier": "Web",
+                "reason": "Pro web model without API quota",
+            },
+            {
+                "provider": "builtin",
+                "model": "story_architect",
+                "score": 6.8,
+                "tier": "Offline",
+                "reason": "Instant offline storyboard generator",
+            },
+        ],
+    },
+    "portrait": {
+        "label": "Step 1C/2A: Character Portrait Painting",
+        "best_engine": "antigravity",
+        "ratings": [
+            {
+                "engine": "antigravity",
+                "score": 9.8,
+                "tier": "Best",
+                "reason": "Top portrait fidelity via local Antigravity CLI (no API quota/cookie expiry)",
+                "recommended": True,
+            },
+            {
+                "engine": "flowkit",
+                "score": 9.4,
+                "tier": "Great",
+                "reason": "High quality via Google Flow Chrome Extension",
+            },
+            {
+                "engine": "gemini_api",
+                "score": 9.0,
+                "tier": "Great",
+                "reason": "Official Gemini multimodal image API (requires billing quota)",
+            },
+            {
+                "engine": "openai",
+                "score": 8.8,
+                "tier": "Good",
+                "reason": "Clean stylized DALL-E 3 portraits",
+            },
+            {
+                "engine": "pollinations",
+                "score": 8.4,
+                "tier": "Free",
+                "reason": "Free Cloud AI Art (Pollinations Flux), no key required",
+            },
+            {
+                "engine": "gemini_cookie",
+                "score": 7.8,
+                "tier": "Web",
+                "reason": "Requires authenticated non-rotated Google web cookie",
+            },
+            {
+                "engine": "manual",
+                "score": 5.0,
+                "tier": "Manual",
+                "reason": "Placeholder only — upload your own character art",
+            },
+        ],
+    },
+    "scene": {
+        "label": "Step 2B: Scene Keyframe Painting",
+        "best_engine": "antigravity",
+        "ratings": [
+            {
+                "engine": "antigravity",
+                "score": 9.8,
+                "tier": "Best",
+                "reason": "Best scene art & character consistency via local Antigravity CLI",
+                "recommended": True,
+            },
+            {
+                "engine": "flowkit",
+                "score": 9.5,
+                "tier": "Great",
+                "reason": "Native Google Flow character-reference scene painting",
+            },
+            {
+                "engine": "gemini_api",
+                "score": 9.0,
+                "tier": "Great",
+                "reason": "Multimodal character-ref API (requires billing quota)",
+            },
+            {
+                "engine": "openai",
+                "score": 8.7,
+                "tier": "Good",
+                "reason": "Crisp DALL-E 3 scene keyframes",
+            },
+            {
+                "engine": "pollinations",
+                "score": 8.4,
+                "tier": "Free",
+                "reason": "Free Cloud AI Art (Pollinations Flux), fast & no key",
+            },
+            {
+                "engine": "gemini_cookie",
+                "score": 7.8,
+                "tier": "Web",
+                "reason": "Requires authenticated non-rotated Google web cookie",
+            },
+            {
+                "engine": "manual",
+                "score": 5.0,
+                "tier": "Manual",
+                "reason": "Storyboard-only placeholders / manual uploads",
+            },
+        ],
+    },
+    "refine": {
+        "label": "Step 2C: Prompt Refine & Dialogue Sync",
+        "best_provider": "antigravity",
+        "best_model": "default",
+        "ratings": [
+            {
+                "provider": "antigravity",
+                "model": "default",
+                "score": 9.8,
+                "tier": "Best",
+                "reason": "Direct local Antigravity AI execution (signed-in, no API quota or cookie expiry)",
+                "recommended": True,
+            },
+            {
+                "provider": "gemini",
+                "model": "gemini-3.5-flash",
+                "score": 9.5,
+                "tier": "Best",
+                "reason": "Fast, cinematic 8-second acting prompt upgrades",
+                "recommended": True,
+            },
+            {
+                "provider": "gemini",
+                "model": "gemini-3.1-flash-lite",
+                "score": 9.2,
+                "tier": "Fast",
+                "reason": "Sub-second prompt polishing",
+            },
+            {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "score": 9.0,
+                "tier": "Fast",
+                "reason": "Quick & clean prompt formatting",
+            },
+            {
+                "provider": "claude",
+                "model": "claude-haiku-4-5",
+                "score": 9.0,
+                "tier": "Fast",
+                "reason": "Sharp cinematic prose refinement",
+            },
+            {
+                "provider": "builtin",
+                "model": "story_architect",
+                "score": 7.5,
+                "tier": "Offline",
+                "reason": "Instant built-in director prompt formatter",
+            },
+        ],
+    },
+    "video": {
+        "label": "Step 3: Video Motion & Render Engine",
+        "best_engine": "ken_burns",
+        "ratings": [
+            {
+                "engine": "ken_burns",
+                "score": 9.4,
+                "tier": "Best",
+                "reason": "Fast, 100% reliable local 30 FPS 2.5D Ken Burns + voice + captions",
+                "recommended": True,
+            },
+            {
+                "engine": "flowkit_veo",
+                "score": 9.6,
+                "tier": "AI Acting",
+                "reason": "Full AI character acting via Google Veo 3 (requires FlowKit Extension)",
+            },
+        ],
+    },
+}
 
 # Target Video Duration Presets
 DURATION_PRESETS = [
@@ -455,7 +918,7 @@ DURATION_PRESETS = [
     {"seconds": 90, "label": "90s — 1.5 Minutes Spotlight"},
     {"seconds": 120, "label": "120s — 2 Minutes Mini Film"},
     {"seconds": 180, "label": "180s — 3 Minutes Storybook"},
-    {"seconds": 300, "label": "300s — 5 Minutes Feature Short"}
+    {"seconds": 300, "label": "300s — 5 Minutes Feature Short"},
 ]
 
 # Video Dimensions & Aspect Ratio Presets
@@ -468,7 +931,7 @@ VIDEO_DIMENSIONS = {
         "icon": "🖥️",
         "ratio_css": "16 / 9",
         "dalle_size": "1792x1024",
-        "description": "Standard widescreen landscape HD (1280x720)"
+        "description": "Standard widescreen landscape HD (1280x720)",
     },
     "9:16": {
         "id": "9:16",
@@ -478,7 +941,7 @@ VIDEO_DIMENSIONS = {
         "icon": "📱",
         "ratio_css": "9 / 16",
         "dalle_size": "1024x1792",
-        "description": "Full vertical portrait for mobile devices (720x1280)"
+        "description": "Full vertical portrait for mobile devices (720x1280)",
     },
     "1:1": {
         "id": "1:1",
@@ -488,7 +951,7 @@ VIDEO_DIMENSIONS = {
         "icon": "🔲",
         "ratio_css": "1 / 1",
         "dalle_size": "1024x1024",
-        "description": "Square feed format (720x720)"
+        "description": "Square feed format (720x720)",
     },
     "4:3": {
         "id": "4:3",
@@ -498,7 +961,7 @@ VIDEO_DIMENSIONS = {
         "icon": "📺",
         "ratio_css": "4 / 3",
         "dalle_size": "1024x1024",
-        "description": "Classic standard broadcast format (960x720)"
+        "description": "Classic standard broadcast format (960x720)",
     },
     "3:4": {
         "id": "3:4",
@@ -508,7 +971,7 @@ VIDEO_DIMENSIONS = {
         "icon": "📸",
         "ratio_css": "3 / 4",
         "dalle_size": "1024x1024",
-        "description": "Tall vertical portrait format (720x960)"
+        "description": "Tall vertical portrait format (720x960)",
     },
     "21:9": {
         "id": "21:9",
@@ -518,8 +981,6 @@ VIDEO_DIMENSIONS = {
         "icon": "🎬",
         "ratio_css": "21 / 9",
         "dalle_size": "1792x1024",
-        "description": "Anamorphic panoramic cinema format (1680x720)"
-    }
+        "description": "Anamorphic panoramic cinema format (1680x720)",
+    },
 }
-
-

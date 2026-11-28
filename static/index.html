@@ -1,16 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AniStory AI — Autonomous Animation Studio Agent</title>
-  <meta name="description" content="Generate high-quality 2D animated videos, storybooks, and short films directly from ideas using autonomous AI agents.">
+  <meta name="description"
+    content="Generate high-quality 2D animated videos, storybooks, and short films directly from ideas using autonomous AI agents.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
   <link rel="stylesheet" href="/css/style.css?v=17">
 </head>
+
 <body>
   <!-- Ambient background glow elements -->
   <div class="ambient-glow glow-1"></div>
@@ -21,7 +27,8 @@
     <!-- Navbar Header with Integrated Compact Stepper -->
     <header class="studio-header compact-nav-header">
       <div class="header-brand-wrap">
-        <div id="brandHomeLink" class="brand-group clickable-brand" role="button" tabindex="0" title="Return to Homepage (AniStory AI)">
+        <div id="brandHomeLink" class="brand-group clickable-brand" role="button" tabindex="0"
+          title="Return to Homepage (AniStory AI)">
           <div class="brand-logo-icon">
             <span class="icon-glyph">🎬</span>
           </div>
@@ -64,20 +71,26 @@
       </nav>
 
       <div class="header-actions">
-        <button id="btnNavHome" class="glass-btn secondary-btn nav-home-btn compact-header-btn" title="Back to Homepage / Concept & Style">
+        <button id="btnNavHome" class="glass-btn secondary-btn nav-home-btn compact-header-btn"
+          title="Back to Homepage / Concept & Style">
           <span class="btn-icon">🏠</span> <span class="header-btn-text">Home</span>
         </button>
-        <button id="btnNavNewStory" type="button" class="glass-btn secondary-btn compact-header-btn" style="border-color:rgba(16,185,129,0.45); color:#6ee7b7;" title="Start a fresh new story (clears Title, Idea, Paste &amp; Characters)">
+        <button id="btnNavNewStory" type="button" class="glass-btn secondary-btn compact-header-btn"
+          style="border-color:rgba(16,185,129,0.45); color:#6ee7b7;"
+          title="Start a fresh new story (clears Title, Idea, Paste &amp; Characters)">
           <span class="btn-icon">➕</span> <span class="header-btn-text">New Story</span>
         </button>
-        <button id="btnHeaderTasks" class="glass-btn secondary-btn compact-header-btn header-tasks-btn" style="display:none;" title="Active Background Rendering Tasks">
+        <button id="btnHeaderTasks" class="glass-btn secondary-btn compact-header-btn header-tasks-btn"
+          style="display:none;" title="Active Background Rendering Tasks">
           <span class="status-pulse-dot" style="background:#38bdf8; box-shadow:0 0 10px #38bdf8;"></span>
           <span id="textHeaderTasksCount">⚡ 0 Tasks</span>
         </button>
-        <button id="btnOpenProjects" class="glass-btn secondary-btn compact-header-btn" title="Open or switch between existing projects">
+        <button id="btnOpenProjects" class="glass-btn secondary-btn compact-header-btn"
+          title="Open or switch between existing projects">
           <span class="btn-icon">📂</span> <span class="header-btn-text">Projects</span>
         </button>
-        <button id="btnOpenSettings" class="glass-btn secondary-btn compact-header-btn" title="Configure AI keys and preferences">
+        <button id="btnOpenSettings" class="glass-btn secondary-btn compact-header-btn"
+          title="Configure AI keys and preferences">
           <span class="btn-icon">⚙️</span>
         </button>
         <div class="status-indicator-pill header-status-pill">
@@ -101,16 +114,22 @@
             <span id="textAutoWfTimer" class="auto-wf-timer">⏱️ 0s</span>
           </div>
           <div class="auto-wf-actions">
-            <button id="btnAutoWfPauseResume" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn" title="Pause or resume the Step 1 → 4 automation workflow">
+            <button id="btnAutoWfPauseResume" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn"
+              title="Pause or resume the Step 1 → 4 automation workflow">
               <span>⏸ Pause</span>
             </button>
-            <button id="btnAutoWfSkipToRender" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn" style="display: none;" title="Skip countdown/painting and jump straight to Step 3 Full Film Render">
+            <button id="btnAutoWfSkipToRender" type="button"
+              class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn" style="display: none;"
+              title="Skip countdown/painting and jump straight to Step 3 Full Film Render">
               <span>⏭ Render Now (Step 3)</span>
             </button>
-            <button id="btnAutoWfSkipStory" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn" style="display: none;" title="Skip current story and start the next story in the Batch Queue">
+            <button id="btnAutoWfSkipStory" type="button" class="glass-btn secondary-btn compact-btn auto-wf-ctrl-btn"
+              style="display: none;" title="Skip current story and start the next story in the Batch Queue">
               <span>⏭ Next Story</span>
             </button>
-            <button id="btnAutoWfCancel" type="button" class="glass-btn secondary-btn compact-btn text-danger-btn auto-wf-ctrl-btn" title="Stop Auto-Pilot workflow and stay on current stage">
+            <button id="btnAutoWfCancel" type="button"
+              class="glass-btn secondary-btn compact-btn text-danger-btn auto-wf-ctrl-btn"
+              title="Stop Auto-Pilot workflow and stay on current stage">
               <span>⏹ Stop</span>
             </button>
           </div>
@@ -146,23 +165,28 @@
         <div class="stage-intro compact-intro">
           <div class="intro-left">
             <h2 class="stage-title compact-stage-title">Create Animated Story</h2>
-            <p class="stage-subtitle compact-stage-subtitle">Multi-agent screenplay, character acting, art direction & cinematic Ken Burns animation</p>
+            <p class="stage-subtitle compact-stage-subtitle">Multi-agent screenplay, character acting, art direction &
+              cinematic Ken Burns animation</p>
           </div>
           <!-- Creation Mode Switcher -->
           <div class="creation-mode-tabs compact-mode-tabs">
-            <button id="tabModePrompt" class="mode-tab-btn active" type="button" title="Write a new story idea and let AI build the storyboard">
+            <button id="tabModePrompt" class="mode-tab-btn active" type="button"
+              title="Write a new story idea and let AI build the storyboard">
               💡 Write Story
             </button>
-            <button id="tabModePaste" class="mode-tab-btn" type="button" title="Paste an existing screenplay or storyboard">
+            <button id="tabModePaste" class="mode-tab-btn" type="button"
+              title="Paste an existing screenplay or storyboard">
               📋 Paste Script
             </button>
             <button id="tabModeLoad" class="mode-tab-btn" type="button" title="Open a previously saved project">
               📂 Load Project
             </button>
-            <button id="tabModeAd" class="mode-tab-btn" type="button" title="Create a commercial product advertisement video">
+            <button id="tabModeAd" class="mode-tab-btn" type="button"
+              title="Create a commercial product advertisement video">
               🛍️ Product Ad
             </button>
-            <button id="tabModeBatch" class="mode-tab-btn batch-mode-tab-btn" type="button" title="Queue multiple story ideas and produce them one by one from Step 1 to Step 4">
+            <button id="tabModeBatch" class="mode-tab-btn batch-mode-tab-btn" type="button"
+              title="Queue multiple story ideas and produce them one by one from Step 1 to Step 4">
               📚 Batch Queue (<span id="badgeTabBatchCount">0</span>)
             </button>
           </div>
@@ -178,7 +202,8 @@
             <div class="studio-col-story">
 
               <!-- Multi-Provider AI Engine & Image Mode Selector (Moved to Top) -->
-              <div class="ai-provider-panel glass-panel compact-provider-panel" style="margin-top: 0; margin-bottom: 12px; border: 1px solid rgba(139, 92, 246, 0.35);">
+              <div class="ai-provider-panel glass-panel compact-provider-panel"
+                style="margin-top: 0; margin-bottom: 12px; border: 1px solid rgba(139, 92, 246, 0.35);">
                 <div class="provider-panel-header">
                   <div class="provider-panel-title">
                     <span>🧠</span>
@@ -186,13 +211,19 @@
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                     <span id="labelProviderStatus" class="provider-status-badge">● Ready</span>
-                    <button id="btnVerifyProviderKey" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 9px; height:22px; font-size:11px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;" title="Verify if the active API Key or Gemini Web Cookie is valid">
+                    <button id="btnVerifyProviderKey" type="button" class="glass-btn secondary-btn mini-btn"
+                      style="padding:3px 9px; height:22px; font-size:11px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;"
+                      title="Verify if the active API Key or Gemini Web Cookie is valid">
                       <span>✓ Check API / Cookie</span>
                     </button>
-                    <button id="btnToggleTaskModels" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 9px; height:22px; font-size:11px; border-color:rgba(167,139,250,0.45); color:#c4b5fd;" title="Select distinct AI type/model for each processing task &amp; step">
+                    <button id="btnToggleTaskModels" type="button" class="glass-btn secondary-btn mini-btn"
+                      style="padding:3px 9px; height:22px; font-size:11px; border-color:rgba(167,139,250,0.45); color:#c4b5fd;"
+                      title="Select distinct AI type/model for each processing task &amp; step">
                       <span>🎛️ AI Models per Task/Step ▾</span>
                     </button>
-                    <button id="btnToggleAiLogBox" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 9px; height:22px; font-size:11px; border-color:rgba(56,189,248,0.45); color:#7dd3fc;" title="Show or hide the AI Execution &amp; Error Log Box">
+                    <button id="btnToggleAiLogBox" type="button" class="glass-btn secondary-btn mini-btn"
+                      style="padding:3px 9px; height:22px; font-size:11px; border-color:rgba(56,189,248,0.45); color:#7dd3fc;"
+                      title="Show or hide the AI Execution &amp; Error Log Box">
                       <span>📋 Logs (<span id="badgeAiLogCount">0</span>) ▾</span>
                     </button>
                   </div>
@@ -202,6 +233,7 @@
                   <div class="form-group">
                     <label for="selectAiProvider" class="input-label small-label">Default Provider</label>
                     <select id="selectAiProvider" class="styled-select compact-select">
+                      <option value="antigravity">🚀 Antigravity AI (Local CLI) — ⭐ 9.8 Best</option>
                       <option value="gemini" selected>✨ Google Gemini (API)</option>
                       <option value="gemini_cookie">🍪 Gemini Web (Cookies)</option>
                       <option value="openai">🟢 OpenAI</option>
@@ -215,7 +247,8 @@
                   <div class="form-group">
                     <div class="label-with-action">
                       <label for="selectAiModel" class="input-label small-label">Default Model</label>
-                      <button id="btnDetectModels" type="button" class="glass-btn secondary-btn mini-btn" title="Scan and choose available models">
+                      <button id="btnDetectModels" type="button" class="glass-btn secondary-btn mini-btn"
+                        title="Scan and choose available models">
                         <span>🔄 Detect</span>
                       </button>
                     </div>
@@ -226,31 +259,45 @@
 
                   <div class="form-group" id="groupProviderKey">
                     <div class="label-with-action">
-                      <label for="inputProviderKey" id="labelProviderKey" class="input-label small-label">API Key / Cookie</label>
+                      <label for="inputProviderKey" id="labelProviderKey" class="input-label small-label">API Key /
+                        Cookie</label>
                       <span id="badgeProviderHint" class="mini-hint"></span>
                     </div>
                     <div class="input-with-eye">
-                      <input type="password" id="inputProviderKey" class="styled-input compact-input" placeholder="Enter API Key or Cookie...">
-                      <button type="button" class="btn-toggle-secret" data-target="inputProviderKey" title="Show / Hide secret" aria-label="Show or hide API key">👁️</button>
+                      <input type="password" id="inputProviderKey" class="styled-input compact-input"
+                        placeholder="Enter API Key or Cookie...">
+                      <button type="button" class="btn-toggle-secret" data-target="inputProviderKey"
+                        title="Show / Hide secret" aria-label="Show or hide API key">👁️</button>
                     </div>
                   </div>
                 </div>
 
                 <!-- Credential Verification Result Banner -->
-                <div id="providerVerifyResultBanner" style="display:none; margin-bottom:10px; padding:7px 11px; border-radius:8px; font-size:11.5px; line-height:1.4; border:1px solid rgba(16,185,129,0.4); background:rgba(16,185,129,0.12); color:#a7f3d0;"></div>
+                <div id="providerVerifyResultBanner"
+                  style="display:none; margin-bottom:10px; padding:7px 11px; border-radius:8px; font-size:11.5px; line-height:1.4; border:1px solid rgba(16,185,129,0.4); background:rgba(16,185,129,0.12); color:#a7f3d0;">
+                </div>
 
                 <!-- Per-Task / Step AI Type & Model Selector Drawer -->
-                <div id="taskModelsConfigPanel" style="display:none; margin-bottom:10px; padding:10px 12px; border-radius:10px; background:rgba(15,23,42,0.82); border:1px solid rgba(139,92,246,0.32);">
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                <div id="taskModelsConfigPanel"
+                  style="display:none; margin-bottom:10px; padding:10px 12px; border-radius:10px; background:rgba(15,23,42,0.82); border:1px solid rgba(139,92,246,0.32);">
+                  <div
+                    style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                     <div>
-                      <strong style="font-size:12px; color:#e9d5ff;">🎛️ Select AI Type / Model for Each Task &amp; Step</strong>
-                      <p class="hint-text" style="margin:2px 0 0 0; font-size:11px;">Models are rated strictly from your real activities in this app (success rate &amp; speed). Best-rated models are preferred as defaults.</p>
+                      <strong style="font-size:12px; color:#e9d5ff;">🎛️ Select AI Type / Model for Each Task &amp;
+                        Step</strong>
+                      <p class="hint-text" style="margin:2px 0 0 0; font-size:11px;">Models are rated per activity (⭐
+                        score + live success tracking). Click <strong>Auto-Select Best</strong> anytime to pick
+                        top-rated defaults.</p>
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                      <button id="btnAutoSelectBestModels" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 9px; font-size:10.5px; border-color:rgba(250,204,21,0.55); color:#fde047;" title="Select the highest-rated model from your real app runs for every activity">
-                        ⭐ Select Best Rated
+                      <button id="btnAutoSelectBestModels" type="button" class="glass-btn secondary-btn mini-btn"
+                        style="padding:3px 9px; font-size:10.5px; border-color:rgba(250,204,21,0.55); color:#fde047;"
+                        title="Automatically select the highest-rated AI model and paint engine for every activity">
+                        ⭐ Auto-Select Best
                       </button>
-                      <button id="btnResetTaskModels" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 8px; font-size:10.5px;" title="Reset all task models to use the Default Provider &amp; Model">
+                      <button id="btnResetTaskModels" type="button" class="glass-btn secondary-btn mini-btn"
+                        style="padding:3px 8px; font-size:10.5px;"
+                        title="Reset all task models to use the Default Provider &amp; Model">
                         ↺ Reset All
                       </button>
                     </div>
@@ -258,127 +305,172 @@
 
                   <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:8px;">
                     <!-- Task 1: Character Analysis & Import -->
-                    <div style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
-                      <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">👥 Step 1A: Character Analysis &amp; Create</label>
+                    <div
+                      style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
+                      <label class="input-label small-label"
+                        style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">👥 Step 1A: Character Analysis &amp;
+                        Create</label>
                       <div style="display:flex; gap:5px;">
-                        <select id="selectTaskCharProvider" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
+                        <select id="selectTaskCharProvider" class="styled-select compact-select"
+                          style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>🔗 Use Default Provider</option>
-                          <option value="gemini">✨ Gemini (API)</option>
-                          <option value="gemini_cookie">🍪 Gemini Cookie</option>
-                          <option value="openai">🟢 OpenAI</option>
-                          <option value="claude">🟣 Claude</option>
-                          <option value="deepseek">🐋 DeepSeek</option>
-                          <option value="nvidia">⚡ NVIDIA NIM</option>
-                          <option value="builtin">🏛️ Built-in Offline</option>
+                          <option value="antigravity">🚀 Antigravity AI (Local CLI) — ⭐ 9.8 Best</option>
+                          <option value="gemini">✨ Gemini (API) — ⭐ 9.6</option>
+                          <option value="claude">🟣 Claude — ⭐ 9.5</option>
+                          <option value="openai">🟢 OpenAI — ⭐ 9.4</option>
+                          <option value="deepseek">🐋 DeepSeek — ⭐ 8.9</option>
+                          <option value="gemini_cookie">🍪 Gemini Cookie — ⭐ 8.5</option>
+                          <option value="nvidia">⚡ NVIDIA NIM — ⭐ 8.4</option>
+                          <option value="builtin">🏛️ Built-in Offline — ⭐ 6.5</option>
                         </select>
-                        <select id="selectTaskCharModel" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
+                        <select id="selectTaskCharModel" class="styled-select compact-select"
+                          style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>Default Model</option>
                         </select>
                       </div>
-                      <div id="ratingHintChar" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
+                      <div id="ratingHintChar" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;">
+                      </div>
                     </div>
 
                     <!-- Task 2: Storyboard & Screenplay Generation -->
-                    <div style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
-                      <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🎬 Step 1B: Storyboard &amp; Screenplay</label>
+                    <div
+                      style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
+                      <label class="input-label small-label"
+                        style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🎬 Step 1B: Storyboard &amp;
+                        Screenplay</label>
                       <div style="display:flex; gap:5px;">
-                        <select id="selectTaskStoryProvider" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
+                        <select id="selectTaskStoryProvider" class="styled-select compact-select"
+                          style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>🔗 Use Default Provider</option>
-                          <option value="gemini">✨ Gemini (API)</option>
-                          <option value="gemini_cookie">🍪 Gemini Cookie</option>
-                          <option value="openai">🟢 OpenAI</option>
-                          <option value="claude">🟣 Claude</option>
-                          <option value="deepseek">🐋 DeepSeek</option>
-                          <option value="nvidia">⚡ NVIDIA NIM</option>
-                          <option value="builtin">🏛️ Built-in Offline</option>
+                          <option value="antigravity">🚀 Antigravity AI (Local CLI) — ⭐ 9.8 Best</option>
+                          <option value="gemini">✨ Gemini (API) — ⭐ 9.7</option>
+                          <option value="claude">🟣 Claude — ⭐ 9.6</option>
+                          <option value="openai">🟢 OpenAI — ⭐ 9.3</option>
+                          <option value="deepseek">🐋 DeepSeek — ⭐ 9.0</option>
+                          <option value="gemini_cookie">🍪 Gemini Cookie — ⭐ 8.6</option>
+                          <option value="nvidia">⚡ NVIDIA NIM — ⭐ 8.4</option>
+                          <option value="builtin">🏛️ Built-in Offline — ⭐ 6.8</option>
                         </select>
-                        <select id="selectTaskStoryModel" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
+                        <select id="selectTaskStoryModel" class="styled-select compact-select"
+                          style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>Default Model</option>
                         </select>
                       </div>
-                      <div id="ratingHintStory" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
+                      <div id="ratingHintStory" class="hint-text"
+                        style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 3: Character Portrait Painting -->
-                    <div style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
-                      <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🖼️ Step 1C/2A: Character Portrait Painting</label>
-                      <select id="selectTaskPortraitEngine" class="styled-select compact-select" style="width:100%; font-size:11px; padding:4px 6px;">
+                    <div
+                      style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
+                      <label class="input-label small-label"
+                        style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🖼️ Step 1C/2A: Character Portrait
+                        Painting</label>
+                      <select id="selectTaskPortraitEngine" class="styled-select compact-select"
+                        style="width:100%; font-size:11px; padding:4px 6px;">
                         <option value="default" selected>🔗 Use Default Paint Engine</option>
-                        <option value="antigravity">🚀 Antigravity AI (Local CLI)</option>
-                        <option value="gemini_api">✨ Gemini API Multimodal</option>
-                        <option value="gemini_cookie">🍪 Gemini Web Cookie</option>
-                        <option value="flowkit">🌊 FlowKit Character Ref</option>
-                        <option value="openai">🟢 OpenAI DALL-E 3</option>
-                        <option value="pollinations">☁️ Free Cloud AI Art (Pollinations)</option>
-                        <option value="manual">📝 Placeholder Only</option>
+                        <option value="antigravity">🚀 Antigravity AI (Local CLI) — ⭐ 9.8 Best</option>
+                        <option value="flowkit">🌊 FlowKit Character Ref — ⭐ 9.4</option>
+                        <option value="gemini_api">✨ Gemini API Multimodal — ⭐ 9.0</option>
+                        <option value="openai">🟢 OpenAI DALL-E 3 — ⭐ 8.8</option>
+                        <option value="pollinations">☁️ Free Cloud AI Art (Pollinations) — ⭐ 8.4</option>
+                        <option value="gemini_cookie">🍪 Gemini Web Cookie — ⭐ 7.8</option>
+                        <option value="manual">📝 Placeholder Only — ⭐ 5.0</option>
                       </select>
-                      <div id="ratingHintPortrait" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
+                      <div id="ratingHintPortrait" class="hint-text"
+                        style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 4: Scene Image Painting -->
-                    <div style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
-                      <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🎨 Step 2B: Scene Keyframe Painting</label>
-                      <select id="selectTaskScenePaintEngine" class="styled-select compact-select" style="width:100%; font-size:11px; padding:4px 6px;">
+                    <div
+                      style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
+                      <label class="input-label small-label"
+                        style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🎨 Step 2B: Scene Keyframe
+                        Painting</label>
+                      <select id="selectTaskScenePaintEngine" class="styled-select compact-select"
+                        style="width:100%; font-size:11px; padding:4px 6px;">
                         <option value="default" selected>🔗 Use Default Paint Engine</option>
-                        <option value="antigravity">🚀 Antigravity AI (Local CLI)</option>
-                        <option value="gemini_api">✨ Gemini API Multimodal</option>
-                        <option value="gemini_cookie">🍪 Gemini Web Cookie</option>
-                        <option value="flowkit">🌊 FlowKit Character Ref</option>
-                        <option value="openai">🟢 OpenAI DALL-E 3</option>
-                        <option value="pollinations">☁️ Free Cloud AI Art (Pollinations)</option>
-                        <option value="manual">📝 Storyboard Only</option>
+                        <option value="antigravity">🚀 Antigravity AI (Local CLI) — ⭐ 9.8 Best</option>
+                        <option value="flowkit">🌊 FlowKit Character Ref — ⭐ 9.5</option>
+                        <option value="gemini_api">✨ Gemini API Multimodal — ⭐ 9.0</option>
+                        <option value="openai">🟢 OpenAI DALL-E 3 — ⭐ 8.7</option>
+                        <option value="pollinations">☁️ Free Cloud AI Art (Pollinations) — ⭐ 8.4</option>
+                        <option value="gemini_cookie">🍪 Gemini Web Cookie — ⭐ 7.8</option>
+                        <option value="manual">📝 Storyboard Only — ⭐ 5.0</option>
                       </select>
-                      <div id="ratingHintScene" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
+                      <div id="ratingHintScene" class="hint-text"
+                        style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 5: Video Prompt Refinement & Dialogue Sync -->
-                    <div style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
-                      <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">✨ Step 2C: Prompt Refine &amp; Dialogue Sync</label>
+                    <div
+                      style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
+                      <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">✨
+                        Step 2C: Prompt Refine &amp; Dialogue Sync</label>
                       <div style="display:flex; gap:5px;">
-                        <select id="selectTaskRefineProvider" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
+                        <select id="selectTaskRefineProvider" class="styled-select compact-select"
+                          style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>🔗 Use Default Provider</option>
-                          <option value="gemini">✨ Gemini (API)</option>
-                          <option value="gemini_cookie">🍪 Gemini Cookie</option>
-                          <option value="openai">🟢 OpenAI</option>
-                          <option value="claude">🟣 Claude</option>
-                          <option value="deepseek">🐋 DeepSeek</option>
-                          <option value="nvidia">⚡ NVIDIA NIM</option>
-                          <option value="builtin">🏛️ Built-in Director</option>
+                          <option value="antigravity">🚀 Antigravity AI (Local CLI) — ⭐ 9.8 Best</option>
+                          <option value="gemini">✨ Gemini (API) — ⭐ 9.5</option>
+                          <option value="openai">🟢 OpenAI — ⭐ 9.0</option>
+                          <option value="claude">🟣 Claude — ⭐ 9.0</option>
+                          <option value="deepseek">🐋 DeepSeek — ⭐ 8.8</option>
+                          <option value="gemini_cookie">🍪 Gemini Cookie — ⭐ 8.4</option>
+                          <option value="nvidia">⚡ NVIDIA NIM — ⭐ 8.2</option>
+                          <option value="builtin">🏛️ Built-in Director — ⭐ 7.5</option>
                         </select>
-                        <select id="selectTaskRefineModel" class="styled-select compact-select" style="flex:1; font-size:11px; padding:4px 6px;">
+                        <select id="selectTaskRefineModel" class="styled-select compact-select"
+                          style="flex:1; font-size:11px; padding:4px 6px;">
                           <option value="default" selected>Default Model</option>
                         </select>
                       </div>
-                      <div id="ratingHintRefine" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
+                      <div id="ratingHintRefine" class="hint-text"
+                        style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
 
                     <!-- Task 6: Scene Video Animation Engine (Step 2/3) -->
-                    <div style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
-                      <label class="input-label small-label" style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🎥 Step 3: Video Motion &amp; Render Engine</label>
-                      <select id="selectTaskVideoEngine" class="styled-select compact-select" style="width:100%; font-size:11px; padding:4px 6px;">
-                        <option value="ken_burns" selected>🎬 2.5D Cinematic Ken Burns (30 FPS)</option>
-                        <option value="flowkit_veo">⚡ Google Flow / Veo 3 AI Acting</option>
+                    <div
+                      style="padding:7px 9px; border-radius:8px; background:rgba(30,41,59,0.55); border:1px solid rgba(255,255,255,0.08);">
+                      <label class="input-label small-label"
+                        style="font-size:11px; margin-bottom:4px; color:#cbd5e1;">🎥 Step 3: Video Motion &amp; Render
+                        Engine</label>
+                      <select id="selectTaskVideoEngine" class="styled-select compact-select"
+                        style="width:100%; font-size:11px; padding:4px 6px;">
+                        <option value="ken_burns" selected>🎬 2.5D Cinematic Ken Burns (30 FPS) — ⭐ 9.4 Best Default
+                        </option>
+                        <option value="flowkit_veo">⚡ Google Flow / Veo 3 AI Acting — ⭐ 9.6 (FlowKit)</option>
                       </select>
-                      <div id="ratingHintVideo" class="hint-text" style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
+                      <div id="ratingHintVideo" class="hint-text"
+                        style="font-size:10px; margin-top:4px; color:#94a3b8;"></div>
                     </div>
                   </div>
                 </div>
 
                 <!-- AI Execution & Error Log Box (Collapsed by default; auto-opens on any error) -->
-                <div id="aiExecutionLogPanel" style="display:none; margin-bottom:10px; padding:8px 10px; border-radius:8px; background:rgba(8,11,22,0.88); border:1px solid rgba(56,189,248,0.28);">
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                <div id="aiExecutionLogPanel"
+                  style="display:none; margin-bottom:10px; padding:8px 10px; border-radius:8px; background:rgba(8,11,22,0.88); border:1px solid rgba(56,189,248,0.28);">
+                  <div
+                    style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
                     <div style="display:flex; align-items:center; gap:6px;">
                       <span style="font-size:12px;">📋</span>
                       <strong style="font-size:11.5px; color:#e0f2fe;">AI Task Execution &amp; Error Log</strong>
-                      <span class="hint-text" style="font-size:10.5px;">(Strictly uses selected AI method/model; logs all starts, completions &amp; failures)</span>
+                      <span class="hint-text" style="font-size:10.5px;">(Strictly uses selected AI method/model; logs
+                        all starts, completions &amp; failures)</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:5px;">
-                      <button id="btnCopyAiLogs" type="button" class="glass-btn secondary-btn mini-btn" style="padding:2px 7px; font-size:10px; height:20px;" title="Copy all log entries to clipboard">📋 Copy</button>
-                      <button id="btnClearAiLogs" type="button" class="glass-btn secondary-btn mini-btn" style="padding:2px 7px; font-size:10px; height:20px; color:#fca5a5;" title="Clear log entries">🧹 Clear</button>
+                      <button id="btnCopyAiLogs" type="button" class="glass-btn secondary-btn mini-btn"
+                        style="padding:2px 7px; font-size:10px; height:20px;"
+                        title="Copy all log entries to clipboard">📋 Copy</button>
+                      <button id="btnClearAiLogs" type="button" class="glass-btn secondary-btn mini-btn"
+                        style="padding:2px 7px; font-size:10px; height:20px; color:#fca5a5;"
+                        title="Clear log entries">🧹 Clear</button>
                     </div>
                   </div>
-                  <div id="aiExecutionLogList" style="max-height:135px; overflow-y:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; line-height:1.45; display:flex; flex-direction:column; gap:4px; padding-right:4px;">
-                    <div style="color:var(--text-dim); font-style:italic;">Ready — AI task logs and errors will appear here.</div>
+                  <div id="aiExecutionLogList"
+                    style="max-height:135px; overflow-y:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; line-height:1.45; display:flex; flex-direction:column; gap:4px; padding-right:4px;">
+                    <div style="color:var(--text-dim); font-style:italic;">Ready — AI task logs and errors will appear
+                      here.</div>
                   </div>
                 </div>
 
@@ -390,7 +482,8 @@
                       <span class="image-mode-lbl">Paint Engine:</span>
                       <span id="badgeImageMode" class="tag-badge compact-badge">✨ Google Gemini Imagen 3</span>
                     </div>
-                    <p id="descImageMode" class="image-mode-desc">High-fidelity Google Imagen 3 visuals powered by your Gemini Key</p>
+                    <p id="descImageMode" class="image-mode-desc">High-fidelity Google Imagen 3 visuals powered by your
+                      Gemini Key</p>
                   </div>
                   <button id="btnToggleImageMode" type="button" class="glass-btn secondary-btn compact-btn">
                     <span id="iconToggleImageMode">🖌️</span> Switch Mode
@@ -405,26 +498,39 @@
                     <span>🎬 Film Title</span>
                     <span class="hint-text">Custom or auto-generated</span>
                   </label>
-                  <input type="text" id="inputProjectTitle" class="styled-input compact-input" placeholder="e.g. Whispers of the Ancient Woods, Đôi Bạn Rừng Xanh...">
+                  <input type="text" id="inputProjectTitle" class="styled-input compact-input"
+                    placeholder="e.g. Whispers of the Ancient Woods, Đôi Bạn Rừng Xanh...">
                 </div>
 
                 <div class="form-row compact-row">
                   <label for="inputIdeaPrompt" class="input-label small-label">
                     <span>🌟 Story Idea or Creative Prompt</span>
-                    <span class="hint-text">Single story idea, plot outline, or narrative (use Option E for multiple stories)</span>
+                    <span class="hint-text">Single story idea, plot outline, or narrative (use Option E for multiple
+                      stories)</span>
                   </label>
-                  <textarea id="inputIdeaPrompt" rows="3" class="styled-textarea compact-textarea" placeholder="e.g. A lonely clockmaker in a steampunk tower invents a mechanical humming-bird that brings memories back to the townspeople..."></textarea>
+                  <textarea id="inputIdeaPrompt" rows="3" class="styled-textarea compact-textarea"
+                    placeholder="e.g. A lonely clockmaker in a steampunk tower invents a mechanical humming-bird that brings memories back to the townspeople..."></textarea>
                 </div>
 
                 <!-- Quick idea inspiration tags -->
                 <div class="inspiration-box compact-inspire">
                   <span class="inspire-title">⚡ Sparks:</span>
                   <div class="inspire-chips">
-                    <button class="inspire-chip" data-prompt="A curious little kitten who sneaks aboard a starship to explore the glittering rings of Saturn.">🚀 Cosmic Kitten</button>
-                    <button class="inspire-chip" data-prompt="A friendly ancient forest spirit teaching a lost traveler how to listen to the whisper of the trees.">🍃 Forest Spirit</button>
-                    <button class="inspire-chip" data-prompt="A cyberpunk detective and a witty hologram raven uncovering the lost memory of an neon metropolis.">🏙️ Neon Raven</button>
-                    <button class="inspire-chip" data-prompt="A magical bakery that bakes fluffy cloud-bread that makes anyone who tastes it float with joy.">🧁 Floating Bakery</button>
-                    <button class="inspire-chip" data-prompt="Hai chú rùa và thỏ học cách chia sẻ những trái táo chín mọng trong ngày hội mùa thu tươi đẹp.">🍎 Rừng Xanh (VN)</button>
+                    <button class="inspire-chip"
+                      data-prompt="A curious little kitten who sneaks aboard a starship to explore the glittering rings of Saturn.">🚀
+                      Cosmic Kitten</button>
+                    <button class="inspire-chip"
+                      data-prompt="A friendly ancient forest spirit teaching a lost traveler how to listen to the whisper of the trees.">🍃
+                      Forest Spirit</button>
+                    <button class="inspire-chip"
+                      data-prompt="A cyberpunk detective and a witty hologram raven uncovering the lost memory of an neon metropolis.">🏙️
+                      Neon Raven</button>
+                    <button class="inspire-chip"
+                      data-prompt="A magical bakery that bakes fluffy cloud-bread that makes anyone who tastes it float with joy.">🧁
+                      Floating Bakery</button>
+                    <button class="inspire-chip"
+                      data-prompt="Hai chú rùa và thỏ học cách chia sẻ những trái táo chín mọng trong ngày hội mùa thu tươi đẹp.">🍎
+                      Rừng Xanh (VN)</button>
                   </div>
                 </div>
               </div>
@@ -446,15 +552,20 @@
                     <span>📋 Paste Output (JSON, Screenplay, or Stories):</span>
                     <span class="hint-text">Auto-detects scenes, multi-story lists, visual & dialogue</span>
                   </label>
-                  <textarea id="inputDirectPasteText" rows="6" class="styled-textarea compact-textarea" placeholder="Paste Gemini Pro's output or 1+ narrative stories here (JSON, Scene 1 / Cảnh 1, or numbered stories 1. 2. separated by ---)..."></textarea>
+                  <textarea id="inputDirectPasteText" rows="6" class="styled-textarea compact-textarea"
+                    placeholder="Paste Gemini Pro's output or 1+ narrative stories here (JSON, Scene 1 / Cảnh 1, or numbered stories 1. 2. separated by ---)..."></textarea>
                   <div id="pasteMultiStoryBanner" class="multi-story-detect-banner" style="display:none;">
                     <div class="multi-story-detect-info">
                       <span class="multi-story-detect-icon">📚</span>
                       <span id="textPasteMultiStoryCount">Detected 2 stories in your pasted text!</span>
                     </div>
                     <div class="multi-story-detect-actions">
-                      <button id="btnPasteQueueDetectedStories" type="button" class="scene-action-pill" title="Move all detected stories into the Batch Story Queue">📥 Queue All in Batch List</button>
-                      <button id="btnPasteAutoRunDetectedStories" type="button" class="scene-action-pill active-dialogue-only" title="Queue all detected stories and produce them 1-by-1 from Step 1 to Step 4">🎬 Auto-Produce All (Step 1→4)</button>
+                      <button id="btnPasteQueueDetectedStories" type="button" class="scene-action-pill"
+                        title="Move all detected stories into the Batch Story Queue">📥 Queue All in Batch List</button>
+                      <button id="btnPasteAutoRunDetectedStories" type="button"
+                        class="scene-action-pill active-dialogue-only"
+                        title="Queue all detected stories and produce them 1-by-1 from Step 1 to Step 4">🎬 Auto-Produce
+                        All (Step 1→4)</button>
                     </div>
                   </div>
                 </div>
@@ -465,7 +576,8 @@
                 <div class="ad-mode-header-box">
                   <div class="ad-mode-title-wrap">
                     <span class="ad-mode-badge">🛍️ Goods Advertisement Commercial</span>
-                    <span class="hint-text">Upload product photos, input specs & generate high-converting video ads</span>
+                    <span class="hint-text">Upload product photos, input specs & generate high-converting video
+                      ads</span>
                   </div>
                   <!-- Quick Sparks for Goods Templates -->
                   <div class="inspiration-box compact-inspire" style="margin-top: 6px; margin-bottom: 8px;">
@@ -486,14 +598,16 @@
                     <label for="inputAdProductName" class="input-label small-label">
                       <span>🏷️ Product / Goods Name <strong style="color:var(--primary);">*</strong></span>
                     </label>
-                    <input type="text" id="inputAdProductName" class="styled-input compact-input" placeholder="e.g. AeroPulse Pro Wireless Headphones">
+                    <input type="text" id="inputAdProductName" class="styled-input compact-input"
+                      placeholder="e.g. AeroPulse Pro Wireless Headphones">
                   </div>
 
                   <div class="form-row compact-row">
                     <label for="inputAdBrand" class="input-label small-label">
                       <span>🏢 Brand Name</span>
                     </label>
-                    <input type="text" id="inputAdBrand" class="styled-input compact-input" placeholder="e.g. Apex Audio, Sony, Nike, Anker...">
+                    <input type="text" id="inputAdBrand" class="styled-input compact-input"
+                      placeholder="e.g. Apex Audio, Sony, Nike, Anker...">
                   </div>
 
                   <div class="form-row compact-row">
@@ -501,7 +615,8 @@
                       <span>🎬 Commercial Style</span>
                     </label>
                     <select id="selectAdStyle" class="styled-select compact-select">
-                      <option value="cinematic_commercial" selected>🎬 Cinematic Commercial (Apple / Nike style)</option>
+                      <option value="cinematic_commercial" selected>🎬 Cinematic Commercial (Apple / Nike style)
+                      </option>
                       <option value="viral_reels">⚡ Viral TikTok / Reels / Shorts (Fast-Paced)</option>
                       <option value="spec_breakdown">🔬 Tech Deep-Dive & Spec Showcase</option>
                       <option value="luxury_macro">💎 Ultra-Luxury Elegance (Rolex / Porsche macro)</option>
@@ -526,10 +641,12 @@
 
                 <div class="form-row compact-row">
                   <label for="textareaAdDesc" class="input-label small-label">
-                    <span>📝 Product Description & Key Selling Points <strong style="color:var(--primary);">*</strong></span>
+                    <span>📝 Product Description & Key Selling Points <strong
+                        style="color:var(--primary);">*</strong></span>
                     <span class="hint-text">Core benefits, problem solved, unique value</span>
                   </label>
-                  <textarea id="textareaAdDesc" rows="2" class="styled-textarea compact-textarea" placeholder="e.g. Premium wireless noise-cancelling headphones crafted from aerospace titanium. Crystal-clear acoustic tuning with effortless all-day comfort."></textarea>
+                  <textarea id="textareaAdDesc" rows="2" class="styled-textarea compact-textarea"
+                    placeholder="e.g. Premium wireless noise-cancelling headphones crafted from aerospace titanium. Crystal-clear acoustic tuning with effortless all-day comfort."></textarea>
                 </div>
 
                 <div class="form-row compact-row">
@@ -537,7 +654,8 @@
                     <span>⚙️ Technical Specs & Hardware Highlights</span>
                     <span class="hint-text">Specs, dimensions, battery, materials, power</span>
                   </label>
-                  <textarea id="textareaAdSpecs" rows="2" class="styled-textarea compact-textarea" placeholder="e.g. • 45dB Dual-Processor Hybrid ANC • 40-hour Battery Life • 40mm Beryllium Drivers • Fast Charge (10min = 5hrs) • 185g Aerospace Titanium"></textarea>
+                  <textarea id="textareaAdSpecs" rows="2" class="styled-textarea compact-textarea"
+                    placeholder="e.g. • 45dB Dual-Processor Hybrid ANC • 40-hour Battery Life • 40mm Beryllium Drivers • Fast Charge (10min = 5hrs) • 185g Aerospace Titanium"></textarea>
                 </div>
 
                 <div class="ad-form-grid" style="margin-bottom: 8px;">
@@ -545,14 +663,16 @@
                     <label for="inputAdOffer" class="input-label small-label">
                       <span>🏷️ Special Offer / Pricing</span>
                     </label>
-                    <input type="text" id="inputAdOffer" class="styled-input compact-input" placeholder="e.g. 50% Flash Sale — Only $149 (Reg. $299)">
+                    <input type="text" id="inputAdOffer" class="styled-input compact-input"
+                      placeholder="e.g. 50% Flash Sale — Only $149 (Reg. $299)">
                   </div>
 
                   <div class="form-row compact-row">
                     <label for="inputAdCTA" class="input-label small-label">
                       <span>📣 Call to Action (CTA)</span>
                     </label>
-                    <input type="text" id="inputAdCTA" class="styled-input compact-input" placeholder="e.g. Order now at link in bio! Free shipping worldwide.">
+                    <input type="text" id="inputAdCTA" class="styled-input compact-input"
+                      placeholder="e.g. Order now at link in bio! Free shipping worldwide.">
                   </div>
                 </div>
 
@@ -588,20 +708,25 @@
                   <div class="batch-queue-title-row">
                     <div>
                       <span class="batch-mode-badge">📚 Batch Story Queue (Step 1 → 4 One-by-One)</span>
-                      <p class="hint-text" style="margin: 2px 0 0 0;">Enter a list of story ideas or full scripts below. AniStory AI will automatically produce each film from Step 1 → Step 4 one by one!</p>
+                      <p class="hint-text" style="margin: 2px 0 0 0;">Enter a list of story ideas or full scripts below.
+                        AniStory AI will automatically produce each film from Step 1 → Step 4 one by one!</p>
                     </div>
                     <div class="batch-header-actions">
-                      <button id="btnBatchLoadSamples" type="button" class="glass-btn secondary-btn mini-btn" title="Load 3 sample story ideas into the queue">
+                      <button id="btnBatchLoadSamples" type="button" class="glass-btn secondary-btn mini-btn"
+                        title="Load 3 sample story ideas into the queue">
                         ⚡ +3 Samples
                       </button>
                       <input type="file" id="inputBatchImportFile" accept=".txt,.json" style="display:none;">
-                      <button id="btnBatchImportFile" type="button" class="glass-btn secondary-btn mini-btn" title="Import a .txt or .json file containing multiple story ideas">
+                      <button id="btnBatchImportFile" type="button" class="glass-btn secondary-btn mini-btn"
+                        title="Import a .txt or .json file containing multiple story ideas">
                         📂 Import File
                       </button>
-                      <button id="btnBatchClearCompleted" type="button" class="glass-btn secondary-btn mini-btn" title="Remove completed stories from the queue">
+                      <button id="btnBatchClearCompleted" type="button" class="glass-btn secondary-btn mini-btn"
+                        title="Remove completed stories from the queue">
                         🧹 Clear Done
                       </button>
-                      <button id="btnBatchClearAll" type="button" class="glass-btn secondary-btn mini-btn text-danger-btn" title="Clear entire batch queue">
+                      <button id="btnBatchClearAll" type="button"
+                        class="glass-btn secondary-btn mini-btn text-danger-btn" title="Clear entire batch queue">
                         🗑️ Clear All
                       </button>
                     </div>
@@ -609,13 +734,15 @@
 
                   <!-- Multi-Story Input Box -->
                   <div class="batch-input-composer">
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+                    <div
+                      style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
                       <label for="textareaBatchIdeas" class="input-label small-label" style="margin-bottom:0;">
                         <span>📝 Paste or Write Multiple Ideas / Stories:</span>
                       </label>
                       <div style="display:flex; align-items:center; gap:6px;">
                         <span class="hint-text">Split by:</span>
-                        <select id="selectBatchDelimiter" class="styled-select compact-select" style="height:24px; font-size:11px; padding:1px 6px; width:auto;">
+                        <select id="selectBatchDelimiter" class="styled-select compact-select"
+                          style="height:24px; font-size:11px; padding:1px 6px; width:auto;">
                           <option value="auto" selected>🤖 Auto-Detect (Lines, ---, or 1. 2. 3.)</option>
                           <option value="line">↵ One Idea Per Line</option>
                           <option value="blank">⬜ Blank Line (Paragraphs)</option>
@@ -623,18 +750,24 @@
                         </select>
                       </div>
                     </div>
-                    <textarea id="textareaBatchIdeas" rows="4" class="styled-textarea compact-textarea" placeholder="Enter multiple ideas (one per line, numbered 1. 2. 3., or separated by ---):&#10;1. Chiến Thuật Bình Xăng :: Ông Tư và Bà Tư ngồi quán cà phê bàn chuyện tiết kiệm tiền đổ đầy bình xăng.&#10;2. Chú Mèo Sao Thổ :: Một chú mèo nhỏ tinh nghịch lẻn lên tàu vũ trụ khám phá vành đai Sao Thổ lấp lánh.&#10;3. Trí Khôn Của Ta Đây :: Câu chuyện dân gian Bác Nông Dân, Con Trâu và Con Cọp trên cánh đồng lúa vàng."></textarea>
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
-                      <span id="batchDetectHint" class="hint-text">💡 Tip: Supports stories separated by <code>---</code>, numbered <code>1. 2. 3.</code>, or <code>Title :: Story idea</code></span>
+                    <textarea id="textareaBatchIdeas" rows="4" class="styled-textarea compact-textarea"
+                      placeholder="Enter multiple ideas (one per line, numbered 1. 2. 3., or separated by ---):&#10;1. Chiến Thuật Bình Xăng :: Ông Tư và Bà Tư ngồi quán cà phê bàn chuyện tiết kiệm tiền đổ đầy bình xăng.&#10;2. Chú Mèo Sao Thổ :: Một chú mèo nhỏ tinh nghịch lẻn lên tàu vũ trụ khám phá vành đai Sao Thổ lấp lánh.&#10;3. Trí Khôn Của Ta Đây :: Câu chuyện dân gian Bác Nông Dân, Con Trâu và Con Cọp trên cánh đồng lúa vàng."></textarea>
+                    <div
+                      style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
+                      <span id="batchDetectHint" class="hint-text">💡 Tip: Supports stories separated by
+                        <code>---</code>, numbered <code>1. 2. 3.</code>, or <code>Title :: Story idea</code></span>
                       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <label class="auto-wf-check-label" style="font-size:11px; margin:0; cursor:pointer;" title="Automatically start producing queued films from Step 1 to Step 4 one-by-one as soon as stories are added">
+                        <label class="auto-wf-check-label" style="font-size:11px; margin:0; cursor:pointer;"
+                          title="Automatically start producing queued films from Step 1 to Step 4 one-by-one as soon as stories are added">
                           <input type="checkbox" id="chkBatchAutoStart" checked>
                           <span>🤖 Auto-Produce on Add (Step 1→4)</span>
                         </label>
-                        <button id="btnBatchAddIdeas" type="button" class="glass-btn secondary-btn compact-btn" style="padding:5px 10px; font-size:11.5px;">
+                        <button id="btnBatchAddIdeas" type="button" class="glass-btn secondary-btn compact-btn"
+                          style="padding:5px 10px; font-size:11.5px;">
                           <span>➕ Add to Queue</span>
                         </button>
-                        <button id="btnBatchAddAndRun" type="button" class="glass-btn primary-glow-btn compact-btn" style="padding:5px 12px; font-size:11.5px;">
+                        <button id="btnBatchAddAndRun" type="button" class="glass-btn primary-glow-btn compact-btn"
+                          style="padding:5px 12px; font-size:11.5px;">
                           <span>🚀 Add & Produce 1-by-1 (Step 1→4)</span>
                         </button>
                       </div>
@@ -643,12 +776,16 @@
 
                   <!-- Active Queue Items List -->
                   <div class="batch-queue-list-header">
-                    <span id="badgeBatchQueueSummary" class="batch-queue-summary-text">📋 Queue: 0 stories (0 pending • 0 completed)</span>
+                    <span id="badgeBatchQueueSummary" class="batch-queue-summary-text">📋 Queue: 0 stories (0 pending •
+                      0 completed)</span>
                     <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                      <button id="btnBatchHeaderRunAll" type="button" class="glass-btn primary-glow-btn mini-btn" style="display:none; padding:4px 10px; font-size:11px;" title="Automatically produce all queued stories one-by-one from Step 1 to Step 4">
+                      <button id="btnBatchHeaderRunAll" type="button" class="glass-btn primary-glow-btn mini-btn"
+                        style="display:none; padding:4px 10px; font-size:11px;"
+                        title="Automatically produce all queued stories one-by-one from Step 1 to Step 4">
                         ▶️ Produce Queue 1-by-1 (Step 1→4)
                       </button>
-                      <button id="btnBatchDownloadAllMp4" type="button" class="glass-btn secondary-btn mini-btn" style="display:none;" title="Download all completed MP4 films from this batch">
+                      <button id="btnBatchDownloadAllMp4" type="button" class="glass-btn secondary-btn mini-btn"
+                        style="display:none;" title="Download all completed MP4 films from this batch">
                         ⬇️ Download All Completed MP4s
                       </button>
                     </div>
@@ -660,87 +797,124 @@
               </div>
 
               <!-- Director Skill & Deep Input Analyzer Panel -->
-              <div class="director-skill-panel glass-panel compact-provider-panel" style="margin-bottom: 10px; padding: 10px 12px; border: 1px solid rgba(139, 92, 246, 0.28);">
+              <div class="director-skill-panel glass-panel compact-provider-panel"
+                style="margin-bottom: 10px; padding: 10px 12px; border: 1px solid rgba(139, 92, 246, 0.28);">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
                   <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:220px;">
-                    <label for="selectDirectorSkill" class="input-label small-label" style="margin-bottom:0; white-space:nowrap;">
+                    <label for="selectDirectorSkill" class="input-label small-label"
+                      style="margin-bottom:0; white-space:nowrap;">
                       <span>🎯 Director Skill:</span>
                     </label>
-                    <select id="selectDirectorSkill" class="styled-select compact-select" style="flex:1; height:30px; font-size:12px;">
+                    <select id="selectDirectorSkill" class="styled-select compact-select"
+                      style="flex:1; height:30px; font-size:12px;">
                       <option value="auto" selected>🤖 Auto-Detect Best Director Skill</option>
                       <option value="cinematic_storyteller">🎬 Cinematic 3-Act Storyteller (Pixar / Ghibli)</option>
                       <option value="comedy_punchline_master">😂 Comedy &amp; Folklore Punchline Director</option>
                       <option value="dialogue_drama_director">🗣️ Shot-Reverse-Shot Dialogue Director</option>
                       <option value="comic_graphic_novel">💬 Comic Book &amp; Speech Bubble Director</option>
                       <option value="viral_hook_retention">⚡ Viral Hook &amp; High-Retention Pacing</option>
+                      <option value="educational_explainer">🔬 Educational 3D Explainer Director (How It Works / Cutaway)</option>
                       <option value="commercial_conversion">🛍️ High-Converting Product Commercial (AIDA / PAS)</option>
                     </select>
                   </div>
-                  <button id="btnDeepAnalyzeInput" type="button" class="glass-btn secondary-btn compact-btn" style="padding:5px 12px; font-size:12px; border-color:rgba(56,189,248,0.45); color:#7dd3fc;" title="Deep-analyze your Idea, Pasted Storyboard, or Product Description to preview the Scene-by-Scene Director Blueprint">
+                  <button id="btnDeepAnalyzeInput" type="button" class="glass-btn secondary-btn compact-btn"
+                    style="padding:5px 12px; font-size:12px; border-color:rgba(56,189,248,0.45); color:#7dd3fc;"
+                    title="Deep-analyze a full story, pasted storyboard/script, or product ad (not used for short story ideas)">
                     <span>🧠 Deep Analyze &amp; Blueprint</span>
                   </button>
                 </div>
 
                 <!-- Collapsible Deep Analysis Blueprint Preview -->
-                <div id="deepAnalysisPreviewCard" style="display:none; margin-top:10px; padding:10px 12px; border-radius:10px; background:rgba(15,23,42,0.78); border:1px solid rgba(56,189,248,0.3); font-size:12px;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                <div id="deepAnalysisPreviewCard"
+                  style="display:none; margin-top:10px; padding:10px 12px; border-radius:10px; background:rgba(15,23,42,0.78); border:1px solid rgba(56,189,248,0.3); font-size:12px;">
+                  <div
+                    style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
                     <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                      <span id="badgeDeepAnalysisGenre" class="tag-badge" style="background:rgba(139,92,246,0.22); color:#c4b5fd; font-size:11px;">🎬 Genre</span>
-                      <span id="badgeDeepAnalysisSkill" class="tag-badge" style="background:rgba(56,189,248,0.18); color:#7dd3fc; font-size:11px;">🎯 Skill</span>
-                      <span id="badgeDeepAnalysisScenes" class="tag-badge" style="background:rgba(16,185,129,0.18); color:#34d399; font-size:11px;">🎞️ Scenes</span>
+                      <span id="badgeDeepAnalysisGenre" class="tag-badge"
+                        style="background:rgba(139,92,246,0.22); color:#c4b5fd; font-size:11px;">🎬 Genre</span>
+                      <span id="badgeDeepAnalysisSkill" class="tag-badge"
+                        style="background:rgba(56,189,248,0.18); color:#7dd3fc; font-size:11px;">🎯 Skill</span>
+                      <span id="badgeDeepAnalysisScenes" class="tag-badge"
+                        style="background:rgba(16,185,129,0.18); color:#34d399; font-size:11px;">🎞️ Scenes</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:6px;">
-                      <button id="btnApplyDeepAnalysis" type="button" class="glass-btn primary-glow-btn mini-btn" style="padding:3px 9px; font-size:11px;" title="Apply recommended scene count and director skill">
+                      <button id="btnApplyDeepAnalysis" type="button" class="glass-btn primary-glow-btn mini-btn"
+                        style="padding:3px 9px; font-size:11px;"
+                        title="Apply recommended scene count and director skill">
                         ✓ Apply Blueprint
                       </button>
-                      <button id="btnCloseDeepAnalysis" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 7px; font-size:11px;" title="Hide blueprint preview">
+                      <button id="btnCloseDeepAnalysis" type="button" class="glass-btn secondary-btn mini-btn"
+                        style="padding:3px 7px; font-size:11px;" title="Hide blueprint preview">
                         ✕
                       </button>
                     </div>
                   </div>
                   <div id="deepAnalysisCharactersBox" style="color:#cbd5e1; margin-bottom:6px; line-height:1.45;"></div>
-                  <div id="deepAnalysisBeatsList" style="display:flex; flex-direction:column; gap:4px; max-height:165px; overflow-y:auto; padding-right:4px;"></div>
+                  <div id="deepAnalysisBeatsList"
+                    style="display:flex; flex-direction:column; gap:4px; max-height:165px; overflow-y:auto; padding-right:4px;">
+                  </div>
                 </div>
               </div>
 
               <!-- Stage 1 Character Creator Panel (Hình ảnh & Giọng nói nếu có) -->
-              <div id="stage1CharactersPanel" class="glass-panel compact-provider-panel stage1-char-studio-panel" style="margin-bottom: 10px; padding: 10px 12px; border: 1px solid rgba(16, 185, 129, 0.28);">
+              <div id="stage1CharactersPanel" class="glass-panel compact-provider-panel stage1-char-studio-panel"
+                style="margin-bottom: 10px; padding: 10px 12px; border: 1px solid rgba(16, 185, 129, 0.28);">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
                   <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     <span style="font-size:15px;">👥</span>
                     <strong style="font-size:12.5px; color:#f1f5f9;">Characters (Hình Ảnh &amp; Giọng Nói)</strong>
-                    <span id="badgeStage1CharCount" class="tag-badge" style="background:rgba(16,185,129,0.16); color:#6ee7b7; font-size:11px;">0 characters (Optional)</span>
+                    <span id="badgeStage1CharCount" class="tag-badge"
+                      style="background:rgba(16,185,129,0.16); color:#6ee7b7; font-size:11px;">0 characters
+                      (Optional)</span>
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                    <button id="btnStage1AnalyzeCreateCharacters" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; background:rgba(139,92,246,0.22); border-color:rgba(167,139,250,0.65); color:#e9d5ff; font-weight:600;" title="Analyze Story Idea / Script to create character profiles, visual prompts &amp; voices (reuse matching Library characters; review before painting)">
+                    <button id="btnStage1AnalyzeCreateCharacters" type="button"
+                      class="glass-btn secondary-btn compact-btn"
+                      style="padding:4px 10px; font-size:11.5px; background:rgba(139,92,246,0.22); border-color:rgba(167,139,250,0.65); color:#e9d5ff; font-weight:600;"
+                      title="Analyze Story Idea / Script to create character profiles, visual prompts &amp; voices (reuse matching Library characters; review before painting)">
                       <span>✨ Analyze &amp; Create</span>
                     </button>
-                    <button id="btnStage1AddCharacter" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(16,185,129,0.45); color:#6ee7b7;" title="Thêm nhân vật với ảnh tham chiếu và giọng nói (nếu có)">
+                    <button id="btnStage1AddCharacter" type="button" class="glass-btn secondary-btn compact-btn"
+                      style="padding:4px 10px; font-size:11.5px; border-color:rgba(16,185,129,0.45); color:#6ee7b7;"
+                      title="Thêm nhân vật với ảnh tham chiếu và giọng nói (nếu có)">
                       <span>➕ Thêm Nhân Vật</span>
                     </button>
-                    <button id="btnStage1ImportCharacters" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(167,139,250,0.45); color:#c4b5fd;" title="Import danh sách tên & prompt nhân vật từ file .txt và dùng AI để parse tự động">
+                    <button id="btnStage1ImportCharacters" type="button" class="glass-btn secondary-btn compact-btn"
+                      style="padding:4px 10px; font-size:11.5px; border-color:rgba(167,139,250,0.45); color:#c4b5fd;"
+                      title="Import danh sách tên & prompt nhân vật từ file .txt và dùng AI để parse tự động">
                       <span>📄 Import .txt</span>
                     </button>
-                    <button id="btnStage1OpenCharLibrary" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(251,191,36,0.45); color:#fcd34d;" title="Mở Thư Viện Nhân Vật dùng chung để chọn nhân vật tái sử dụng">
+                    <button id="btnStage1OpenCharLibrary" type="button" class="glass-btn secondary-btn compact-btn"
+                      style="padding:4px 10px; font-size:11.5px; border-color:rgba(251,191,36,0.45); color:#fcd34d;"
+                      title="Mở Thư Viện Nhân Vật dùng chung để chọn nhân vật tái sử dụng">
                       <span>📚 Thư Viện</span>
                     </button>
-                    <button id="btnStage1SaveAllToLibrary" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(52,211,153,0.45); color:#6ee7b7;" title="Lưu tất cả nhân vật hiện tại vào thư mục dùng chung (output/characters_library)">
+                    <button id="btnStage1SaveAllToLibrary" type="button" class="glass-btn secondary-btn compact-btn"
+                      style="padding:4px 10px; font-size:11.5px; border-color:rgba(52,211,153,0.45); color:#6ee7b7;"
+                      title="Lưu tất cả nhân vật hiện tại vào thư mục dùng chung (output/characters_library)">
                       <span>💾 Lưu Thư Viện</span>
                     </button>
-                    <button id="btnStage1PaintAllCharacters" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 10px; font-size:11.5px; border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;" title="Batch create AI portrait images for all characters in this list">
+                    <button id="btnStage1PaintAllCharacters" type="button" class="glass-btn secondary-btn compact-btn"
+                      style="padding:4px 10px; font-size:11.5px; border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;"
+                      title="Batch create AI portrait images for all characters in this list">
                       <span>🎨 Paint all Characters</span>
                     </button>
-                    <button id="btnStage1ClearCharacters" type="button" class="glass-btn secondary-btn compact-btn" style="padding:4px 9px; font-size:11.5px; border-color:rgba(251,146,60,0.45); color:#fdba74;" title="Remove all characters from this story (does not delete saved Library characters)">
+                    <button id="btnStage1ClearCharacters" type="button" class="glass-btn secondary-btn compact-btn"
+                      style="padding:4px 9px; font-size:11.5px; border-color:rgba(251,146,60,0.45); color:#fdba74;"
+                      title="Remove all characters from this story (does not delete saved Library characters)">
                       <span>➖ Clear</span>
                     </button>
-                    <button id="btnStage1ToggleCharacters" type="button" class="glass-btn secondary-btn mini-btn" style="padding:4px 8px; font-size:11px;" title="Mở rộng / Thu gọn danh sách nhân vật">
+                    <button id="btnStage1ToggleCharacters" type="button" class="glass-btn secondary-btn mini-btn"
+                      style="padding:4px 8px; font-size:11px;" title="Mở rộng / Thu gọn danh sách nhân vật">
                       <span id="textStage1ToggleChar">▾ Show</span>
                     </button>
                   </div>
                 </div>
                 <div id="stage1CharactersBody" style="display:none; margin-top:10px;">
                   <p class="hint-text" style="margin: 0 0 8px 0; font-size:11.5px; line-height:1.4; color:#cbd5e1;">
-                    Tạo hoặc tải lên <strong>ảnh nhân vật</strong> &amp; chọn <strong>giọng nói (nếu có)</strong> trước khi lập kịch bản. Hình ảnh nhân vật sẽ được dùng trực tiếp khi <strong>vẽ từng cảnh</strong> và <strong>tạo video</strong> để đồng nhất nhân vật.
+                    Tạo hoặc tải lên <strong>ảnh nhân vật</strong> &amp; chọn <strong>giọng nói (nếu có)</strong> trước
+                    khi lập kịch bản. Hình ảnh nhân vật sẽ được dùng trực tiếp khi <strong>vẽ từng cảnh</strong> và
+                    <strong>tạo video</strong> để đồng nhất nhân vật.
                   </p>
                   <div id="stage1CharactersList" class="stage1-char-list">
                     <!-- Rendered dynamically via app.js -->
@@ -757,31 +931,44 @@
                     <span class="auto-wf-sub-pill">Concept ➔ Storyboard ➔ Render ➔ Cinema</span>
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                    <button id="btnAddCurrentToBatchQueue" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer; background:rgba(139,92,246,0.16); color:#c4b5fd; border-color:rgba(139,92,246,0.4);" title="Add current story idea in Option A to the Batch Queue">
+                    <button id="btnAddCurrentToBatchQueue" type="button"
+                      class="tag-badge voice-toggle-btn compact-voice-btn"
+                      style="cursor:pointer; background:rgba(139,92,246,0.16); color:#c4b5fd; border-color:rgba(139,92,246,0.4);"
+                      title="Add current story idea in Option A to the Batch Queue">
                       <span>➕ Queue Idea</span>
                     </button>
-                    <button id="btnQuickOpenBatchQueue" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer; background:rgba(56,189,248,0.15); color:#7dd3fc; border-color:rgba(56,189,248,0.38);" title="Open Batch Story Queue (run a list of ideas/stories one by one)">
+                    <button id="btnQuickOpenBatchQueue" type="button"
+                      class="tag-badge voice-toggle-btn compact-voice-btn"
+                      style="cursor:pointer; background:rgba(56,189,248,0.15); color:#7dd3fc; border-color:rgba(56,189,248,0.38);"
+                      title="Open Batch Story Queue (run a list of ideas/stories one by one)">
                       <span>📚 Batch List (<span id="badgeQuickBatchCount">0</span>)</span>
                     </button>
-                    <button id="btnToggleAutoWorkflowStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer;" title="When ON, generating a story automatically runs all 4 stages end-to-end into a finished MP4">
-                      <span id="iconAutoWorkflowStage1">🤖</span> <span id="textAutoWorkflowStage1">Auto-Pilot: OFF</span>
+                    <button id="btnToggleAutoWorkflowStage1" type="button"
+                      class="tag-badge voice-toggle-btn compact-voice-btn" style="cursor:pointer;"
+                      title="When ON, generating a story automatically runs all 4 stages end-to-end into a finished MP4">
+                      <span id="iconAutoWorkflowStage1">🤖</span> <span id="textAutoWorkflowStage1">Auto-Pilot:
+                        OFF</span>
                     </button>
                   </div>
                 </div>
                 <div class="auto-wf-options-row">
-                  <label class="auto-wf-check-label" title="Automatically upgrade all scene video prompts to director-grade cinematic beats in Step 2">
+                  <label class="auto-wf-check-label"
+                    title="Automatically upgrade all scene video prompts to director-grade cinematic beats in Step 2">
                     <input type="checkbox" id="chkAutoRefinePrompts" checked>
                     <span>✨ Auto-Refine Prompts</span>
                   </label>
-                  <label class="auto-wf-check-label" title="Visually paint each scene 1-by-1 on the Director's Storyboard (Step 2) before starting Step 3 Render">
+                  <label class="auto-wf-check-label"
+                    title="Visually paint each scene 1-by-1 on the Director's Storyboard (Step 2) before starting Step 3 Render">
                     <input type="checkbox" id="chkAutoPaintStep2" checked>
                     <span>🎨 Live Paint on Step 2</span>
                   </label>
-                  <label class="auto-wf-check-label" title="Pause for a 5-second review countdown on Step 2 before advancing to Step 3 Render (you can Pause to edit anytime)">
+                  <label class="auto-wf-check-label"
+                    title="Pause for a 5-second review countdown on Step 2 before advancing to Step 3 Render (you can Pause to edit anytime)">
                     <input type="checkbox" id="chkAutoReviewPause" checked>
                     <span>⏱️ 5s Review Window</span>
                   </label>
-                  <label class="auto-wf-check-label" title="Automatically download the final MP4 master file when Step 4 Cinema Premiere finishes">
+                  <label class="auto-wf-check-label"
+                    title="Automatically download the final MP4 master file when Step 4 Cinema Premiere finishes">
                     <input type="checkbox" id="chkAutoDownloadMp4">
                     <span>⬇️ Auto-Download MP4</span>
                   </label>
@@ -805,12 +992,15 @@
                   <span class="btn-text">Generate Ad Storyboard</span>
                   <span class="btn-arrow">🛍️</span>
                 </button>
-                <button id="btnRunBatchQueueStep1To4" type="button" class="hero-action-btn studio-autopilot-btn" style="display: none;" title="Automatically produce all queued stories one by one from Step 1 to Step 4">
+                <button id="btnRunBatchQueueStep1To4" type="button" class="hero-action-btn studio-autopilot-btn"
+                  style="display: none;"
+                  title="Automatically produce all queued stories one by one from Step 1 to Step 4">
                   <span class="btn-glow-layer"></span>
                   <span class="btn-text" id="textBtnRunBatchQueue">📚 Run Batch Queue 1-by-1 (Step 1→4)</span>
                   <span class="btn-arrow">🚀</span>
                 </button>
-                <button id="btnAutoWorkflowStep1To4" type="button" class="hero-action-btn studio-autopilot-btn" title="1-Click Full Automation: Concept (Step 1) → Storyboard & Paint (Step 2) → Studio Render (Step 3) → Cinema Premiere (Step 4)">
+                <button id="btnAutoWorkflowStep1To4" type="button" class="hero-action-btn studio-autopilot-btn"
+                  title="1-Click Full Automation: Concept (Step 1) → Storyboard & Paint (Step 2) → Studio Render (Step 3) → Cinema Premiere (Step 4)">
                   <span class="btn-glow-layer"></span>
                   <span class="btn-text">🤖 Auto-Produce Full Film (Step 1→4)</span>
                   <span class="btn-arrow">⚡</span>
@@ -821,24 +1011,35 @@
 
             <!-- RIGHT COLUMN: Visual Art Style & Audio / Format Controls -->
             <div class="studio-col-controls">
-              
+
               <div class="config-grid compact-config-grid">
-                
+
                 <!-- Art Style Selection -->
                 <div class="config-column style-column">
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                  <div
+                    style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
                     <label class="input-label small-label" style="margin-bottom:0;">🎨 Visual Animation Style</label>
                     <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                      <button id="btnToggleImageCaptionsStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="padding:4px 10px; font-size:11px; cursor:pointer;" title="Turn ON or OFF the yellow Narrator Caption Box in Comic Book images">
-                        <span id="iconImageCaptionsStage1">🖼️</span> <span id="textImageCaptionsStage1">Caption in Images: ON</span>
+                      <button id="btnToggleImageCaptionsStage1" type="button"
+                        class="tag-badge voice-toggle-btn compact-voice-btn"
+                        style="padding:4px 10px; font-size:11px; cursor:pointer;"
+                        title="Turn ON or OFF the yellow Narrator Caption Box in Comic Book images">
+                        <span id="iconImageCaptionsStage1">🖼️</span> <span id="textImageCaptionsStage1">Caption in
+                          Images: ON</span>
                       </button>
-                      <button id="btnToggleSpeakerCamStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" style="padding:4px 10px; font-size:11px; cursor:pointer;" title="Focus camera directly on characters when they are talking/speaking (Shot-Reverse-Shot) — works with ANY Visual Animation Style!">
-                        <span id="iconSpeakerCamStage1">🗣️</span> <span id="textSpeakerCamStage1">Camera on Speaker: ON</span>
+                      <button id="btnToggleSpeakerCamStage1" type="button"
+                        class="tag-badge voice-toggle-btn compact-voice-btn"
+                        style="padding:4px 10px; font-size:11px; cursor:pointer;"
+                        title="Focus camera directly on characters when they are talking/speaking (Shot-Reverse-Shot) — works with ANY Visual Animation Style!">
+                        <span id="iconSpeakerCamStage1">🗣️</span> <span id="textSpeakerCamStage1">Camera on Speaker:
+                          ON</span>
                       </button>
                     </div>
                   </div>
-                  <div id="speakerCamBannerStage1" style="margin-bottom:8px; padding:6px 10px; border-radius:8px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.28); font-size:11px; color:#6ee7b7; display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                    <span>🗣️ <strong>Dialogue Film (Camera on Speaker)</strong> active — pick any Visual Style below!</span>
+                  <div id="speakerCamBannerStage1"
+                    style="margin-bottom:8px; padding:6px 10px; border-radius:8px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.28); font-size:11px; color:#6ee7b7; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                    <span>🗣️ <strong>Dialogue Film (Camera on Speaker)</strong> active — pick any Visual Style
+                      below!</span>
                   </div>
                   <div id="styleOptionsGrid" class="style-cards-grid compact-style-grid">
                     <!-- Injected via JavaScript -->
@@ -847,16 +1048,21 @@
 
                 <!-- Voice and Film Format Settings -->
                 <div class="config-column controls-column">
-                  
+
                   <!-- Voice Narrator Box -->
                   <div class="form-group voice-box-card" id="groupVoiceSelect">
                     <div class="voice-box-header">
                       <label for="selectVoice" class="input-label small-label">🎙️ Narrator Voice</label>
                       <div class="voice-toggles">
-                        <button id="btnToggleMultivoiceStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" title="Toggle Multi-Voice Dialogue (auto-casts unique character voices)">
-                          <span id="iconMultivoiceStage1">🎭</span> <span id="textMultivoiceStage1">Multi-Voice: ON</span>
+                        <button id="btnToggleMultivoiceStage1" type="button"
+                          class="tag-badge voice-toggle-btn compact-voice-btn"
+                          title="Toggle Multi-Voice Dialogue (auto-casts unique character voices)">
+                          <span id="iconMultivoiceStage1">🎭</span> <span id="textMultivoiceStage1">Multi-Voice:
+                            ON</span>
                         </button>
-                        <button id="btnToggleVoiceoverStage1" type="button" class="tag-badge voice-toggle-btn compact-voice-btn" title="Click to turn Voiceover ON or OFF">
+                        <button id="btnToggleVoiceoverStage1" type="button"
+                          class="tag-badge voice-toggle-btn compact-voice-btn"
+                          title="Click to turn Voiceover ON or OFF">
                           <span id="iconVoiceoverStage1">🎙️</span> <span id="textVoiceoverStage1">Voiceover: ON</span>
                         </button>
                         <span id="voiceSampleStatus" class="voice-audition-status">Audition Ready</span>
@@ -866,7 +1072,8 @@
                       <select id="selectVoice" class="styled-select compact-select">
                         <!-- Injected via JavaScript -->
                       </select>
-                      <button id="btnAuditionSampleVoice" type="button" class="glass-btn icon-only-btn compact-icon-btn" title="Listen to sample audio">
+                      <button id="btnAuditionSampleVoice" type="button" class="glass-btn icon-only-btn compact-icon-btn"
+                        title="Listen to sample audio">
                         <span id="iconAuditionVoice">🔊</span>
                       </button>
                     </div>
@@ -875,7 +1082,8 @@
                     <div id="auditionPlayerContainer" class="compact-audition-player" style="display:none;">
                       <div class="audition-player-header">
                         <span id="auditionVoiceLabel" class="audition-label">🔊 Playing Sample</span>
-                        <button id="btnCloseAuditionPlayer" type="button" class="audition-close-btn" title="Close player">✕</button>
+                        <button id="btnCloseAuditionPlayer" type="button" class="audition-close-btn"
+                          title="Close player">✕</button>
                       </div>
                       <audio id="audioAuditionPlayer" controls class="compact-audio-el"></audio>
                       <div id="auditionSampleText" class="audition-quote-text"></div>
@@ -969,10 +1177,12 @@
               </div>
               <div class="load-projects-actions">
                 <input type="file" id="inputImportProjectJsonStage1" accept=".json" style="display:none;">
-                <button id="btnImportProjectJsonStage1" class="glass-btn secondary-btn compact-btn import-json-btn" type="button" title="Import project.json">
+                <button id="btnImportProjectJsonStage1" class="glass-btn secondary-btn compact-btn import-json-btn"
+                  type="button" title="Import project.json">
                   📥 Import JSON
                 </button>
-                <button id="btnRefreshProjectsStage1" class="glass-btn secondary-btn compact-btn" type="button" title="Refresh projects">
+                <button id="btnRefreshProjectsStage1" class="glass-btn secondary-btn compact-btn" type="button"
+                  title="Refresh projects">
                   🔄 Refresh
                 </button>
               </div>
@@ -987,17 +1197,19 @@
 
       <!-- STAGE 2: DIRECTOR'S STORYBOARD -->
       <section id="stage2Storyboard" class="stage-panel">
-        
+
         <!-- Sticky Director Command Bar -->
         <div class="director-command-bar glass-panel">
           <!-- Primary Control Line -->
           <div class="director-main-row">
             <div class="director-meta">
               <div class="director-nav-btns">
-                <button id="btnBackToHomeFromStage2" class="glass-btn secondary-btn nav-back-btn compact-btn" title="Back to Homepage / Concept & Style">
+                <button id="btnBackToHomeFromStage2" class="glass-btn secondary-btn nav-back-btn compact-btn"
+                  title="Back to Homepage / Concept & Style">
                   <span class="btn-icon">←</span> Home
                 </button>
-                <button id="btnNewStoryFromStage2" class="glass-btn secondary-btn compact-btn" title="Start a fresh story from scratch">
+                <button id="btnNewStoryFromStage2" class="glass-btn secondary-btn compact-btn"
+                  title="Start a fresh story from scratch">
                   <span class="btn-icon">➕</span> New
                 </button>
               </div>
@@ -1005,7 +1217,9 @@
                 <div class="film-title-wrap">
                   <h2 id="storyboardFilmTitle" class="stage-title compact-title">Film Title</h2>
                   <span id="badgeStoryboardAspectRatio" class="tag-badge aspect-badge">📐 16:9</span>
-                  <span id="badgeStoryboardAdMode" class="tag-badge" style="display:none; background:rgba(236,72,153,0.18); color:#f472b6; border:1px solid rgba(236,72,153,0.35);">🛍️ Commercial Ad</span>
+                  <span id="badgeStoryboardAdMode" class="tag-badge"
+                    style="display:none; background:rgba(236,72,153,0.18); color:#f472b6; border:1px solid rgba(236,72,153,0.35);">🛍️
+                    Commercial Ad</span>
                   <span class="tag-badge scope-badge">🧠 Director's Board</span>
                 </div>
                 <p id="storyboardLogline" class="stage-subtitle compact-logline">Logline summary</p>
@@ -1016,19 +1230,22 @@
             <div class="director-actions-group">
               <!-- Studio Tools Popover / Dropdown Menu -->
               <div class="studio-tools-dropdown-wrap" id="wrapStudioToolsDropdown">
-                <button id="btnToggleStudioTools" class="glass-btn secondary-btn tool-btn studio-tools-trigger" type="button" title="Story & script production tools">
+                <button id="btnToggleStudioTools" class="glass-btn secondary-btn tool-btn studio-tools-trigger"
+                  type="button" title="Story & script production tools">
                   <span>✨</span> Studio Tools <span class="dropdown-chevron">▾</span>
                 </button>
                 <div id="menuStudioTools" class="studio-tools-menu glass-panel" style="display: none;">
                   <div class="menu-group-header">Prompt Engineering</div>
-                  <button id="btnExportStoryboard" class="menu-item-btn" type="button" title="1-Click copy formatted prompts">
+                  <button id="btnExportStoryboard" class="menu-item-btn" type="button"
+                    title="1-Click copy formatted prompts">
                     <span class="menu-icon">📋</span>
                     <div class="menu-text-wrap">
                       <span class="menu-item-title">Copy All Prompts</span>
                       <span class="menu-item-desc">Formatted for Midjourney, Veo 3 &amp; Kling</span>
                     </div>
                   </button>
-                  <button id="btnRefineAllPrompts" class="menu-item-btn" type="button" title="Upgrade all video prompts">
+                  <button id="btnRefineAllPrompts" class="menu-item-btn" type="button"
+                    title="Upgrade all video prompts">
                     <span class="menu-icon">✨</span>
                     <div class="menu-text-wrap">
                       <span class="menu-item-title">Refine Video Prompts</span>
@@ -1051,14 +1268,16 @@
                       <span class="menu-item-desc">Formatted scene actions &amp; narration</span>
                     </div>
                   </button>
-                  <button id="btnSyncDialogues" class="menu-item-btn" type="button" title="Auto-detect &amp; sync dialogues">
+                  <button id="btnSyncDialogues" class="menu-item-btn" type="button"
+                    title="Auto-detect &amp; sync dialogues">
                     <span class="menu-icon">💬</span>
                     <div class="menu-text-wrap">
                       <span class="menu-item-title">Auto-Add Dialogues</span>
                       <span class="menu-item-desc">Extract character dialogue lines from story</span>
                     </div>
                   </button>
-                  <button id="btnAddNewSceneDropdown" class="menu-item-btn" type="button" title="Add a new scene to this film">
+                  <button id="btnAddNewSceneDropdown" class="menu-item-btn" type="button"
+                    title="Add a new scene to this film">
                     <span class="menu-icon">➕</span>
                     <div class="menu-text-wrap">
                       <span class="menu-item-title">Add New Scene</span>
@@ -1079,19 +1298,24 @@
 
               <!-- Batch Production & Final Render CTA -->
               <div class="production-cluster">
-                <button id="btnPaintAllImages" class="glass-btn secondary-btn batch-btn" title="Paint all scenes sequentially one by one while keeping character consistency">
+                <button id="btnPaintAllImages" class="glass-btn secondary-btn batch-btn"
+                  title="Paint all scenes sequentially one by one while keeping character consistency">
                   <span>🎨</span> <span id="textPaintAllBtn">Paint All</span>
                 </button>
-                <button id="btnAnimateAllScenes" class="glass-btn secondary-btn batch-btn animate-btn" title="Render animated video clips for every scene sequentially">
+                <button id="btnAnimateAllScenes" class="glass-btn secondary-btn batch-btn animate-btn"
+                  title="Render animated video clips for every scene sequentially">
                   <span>🎬</span> <span id="textAnimateAllBtn">Animate All</span>
                 </button>
-                <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn batch-btn" title="Save script and narration edits">
+                <button id="btnSaveStoryboardEdits" class="glass-btn secondary-btn batch-btn"
+                  title="Save script and narration edits">
                   <span>💾</span> Save
                 </button>
-                <button id="btnAutoRunStage2To4" type="button" class="glass-btn secondary-btn batch-btn auto-finish-btn" title="Auto-Pilot from Step 2 → Step 4: Auto-refine prompts, paint missing scenes, render full film &amp; open Cinema Premiere">
+                <button id="btnAutoRunStage2To4" type="button" class="glass-btn secondary-btn batch-btn auto-finish-btn"
+                  title="Auto-Pilot from Step 2 → Step 4: Auto-refine prompts, paint missing scenes, render full film &amp; open Cinema Premiere">
                   <span>🤖</span> <span>Auto (2→4)</span>
                 </button>
-                <button id="btnProceedToRender" class="hero-action-btn compact-btn render-film-btn" title="Render Full Animated Film">
+                <button id="btnProceedToRender" class="hero-action-btn compact-btn render-film-btn"
+                  title="Render Full Animated Film">
                   <span class="btn-text">Render Full Film</span>
                   <span class="btn-arrow">🚀</span>
                 </button>
@@ -1103,46 +1327,65 @@
           <div class="director-sub-row">
             <div class="director-toggles-wrap">
               <div class="stage2-style-selector-wrap" style="display: inline-flex; align-items: center; gap: 4px;">
-                <select id="selectArtStyleStage2" class="styled-select compact-select" style="max-width: 190px; height: 32px; font-size: 12px; padding: 2px 8px;" title="Select Visual Animation Style (Studio Ghibli 2D, 3D Pixar, Classic Storybook, etc.)">
+                <select id="selectArtStyleStage2" class="styled-select compact-select"
+                  style="max-width: 190px; height: 32px; font-size: 12px; padding: 2px 8px;"
+                  title="Select Visual Animation Style (Studio Ghibli 2D, 3D Pixar, Classic Storybook, etc.)">
                   <!-- Populated via JS -->
                 </select>
               </div>
-              <button id="btnToggleSpeakerCamStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Dialogue Film Mode: Focus camera directly on characters when they are speaking (works with any Visual Animation Style)">
+              <button id="btnToggleSpeakerCamStage2" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Dialogue Film Mode: Focus camera directly on characters when they are speaking (works with any Visual Animation Style)">
                 <span id="iconSpeakerCamStage2">🗣️</span> <span id="textSpeakerCamStage2">Camera on Speaker: ON</span>
               </button>
-              <button id="btnToggleMultivoiceStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle Multi-Voice Character Dialogue">
+              <button id="btnToggleMultivoiceStage2" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Toggle Multi-Voice Character Dialogue">
                 <span id="iconMultivoiceStage2">🎭</span> <span id="textMultivoiceStage2">Multi-Voice: ON</span>
               </button>
-              <button id="btnOpenVoiceCastingModal" class="glass-btn secondary-btn toggle-pill-btn voice-casting-pill" title="Configure character voices in studio modal">
-                <span class="btn-icon">🎙️</span> <span id="textVoiceCastingBadge">Cast Voices</span> <span id="badgeVoiceRoleCount" class="tag-count-bubble">0</span>
+              <button id="btnOpenVoiceCastingModal" class="glass-btn secondary-btn toggle-pill-btn voice-casting-pill"
+                title="Configure character voices in studio modal">
+                <span class="btn-icon">🎙️</span> <span id="textVoiceCastingBadge">Cast Voices</span> <span
+                  id="badgeVoiceRoleCount" class="tag-count-bubble">0</span>
               </button>
-              <button id="btnToggleVoiceoverStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle voiceover narration ON or OFF">
+              <button id="btnToggleVoiceoverStage2" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Toggle voiceover narration ON or OFF">
                 <span id="iconVoiceoverStage2">🎙️</span> <span id="textVoiceoverStage2">Voiceover: ON</span>
               </button>
-              <button id="btnToggleAllScenesDialogueOnly" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle 'Dialogue Only' ON or OFF for all scenes (ON = skip Narrator voiceover so only characters speak)">
-                <span id="iconAllScenesDialogueOnly">💬</span> <span id="textAllScenesDialogueOnly">Dialogue Only: OFF</span>
+              <button id="btnToggleAllScenesDialogueOnly" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Toggle 'Dialogue Only' ON or OFF for all scenes (ON = skip Narrator voiceover so only characters speak)">
+                <span id="iconAllScenesDialogueOnly">💬</span> <span id="textAllScenesDialogueOnly">Dialogue Only:
+                  OFF</span>
               </button>
               <div class="stage2-voice-selector-wrap" style="display: inline-flex; align-items: center; gap: 4px;">
-                <select id="selectVoiceStage2" class="styled-select compact-select" style="max-width: 240px; height: 32px; font-size: 12px; padding: 2px 8px;" title="Select Narrator Voice for this Project">
+                <select id="selectVoiceStage2" class="styled-select compact-select"
+                  style="max-width: 240px; height: 32px; font-size: 12px; padding: 2px 8px;"
+                  title="Select Narrator Voice for this Project">
                   <!-- Populated via JS -->
                 </select>
-                <button id="btnAuditionVoiceStage2" class="glass-btn secondary-btn toggle-pill-btn" style="padding: 4px 8px; height: 32px;" title="Preview selected narrator voice">
+                <button id="btnAuditionVoiceStage2" class="glass-btn secondary-btn toggle-pill-btn"
+                  style="padding: 4px 8px; height: 32px;" title="Preview selected narrator voice">
                   <span id="iconAuditionVoiceStage2">🔊</span>
                 </button>
               </div>
-              <button id="btnToggleSubtitlesStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle burnt-in subtitles ON or OFF">
+              <button id="btnToggleSubtitlesStage2" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Toggle burnt-in subtitles ON or OFF">
                 <span id="iconSubtitlesStage2">💬</span> <span id="textSubtitlesStage2">Captions: ON</span>
               </button>
-              <button id="btnToggleImageCaptionsStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Turn ON or OFF the yellow Narrator Caption Box in Comic Book images (Dialogue bubbles stay active)">
-                <span id="iconImageCaptionsStage2">🖼️</span> <span id="textImageCaptionsStage2">Caption in Images: ON</span>
+              <button id="btnToggleImageCaptionsStage2" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Turn ON or OFF the yellow Narrator Caption Box in Comic Book images (Dialogue bubbles stay active)">
+                <span id="iconImageCaptionsStage2">🖼️</span> <span id="textImageCaptionsStage2">Caption in Images:
+                  ON</span>
               </button>
-              <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle Paint Engine (Antigravity AI, Gemini Imagen 3, Cloud AI Art Pollinations, FlowKit Character Refs, Storyboard Only)">
+              <button id="btnToggleImageModeStage2" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Toggle Paint Engine (Antigravity AI, Gemini Imagen 3, Cloud AI Art Pollinations, FlowKit Character Refs, Storyboard Only)">
                 <span id="iconImageModeStage2">✨</span> <span id="textImageModeStage2">Paint: Gemini Imagen 3</span>
               </button>
-              <button id="btnToggleVideoCharRefsStage2" class="glass-btn secondary-btn toggle-pill-btn" title="Khi BẬT: Tự động đính kèm hình ảnh nhân vật cùng ảnh cảnh vào bước tạo video AI (Google Flow Omni R2V / Veo)">
-                <span id="iconVideoCharRefsStage2">👥</span> <span id="textVideoCharRefsStage2">Video Char Refs: ON</span>
+              <button id="btnToggleVideoCharRefsStage2" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Khi BẬT: Tự động đính kèm hình ảnh nhân vật cùng ảnh cảnh vào bước tạo video AI (Google Flow Omni R2V / Veo)">
+                <span id="iconVideoCharRefsStage2">👥</span> <span id="textVideoCharRefsStage2">Video Char Refs:
+                  ON</span>
               </button>
-              <button id="btnToggleAutoPaint" class="glass-btn secondary-btn toggle-pill-btn" title="Toggle automatic scene painting (Default: OFF — manual review mode)">
+              <button id="btnToggleAutoPaint" class="glass-btn secondary-btn toggle-pill-btn"
+                title="Toggle automatic scene painting (Default: OFF — manual review mode)">
                 <span id="iconAutoPaint">🚫</span> <span id="textAutoPaint">Auto-Paint: OFF</span>
               </button>
             </div>
@@ -1153,8 +1396,10 @@
                 <span>👥</span>
                 <span class="char-anchor-tag">Character Lock:</span>
               </div>
-              <input type="text" id="inputCharacterConsistency" class="styled-input compact-char-input" placeholder="Main character visual traits (e.g. Leo, 10yo boy, yellow hoodie)...">
-              <button id="btnLockCharacter" class="glass-btn secondary-btn compact-lock-btn" title="Save character specification">🔒 Lock</button>
+              <input type="text" id="inputCharacterConsistency" class="styled-input compact-char-input"
+                placeholder="Main character visual traits (e.g. Leo, 10yo boy, yellow hoodie)...">
+              <button id="btnLockCharacter" class="glass-btn secondary-btn compact-lock-btn"
+                title="Save character specification">🔒 Lock</button>
             </div>
           </div>
         </div>
@@ -1163,13 +1408,16 @@
         <div id="storyboardViewToolbar" class="storyboard-view-toolbar glass-panel">
           <!-- View Switcher Tabs -->
           <div class="view-mode-switcher" role="tablist" aria-label="Storyboard View Modes">
-            <button id="btnViewModeGrid" type="button" class="view-mode-btn active" data-mode="grid" title="Detailed Scene Cards Grid View">
+            <button id="btnViewModeGrid" type="button" class="view-mode-btn active" data-mode="grid"
+              title="Detailed Scene Cards Grid View">
               <span class="view-icon">🎬</span> Cards Grid
             </button>
-            <button id="btnViewModeScript" type="button" class="view-mode-btn" data-mode="script" title="Screenplay & Dialogue Reading View">
+            <button id="btnViewModeScript" type="button" class="view-mode-btn" data-mode="script"
+              title="Screenplay & Dialogue Reading View">
               <span class="view-icon">📋</span> Script &amp; Dialogue
             </button>
-            <button id="btnViewModeFilmstrip" type="button" class="view-mode-btn" data-mode="filmstrip" title="Visual Reel Filmstrip View">
+            <button id="btnViewModeFilmstrip" type="button" class="view-mode-btn" data-mode="filmstrip"
+              title="Visual Reel Filmstrip View">
               <span class="view-icon">🖼️</span> Filmstrip
             </button>
           </div>
@@ -1180,13 +1428,16 @@
             <button id="filterBtnAll" type="button" class="filter-chip-btn active" data-filter="all">
               All (<span id="filterCountAll">0</span>)
             </button>
-            <button id="filterBtnNeedArt" type="button" class="filter-chip-btn" data-filter="needArt" title="Show only unpainted scenes">
+            <button id="filterBtnNeedArt" type="button" class="filter-chip-btn" data-filter="needArt"
+              title="Show only unpainted scenes">
               🎨 Need Art (<span id="filterCountNeedArt">0</span>)
             </button>
-            <button id="filterBtnNeedVideo" type="button" class="filter-chip-btn" data-filter="needVideo" title="Show scenes needing video clips">
+            <button id="filterBtnNeedVideo" type="button" class="filter-chip-btn" data-filter="needVideo"
+              title="Show scenes needing video clips">
               🎬 Need Video (<span id="filterCountNeedVideo">0</span>)
             </button>
-            <button id="filterBtnDialogue" type="button" class="filter-chip-btn" data-filter="dialogue" title="Show scenes with character dialogues">
+            <button id="filterBtnDialogue" type="button" class="filter-chip-btn" data-filter="dialogue"
+              title="Show scenes with character dialogues">
               💬 Dialogues (<span id="filterCountDialogue">0</span>)
             </button>
           </div>
@@ -1195,20 +1446,25 @@
           <div class="prompt-tabs-controller">
             <div class="field-toggle-pill-group" title="Switch prompt view across all scene cards">
               <span class="toolbar-label">Field:</span>
-              <button id="btnPromptFieldScript" type="button" class="prompt-field-pill active" data-field="script" title="Show Script & Dialogue on cards">
+              <button id="btnPromptFieldScript" type="button" class="prompt-field-pill active" data-field="script"
+                title="Show Script & Dialogue on cards">
                 💬 Script
               </button>
-              <button id="btnPromptFieldImage" type="button" class="prompt-field-pill" data-field="image" title="Show Image Art prompt on cards">
+              <button id="btnPromptFieldImage" type="button" class="prompt-field-pill" data-field="image"
+                title="Show Image Art prompt on cards">
                 🎨 Image
               </button>
-              <button id="btnPromptFieldVideo" type="button" class="prompt-field-pill" data-field="video" title="Show Video Motion prompt on cards">
+              <button id="btnPromptFieldVideo" type="button" class="prompt-field-pill" data-field="video"
+                title="Show Video Motion prompt on cards">
                 🎥 Video
               </button>
-              <button id="btnPromptFieldAll" type="button" class="prompt-field-pill" data-field="all" title="Expand all prompt fields on cards">
+              <button id="btnPromptFieldAll" type="button" class="prompt-field-pill" data-field="all"
+                title="Expand all prompt fields on cards">
                 ↔ All
               </button>
             </div>
-            <button id="btnAddNewSceneToolbar" type="button" class="glass-btn secondary-btn compact-action-pill add-scene-btn" title="Add a new scene to this film">
+            <button id="btnAddNewSceneToolbar" type="button"
+              class="glass-btn secondary-btn compact-action-pill add-scene-btn" title="Add a new scene to this film">
               <span>➕ Add Scene</span>
             </button>
           </div>
@@ -1225,31 +1481,47 @@
             <div class="casting-bar-title">
               <span>👥</span> <strong>Character Studio (Hình Ảnh &amp; Giọng Nói)</strong>
               <span id="castingBarRoleCountBadge" class="casting-role-badge">0 characters</span>
-              <span class="casting-bar-hint">Tạo ảnh nhân vật &amp; chọn giọng nói (nếu có) — tự động áp dụng vào Tạo Cảnh &amp; Tạo Video</span>
+              <span class="casting-bar-hint">Tạo ảnh nhân vật &amp; chọn giọng nói (nếu có) — tự động áp dụng vào Tạo
+                Cảnh &amp; Tạo Video</span>
             </div>
             <div class="casting-bar-actions">
-              <button id="btnAddProjectCharacter" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(16,185,129,0.45); color:#6ee7b7;" title="Thêm nhân vật mới (tên, mô tả ngoại hình, ảnh & giọng nói tùy chọn)">
+              <button id="btnAddProjectCharacter" type="button" class="glass-btn secondary-btn compact-action-pill"
+                style="border-color:rgba(16,185,129,0.45); color:#6ee7b7;"
+                title="Thêm nhân vật mới (tên, mô tả ngoại hình, ảnh & giọng nói tùy chọn)">
                 <span>➕ Thêm Nhân Vật</span>
               </button>
-              <button id="btnImportProjectCharacters" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(167,139,250,0.45); color:#c4b5fd;" title="Import prompt nhân vật từ file .txt và dùng AI phân tích tên & mô tả">
+              <button id="btnImportProjectCharacters" type="button" class="glass-btn secondary-btn compact-action-pill"
+                style="border-color:rgba(167,139,250,0.45); color:#c4b5fd;"
+                title="Import prompt nhân vật từ file .txt và dùng AI phân tích tên & mô tả">
                 <span>📄 Import .txt</span>
               </button>
-              <button id="btnOpenProjectCharLibrary" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(251,191,36,0.45); color:#fcd34d;" title="Chọn nhân vật từ Thư Viện dùng chung để tái sử dụng cho phim này">
+              <button id="btnOpenProjectCharLibrary" type="button" class="glass-btn secondary-btn compact-action-pill"
+                style="border-color:rgba(251,191,36,0.45); color:#fcd34d;"
+                title="Chọn nhân vật từ Thư Viện dùng chung để tái sử dụng cho phim này">
                 <span>📚 Thư Viện</span>
               </button>
-              <button id="btnSaveProjectCharsToLibrary" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(52,211,153,0.45); color:#6ee7b7;" title="Lưu toàn bộ nhân vật (ảnh chân dung, mô tả, giọng nói) vào thư mục chung để tái sử dụng">
+              <button id="btnSaveProjectCharsToLibrary" type="button"
+                class="glass-btn secondary-btn compact-action-pill"
+                style="border-color:rgba(52,211,153,0.45); color:#6ee7b7;"
+                title="Lưu toàn bộ nhân vật (ảnh chân dung, mô tả, giọng nói) vào thư mục chung để tái sử dụng">
                 <span>💾 Lưu Thư Viện</span>
               </button>
-              <button id="btnGenerateAllCharacterImages" type="button" class="glass-btn secondary-btn compact-action-pill" style="border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;" title="Batch create AI character portraits for all characters (re-confirms if all already painted)">
+              <button id="btnGenerateAllCharacterImages" type="button"
+                class="glass-btn secondary-btn compact-action-pill"
+                style="border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;"
+                title="Batch create AI character portraits for all characters (re-confirms if all already painted)">
                 <span>🎨 Paint all Characters</span>
               </button>
-              <button id="btnAutoCastVoices" type="button" class="glass-btn secondary-btn compact-action-pill" title="Tự động gán giọng đọc phù hợp cho các nhân vật có thoại">
+              <button id="btnAutoCastVoices" type="button" class="glass-btn secondary-btn compact-action-pill"
+                title="Tự động gán giọng đọc phù hợp cho các nhân vật có thoại">
                 <span>🤖 Auto-Cast Voices</span>
               </button>
-              <button id="btnOpenVoiceModalFromBar" type="button" class="glass-btn secondary-btn compact-action-pill" title="Open Full Voice Casting Modal">
+              <button id="btnOpenVoiceModalFromBar" type="button" class="glass-btn secondary-btn compact-action-pill"
+                title="Open Full Voice Casting Modal">
                 <span>🎛️ Voice Studio ↗</span>
               </button>
-              <button id="btnToggleCastingBarCollapse" type="button" class="glass-btn secondary-btn compact-action-pill" title="Collapse or expand Character Studio">
+              <button id="btnToggleCastingBarCollapse" type="button" class="glass-btn secondary-btn compact-action-pill"
+                title="Collapse or expand Character Studio">
                 <span id="textCastingCollapse">▲ Hide</span>
               </button>
             </div>
@@ -1258,15 +1530,19 @@
           <!-- Inline Add New Character Composer -->
           <div id="inlineAddCharForm" class="inline-add-char-form" style="display:none;">
             <div class="inline-add-char-grid">
-              <input type="text" id="inputNewCharName" class="styled-input compact-input" placeholder="Tên nhân vật (e.g. Tử Lộ, Cô Tấm, Robot X)...">
-              <input type="text" id="inputNewCharDesc" class="styled-input compact-input" placeholder="Mô tả ngoại hình cố định (tuổi, tóc, trang phục, phụ kiện)...">
+              <input type="text" id="inputNewCharName" class="styled-input compact-input"
+                placeholder="Tên nhân vật (e.g. Tử Lộ, Cô Tấm, Robot X)...">
+              <input type="text" id="inputNewCharDesc" class="styled-input compact-input"
+                placeholder="Mô tả ngoại hình cố định (tuổi, tóc, trang phục, phụ kiện)...">
               <select id="selectNewCharVoice" class="styled-select compact-select" title="Giọng nói (nếu có)">
                 <option value="">🎙️ Giọng nói: Tự động / Không cố định</option>
                 <option value="none">🔇 Không thoại (Chỉ dùng hình ảnh)</option>
               </select>
               <div style="display:flex; gap:6px; align-items:center;">
-                <button id="btnConfirmAddChar" type="button" class="glass-btn primary-glow-btn compact-btn" style="padding:6px 12px; font-size:12px;">✓ Tạo</button>
-                <button id="btnCancelAddChar" type="button" class="glass-btn secondary-btn compact-btn" style="padding:6px 10px; font-size:12px;">✕</button>
+                <button id="btnConfirmAddChar" type="button" class="glass-btn primary-glow-btn compact-btn"
+                  style="padding:6px 12px; font-size:12px;">✓ Tạo</button>
+                <button id="btnCancelAddChar" type="button" class="glass-btn secondary-btn compact-btn"
+                  style="padding:6px 10px; font-size:12px;">✕</button>
               </div>
             </div>
           </div>
@@ -1317,10 +1593,12 @@
 
         <!-- Floating Quick Scroll to Top & Render Pill -->
         <div id="floatingDirectorWidget" class="floating-director-widget" style="display:none;">
-          <button id="btnFloatingScrollTop" type="button" class="floating-widget-btn" title="Scroll to top of Director's Board">
+          <button id="btnFloatingScrollTop" type="button" class="floating-widget-btn"
+            title="Scroll to top of Director's Board">
             <span>⬆️ Top</span>
           </button>
-          <button id="btnFloatingRenderFilm" type="button" class="floating-widget-btn render-cta" title="Render Full Film">
+          <button id="btnFloatingRenderFilm" type="button" class="floating-widget-btn render-cta"
+            title="Render Full Film">
             <span>🚀 Render Film</span>
           </button>
         </div>
@@ -1336,7 +1614,8 @@
           </div>
 
           <h2 class="render-heading">Animation Engine at Work</h2>
-          <p id="renderStepDetail" class="render-detail-text">Composing scene frames, audio narration, and cinematic pan & zoom...</p>
+          <p id="renderStepDetail" class="render-detail-text">Composing scene frames, audio narration, and cinematic pan
+            & zoom...</p>
 
           <div class="progress-bar-wrapper">
             <div class="progress-bar-track">
@@ -1352,23 +1631,29 @@
           <div class="agent-activity-box">
             <h4 class="activity-title">Live Agent Activity Log</h4>
             <div id="activityLogList" class="activity-log-items">
-              <div class="log-row done"><span class="log-check">✓</span> Scriptwriter Agent created story structure</div>
-              <div class="log-row active"><span class="log-spinner">⏳</span> Generating high-definition keyframe illustrations...</div>
+              <div class="log-row done"><span class="log-check">✓</span> Scriptwriter Agent created story structure
+              </div>
+              <div class="log-row active"><span class="log-spinner">⏳</span> Generating high-definition keyframe
+                illustrations...</div>
             </div>
           </div>
 
           <!-- Navigation controls while rendering -->
-          <div class="render-nav-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-            <button id="btnRunInBackgroundAndCreate" class="glass-btn primary-glow-btn compact-btn" title="Keep this film rendering in the background and immediately start a new story or edit other films">
+          <div class="render-nav-actions"
+            style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button id="btnRunInBackgroundAndCreate" class="glass-btn primary-glow-btn compact-btn"
+              title="Keep this film rendering in the background and immediately start a new story or edit other films">
               <span class="btn-icon">🚀</span> Run in Background & Create New Film
             </button>
-            <button id="btnBackToBoardFromStage3" class="glass-btn secondary-btn compact-btn" title="Return to Director's Storyboard">
+            <button id="btnBackToBoardFromStage3" class="glass-btn secondary-btn compact-btn"
+              title="Return to Director's Storyboard">
               <span class="btn-icon">📋</span> Back to Storyboard
             </button>
             <button id="btnBackToHomeFromStage3" class="glass-btn secondary-btn compact-btn" title="Return to Homepage">
               <span class="btn-icon">🏠</span> Back to Home
             </button>
-            <button id="btnCancelRenderCurrent" class="glass-btn secondary-btn compact-btn text-danger-btn" title="Cancel this rendering task and return to Storyboard">
+            <button id="btnCancelRenderCurrent" class="glass-btn secondary-btn compact-btn text-danger-btn"
+              title="Cancel this rendering task and return to Storyboard">
               <span class="btn-icon">⏹</span> Cancel Render
             </button>
           </div>
@@ -1385,14 +1670,16 @@
               <p id="cinemaMovieLogline" class="cinema-logline compact-logline">A story rendered by AniStory AI</p>
             </div>
             <div class="cinema-action-buttons">
-              <button id="btnCinemaBackToBoard" class="glass-btn secondary-btn compact-btn" title="Return to Storyboard to edit">
+              <button id="btnCinemaBackToBoard" class="glass-btn secondary-btn compact-btn"
+                title="Return to Storyboard to edit">
                 <span class="btn-icon">📋</span> Storyboard
               </button>
               <a id="btnDownloadMovie" class="hero-action-btn compact-btn" href="#" download>
                 <span class="btn-text">Download MP4</span>
                 <span class="btn-arrow">📥</span>
               </a>
-              <button id="btnStartNewStory" class="glass-btn secondary-btn compact-btn" title="Start a fresh story from scratch">
+              <button id="btnStartNewStory" class="glass-btn secondary-btn compact-btn"
+                title="Start a fresh story from scratch">
                 <span class="btn-icon">🏠</span> New Story
               </button>
             </div>
@@ -1426,17 +1713,23 @@
           </div>
 
           <!-- Individual Scene Clips Gallery -->
-          <div id="cinemaSceneClipsWrapper" style="margin-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px; flex-wrap:wrap; gap:8px;">
+          <div id="cinemaSceneClipsWrapper"
+            style="margin-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 20px;">
+            <div
+              style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px; flex-wrap:wrap; gap:8px;">
               <div>
-                <h3 style="font-family:'Outfit', sans-serif; font-size: 16px; font-weight:700; color:#f1f5f9; display:flex; align-items:center; gap:8px;">
+                <h3
+                  style="font-family:'Outfit', sans-serif; font-size: 16px; font-weight:700; color:#f1f5f9; display:flex; align-items:center; gap:8px;">
                   <span>🎬</span> Individual Scene Animation Clips
-                  <span id="cinemaClipsCountBadge" class="tag-badge" style="background:rgba(99, 102, 241, 0.2); color:#a5b4fc; font-size:11px;">0 clips</span>
+                  <span id="cinemaClipsCountBadge" class="tag-badge"
+                    style="background:rgba(99, 102, 241, 0.2); color:#a5b4fc; font-size:11px;">0 clips</span>
                 </h3>
-                <p style="color:var(--text-dim); font-size:12px; margin-top:2px;">Watch and download each animated scene video separately</p>
+                <p style="color:var(--text-dim); font-size:12px; margin-top:2px;">Watch and download each animated scene
+                  video separately</p>
               </div>
             </div>
-            <div id="cinemaSceneClipsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;">
+            <div id="cinemaSceneClipsGrid"
+              style="display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;">
               <!-- Populated dynamically with scene clip cards -->
             </div>
           </div>
@@ -1462,61 +1755,86 @@
             <option value="flowkit">🌊 Google Flow Bridge (Character Reference Images)</option>
             <option value="manual">📝 Storyboard Only (No AI Painting — Placeholders &amp; Manual Uploads)</option>
           </select>
-          <p class="field-hint">You can also quickly toggle this directly on the Director's Storyboard bar or customize per-step in 🎛️ AI Models per Task/Step.</p>
+          <p class="field-hint">You can also quickly toggle this directly on the Director's Storyboard bar or customize
+            per-step in 🎛️ AI Models per Task/Step.</p>
         </div>
 
-        <div class="form-group" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:rgba(30,41,59,0.35); border-radius:8px; border:1px solid var(--border-subtle); margin-bottom:14px;">
+        <div class="form-group"
+          style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:rgba(30,41,59,0.35); border-radius:8px; border:1px solid var(--border-subtle); margin-bottom:14px;">
           <div>
-            <label for="checkSettingsAutoPaint" class="input-label" style="margin-bottom:2px; font-weight:600; cursor:pointer;">🎨 Auto-Paint Storyboard Scenes</label>
-            <p class="field-hint" style="margin-bottom:0; font-size:12px;">Automatically start painting images immediately after generating the script (Default: OFF — lets you review first).</p>
+            <label for="checkSettingsAutoPaint" class="input-label"
+              style="margin-bottom:2px; font-weight:600; cursor:pointer;">🎨 Auto-Paint Storyboard Scenes</label>
+            <p class="field-hint" style="margin-bottom:0; font-size:12px;">Automatically start painting images
+              immediately after generating the script (Default: OFF — lets you review first).</p>
           </div>
-          <input type="checkbox" id="checkSettingsAutoPaint" style="width:20px; height:20px; cursor:pointer; accent-color:var(--primary-color);">
+          <input type="checkbox" id="checkSettingsAutoPaint"
+            style="width:20px; height:20px; cursor:pointer; accent-color:var(--primary-color);">
         </div>
 
         <div style="margin-top: 14px; margin-bottom: 8px;">
-          <h4 style="font-size: 14px; font-weight: 700; color: var(--text-main);">🔑 AI Screenplay &amp; Painting API Keys</h4>
+          <h4 style="font-size: 14px; font-weight: 700; color: var(--text-main);">🔑 AI Screenplay &amp; Painting API
+            Keys</h4>
           <p class="field-hint">Keys are saved locally on your machine and never shared.</p>
         </div>
 
         <div class="form-group">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <label for="inputGeminiApiKey" class="input-label" style="margin-bottom:0;">Google Gemini API Key (Official)</label>
-            <button id="btnVerifySettingsGeminiApi" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 10px; height:22px; font-size:11px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;">✓ Check API Key</button>
+            <label for="inputGeminiApiKey" class="input-label" style="margin-bottom:0;">Google Gemini API Key
+              (Official)</label>
+            <button id="btnVerifySettingsGeminiApi" type="button" class="glass-btn secondary-btn mini-btn"
+              style="padding:3px 10px; height:22px; font-size:11px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;">✓
+              Check API Key</button>
           </div>
           <div class="input-with-eye">
             <input type="password" id="inputGeminiApiKey" class="styled-input" placeholder="AIzaSy... or AQ....">
-            <button type="button" class="btn-toggle-secret" data-target="inputGeminiApiKey" title="Show / Hide API key">👁️</button>
+            <button type="button" class="btn-toggle-secret" data-target="inputGeminiApiKey"
+              title="Show / Hide API key">👁️</button>
           </div>
-          <div id="settingsGeminiApiVerifyStatus" style="display:none; margin-top:6px; padding:6px 10px; border-radius:6px; font-size:11.5px;"></div>
+          <div id="settingsGeminiApiVerifyStatus"
+            style="display:none; margin-top:6px; padding:6px 10px; border-radius:6px; font-size:11.5px;"></div>
         </div>
 
-        <div class="form-group" style="background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 8px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap:8px; flex-wrap:wrap;">
-            <label for="inputGeminiCookie" class="input-label" style="font-weight: 700; color: #c4b5fd; margin-bottom: 0;">
+        <div class="form-group"
+          style="background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 8px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
+          <div
+            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap:8px; flex-wrap:wrap;">
+            <label for="inputGeminiCookie" class="input-label"
+              style="font-weight: 700; color: #c4b5fd; margin-bottom: 0;">
               🍪 Gemini Web Session Cookie (Optional)
             </label>
             <div style="display:flex; align-items:center; gap:6px;">
-              <button id="btnVerifySettingsGeminiCookie" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 10px; height:22px; font-size:11px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;">✓ Check Cookie</button>
-              <button id="btnClearSettingsGeminiCookie" type="button" class="glass-btn secondary-btn mini-btn" style="padding:3px 8px; height:22px; font-size:11px; border-color:rgba(248,113,113,0.45); color:#fca5a5;" title="Clear both Gemini Cookie fields">🧹 Clear</button>
+              <button id="btnVerifySettingsGeminiCookie" type="button" class="glass-btn secondary-btn mini-btn"
+                style="padding:3px 10px; height:22px; font-size:11px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;">✓
+                Check Cookie</button>
+              <button id="btnClearSettingsGeminiCookie" type="button" class="glass-btn secondary-btn mini-btn"
+                style="padding:3px 8px; height:22px; font-size:11px; border-color:rgba(248,113,113,0.45); color:#fca5a5;"
+                title="Clear both Gemini Cookie fields">🧹 Clear</button>
             </div>
           </div>
           <p class="field-hint" style="margin-bottom: 8px; font-size: 12px; line-height: 1.4;">
-            Use your signed-in <strong>gemini.google.com</strong> web session directly. Tip: Copy from a fresh Incognito/Firefox tab and close the tab immediately so the browser doesn't rotate <code>__Secure-1PSIDTS</code>.
+            Use your signed-in <strong>gemini.google.com</strong> web session directly. Tip: Copy from a fresh
+            Incognito/Firefox tab and close the tab immediately so the browser doesn't rotate
+            <code>__Secure-1PSIDTS</code>.
           </p>
           <div class="input-with-eye">
-            <input type="password" id="inputGeminiCookie" class="styled-input" placeholder="Paste __Secure-1PSID or full Cookie string...">
-            <button type="button" class="btn-toggle-secret" data-target="inputGeminiCookie" title="Show / Hide cookie">👁️</button>
+            <input type="password" id="inputGeminiCookie" class="styled-input"
+              placeholder="Paste __Secure-1PSID or full Cookie string...">
+            <button type="button" class="btn-toggle-secret" data-target="inputGeminiCookie"
+              title="Show / Hide cookie">👁️</button>
           </div>
           <div style="margin-top: 8px;">
-            <label for="inputGeminiCookieTs" class="input-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">
+            <label for="inputGeminiCookieTs" class="input-label"
+              style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">
               Required: <code>__Secure-1PSIDTS</code>:
             </label>
             <div class="input-with-eye">
               <input type="password" id="inputGeminiCookieTs" class="styled-input" placeholder="sidts-...">
-              <button type="button" class="btn-toggle-secret" data-target="inputGeminiCookieTs" title="Show / Hide PSIDTS">👁️</button>
+              <button type="button" class="btn-toggle-secret" data-target="inputGeminiCookieTs"
+                title="Show / Hide PSIDTS">👁️</button>
             </div>
           </div>
-          <div id="settingsGeminiCookieVerifyStatus" style="display:none; margin-top:8px; padding:6px 10px; border-radius:6px; font-size:11.5px;"></div>
+          <div id="settingsGeminiCookieVerifyStatus"
+            style="display:none; margin-top:8px; padding:6px 10px; border-radius:6px; font-size:11.5px;"></div>
         </div>
 
         <div class="form-group">
@@ -1525,7 +1843,8 @@
         </div>
 
         <div class="form-group">
-          <label for="inputClaudeApiKey" class="input-label">Anthropic Claude API Key (Claude 3.5 Sonnet / Haiku)</label>
+          <label for="inputClaudeApiKey" class="input-label">Anthropic Claude API Key (Claude 3.5 Sonnet /
+            Haiku)</label>
           <input type="password" id="inputClaudeApiKey" class="styled-input" placeholder="sk-ant-...">
         </div>
 
@@ -1539,8 +1858,10 @@
           <input type="password" id="inputNvidiaApiKey" class="styled-input" placeholder="nvapi-...">
         </div>
       </div>
-      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-        <button id="btnVerifyAllSettingsKeys" type="button" class="glass-btn secondary-btn compact-btn" style="border-color:rgba(16,185,129,0.5); color:#6ee7b7;">
+      <div class="modal-footer"
+        style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button id="btnVerifyAllSettingsKeys" type="button" class="glass-btn secondary-btn compact-btn"
+          style="border-color:rgba(16,185,129,0.5); color:#6ee7b7;">
           <span>✓ Check All API / Cookie Values</span>
         </button>
         <button id="btnSaveSettings" class="hero-action-btn compact-btn">Save Preferences</button>
@@ -1555,7 +1876,9 @@
         <h3 class="modal-title">📂 Animated Projects</h3>
         <div style="display:flex; align-items:center; gap:10px;">
           <input type="file" id="inputImportProjectJsonModal" accept=".json" style="display:none;">
-          <button id="btnImportProjectJsonModal" class="glass-btn secondary-btn" type="button" style="border-color:rgba(59,130,246,0.4); color:#93c5fd; padding:6px 12px; font-size:12px;" title="Import a project.json file from your computer">
+          <button id="btnImportProjectJsonModal" class="glass-btn secondary-btn" type="button"
+            style="border-color:rgba(59,130,246,0.4); color:#93c5fd; padding:6px 12px; font-size:12px;"
+            title="Import a project.json file from your computer">
             📥 Import JSON
           </button>
           <button id="btnNewFilmFromModal" class="hero-action-btn compact-btn" title="Create a new animated story">
@@ -1564,9 +1887,11 @@
           <button id="btnCloseProjects" class="modal-close-btn">&times;</button>
         </div>
       </div>
-      <div class="projects-filter-bar" style="padding: 10px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; background: rgba(0,0,0,0.15);">
+      <div class="projects-filter-bar"
+        style="padding: 10px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; background: rgba(0,0,0,0.15);">
         <button id="filterProjectsAll" class="filter-chip-btn active" data-filter="all">All Films</button>
-        <button id="filterProjectsActive" class="filter-chip-btn" data-filter="active">⚡ Rendering (<span id="filterActiveCount">0</span>)</button>
+        <button id="filterProjectsActive" class="filter-chip-btn" data-filter="active">⚡ Rendering (<span
+            id="filterActiveCount">0</span>)</button>
         <button id="filterProjectsReady" class="filter-chip-btn" data-filter="ready">🍿 Completed</button>
         <button id="filterProjectsStoryboard" class="filter-chip-btn" data-filter="storyboard">🎬 Storyboards</button>
       </div>
@@ -1587,7 +1912,8 @@
           <h3 class="modal-title" style="margin:0;">⚡ Active Background Tasks</h3>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
-          <button id="btnCancelAllActiveTasks" class="glass-btn secondary-btn compact-btn text-danger-btn" style="display:none;" title="Cancel all background tasks">
+          <button id="btnCancelAllActiveTasks" class="glass-btn secondary-btn compact-btn text-danger-btn"
+            style="display:none;" title="Cancel all background tasks">
             ⏹ Cancel All
           </button>
           <button id="btnRefreshActiveTasks" class="glass-btn secondary-btn compact-btn" title="Refresh task status">
@@ -1612,11 +1938,13 @@
           <span style="font-size:24px;">🎭</span>
           <div>
             <h3 class="modal-title" style="margin:0;">Character Voice Casting Studio</h3>
-            <p style="font-size:12px; color:var(--text-muted); margin:0;">Assign unique voice personas and audition lines for each character</p>
+            <p style="font-size:12px; color:var(--text-muted); margin:0;">Assign unique voice personas and audition
+              lines for each character</p>
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
-          <button id="btnAutoCastInModal" type="button" class="glass-btn secondary-btn compact-btn" title="Auto-assign voices based on character names & archetypes">
+          <button id="btnAutoCastInModal" type="button" class="glass-btn secondary-btn compact-btn"
+            title="Auto-assign voices based on character names & archetypes">
             🤖 Auto-Cast All Roles
           </button>
           <button id="btnCloseVoiceCasting" class="modal-close-btn">&times;</button>
@@ -1627,8 +1955,10 @@
           <!-- Populated dynamically -->
         </div>
       </div>
-      <div class="modal-footer flex-between" style="padding: 12px 16px; border-top: 1px solid var(--border-subtle); background: rgba(0,0,0,0.2);">
-        <span style="font-size: 12px; color: var(--text-dim);">💡 Multi-Voice synthesizes unique voice tones with synchronized subtitles.</span>
+      <div class="modal-footer flex-between"
+        style="padding: 12px 16px; border-top: 1px solid var(--border-subtle); background: rgba(0,0,0,0.2);">
+        <span style="font-size: 12px; color: var(--text-dim);">💡 Multi-Voice synthesizes unique voice tones with
+          synchronized subtitles.</span>
         <button id="btnDoneVoiceCasting" class="hero-action-btn compact-btn">
           <span>Done & Apply</span>
           <span>✓</span>
@@ -1646,11 +1976,13 @@
       </div>
       <div class="modal-body">
         <p class="field-hint" style="color:var(--text-main); font-size:14px; margin-bottom:12px;">
-          Using <strong>gemini.google.com</strong> with your Gemini Pro account? Ask Gemini to write your scenes, then paste the response below!
+          Using <strong>gemini.google.com</strong> with your Gemini Pro account? Ask Gemini to write your scenes, then
+          paste the response below!
         </p>
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <span style="font-size:13px; color:var(--text-muted); font-weight:600;">📋 Quick Prompt to send to Gemini:</span>
+          <span style="font-size:13px; color:var(--text-muted); font-weight:600;">📋 Quick Prompt to send to
+            Gemini:</span>
           <button id="btnCopyGeminiPrompt" class="glass-btn secondary-btn" style="padding:5px 12px; font-size:12px;">
             Copy Prompt for Gemini 📑
           </button>
@@ -1683,46 +2015,56 @@ Narration: The detective scanned the horizon for clues..."></textarea>
           <span style="font-size:22px;">👥</span>
           <div>
             <h3 class="modal-title" style="margin-bottom:2px;">Import Character Prompts (.txt + AI Parser)</h3>
-            <p style="font-size:12px; color:var(--text-muted); margin:0;">Chọn file <code>.txt</code> hoặc dán prompt — AI sẽ tự động tách Tên nhân vật &amp; Prompt ngoại hình</p>
+            <p style="font-size:12px; color:var(--text-muted); margin:0;">Chọn file <code>.txt</code> hoặc dán prompt —
+              AI sẽ tự động tách Tên nhân vật &amp; Prompt ngoại hình</p>
           </div>
         </div>
         <button id="btnCloseCharImportModal" class="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <button id="btnChooseCharTxtFile" type="button" class="glass-btn secondary-btn compact-btn" style="padding:7px 14px; font-size:12.5px; border-color:rgba(167,139,250,0.5); color:#ddd6fe;">
+          <button id="btnChooseCharTxtFile" type="button" class="glass-btn secondary-btn compact-btn"
+            style="padding:7px 14px; font-size:12.5px; border-color:rgba(167,139,250,0.5); color:#ddd6fe;">
             <span>📂 Chọn File .txt</span>
           </button>
           <input id="inputCharImportFile" type="file" accept=".txt,.md,.csv,.json,text/plain" style="display:none;">
-          <span id="labelCharImportFileName" style="font-size:12px; color:var(--text-muted);">Chưa chọn file (hỗ trợ .txt, .md, JSON, hoặc dán trực tiếp bên dưới)</span>
+          <span id="labelCharImportFileName" style="font-size:12px; color:var(--text-muted);">Chưa chọn file (hỗ trợ
+            .txt, .md, JSON, hoặc dán trực tiếp bên dưới)</span>
         </div>
 
         <div class="form-group" style="margin-bottom:10px;">
-          <label for="inputCharImportText" class="input-label" style="font-size:12px;">Nội dung Character Prompts (.txt / Text):</label>
-          <textarea id="inputCharImportText" rows="6" class="styled-textarea" style="font-size:12.5px; line-height:1.45;" placeholder="Ví dụ nội dung file .txt:
+          <label for="inputCharImportText" class="input-label" style="font-size:12px;">Nội dung Character Prompts (.txt
+            / Text):</label>
+          <textarea id="inputCharImportText" rows="6" class="styled-textarea"
+            style="font-size:12.5px; line-height:1.45;" placeholder="Ví dụ nội dung file .txt:
 1. Tử Lộ: Chàng trai trẻ mặc áo vải xanh đậm, dáng người vạm vỡ, tóc búi cao, ánh mắt kiên nghị, anime Ghibli style
 2. Khổng Tử: Ông lão hiền hậu râu bạc dài, mặc áo bào cổ truyền trang nhã, cầm gậy trúc...
 
 Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '🤖 AI Parse' để AI tự tách tên & prompt!"></textarea>
         </div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          <label style="display:inline-flex; align-items:center; gap:7px; font-size:12px; color:#cbd5e1; cursor:pointer;">
+        <div
+          style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <label
+            style="display:inline-flex; align-items:center; gap:7px; font-size:12px; color:#cbd5e1; cursor:pointer;">
             <input id="checkReplaceImportedChars" type="checkbox">
             <span>Thay thế danh sách nhân vật hiện tại (bỏ chọn = gộp thêm vào danh sách)</span>
           </label>
           <div style="display:flex; align-items:center; gap:8px;">
             <span id="badgeCharImportParser" class="tag-badge" style="display:none; font-size:11px;"></span>
-            <button id="btnParseCharImport" type="button" class="glass-btn secondary-btn compact-btn" style="padding:6px 14px; font-size:12.5px; border-color:rgba(56,189,248,0.55); color:#7dd3fc; font-weight:600;">
+            <button id="btnParseCharImport" type="button" class="glass-btn secondary-btn compact-btn"
+              style="padding:6px 14px; font-size:12.5px; border-color:rgba(56,189,248,0.55); color:#7dd3fc; font-weight:600;">
               <span>🤖 AI Parse Tên &amp; Prompt</span>
             </button>
           </div>
         </div>
 
-        <div id="charImportPreviewWrap" style="display:none; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">
+        <div id="charImportPreviewWrap"
+          style="display:none; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <strong id="charImportPreviewCount" style="font-size:12.5px; color:#6ee7b7;">Parsed Characters (0)</strong>
-            <span style="font-size:11px; color:var(--text-muted);">Bạn có thể chỉnh sửa tên/prompt trước khi import</span>
+            <span style="font-size:11px; color:var(--text-muted);">Bạn có thể chỉnh sửa tên/prompt trước khi
+              import</span>
           </div>
           <div id="charImportPreviewList" class="char-import-preview-list">
             <!-- Populated dynamically via JS -->
@@ -1730,7 +2072,8 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
         </div>
       </div>
       <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
-        <button id="btnConfirmCharImport" type="button" class="glass-btn secondary-btn compact-btn" style="padding:8px 16px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;">
+        <button id="btnConfirmCharImport" type="button" class="glass-btn secondary-btn compact-btn"
+          style="padding:8px 16px; border-color:rgba(16,185,129,0.5); color:#6ee7b7;">
           <span>✓ Import Characters</span>
         </button>
         <button id="btnConfirmAndPaintCharImport" type="button" class="hero-action-btn compact-btn">
@@ -1748,18 +2091,23 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
           <span style="font-size:22px;">📚</span>
           <div>
             <h3 class="modal-title" style="margin-bottom:2px;">Thư Viện Nhân Vật Dùng Chung (Character Library)</h3>
-            <p id="labelCharLibraryDir" style="font-size:11.5px; color:var(--text-muted); margin:0;">📁 output/characters_library — chọn nhân vật đã lưu để tái sử dụng cho kịch bản hiện tại</p>
+            <p id="labelCharLibraryDir" style="font-size:11.5px; color:var(--text-muted); margin:0;">📁
+              output/characters_library — chọn nhân vật đã lưu để tái sử dụng cho kịch bản hiện tại</p>
           </div>
         </div>
         <button id="btnCloseCharLibraryModal" class="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body" style="max-height: 68vh; overflow-y: auto;">
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
-          <input id="inputCharLibrarySearch" type="text" class="styled-input" placeholder="🔍 Tìm nhân vật theo tên, ngoại hình, phong cách..." style="flex:1; min-width:220px; padding:7px 12px; font-size:12.5px;">
-          <button id="btnSelectAllLibraryChars" type="button" class="glass-btn secondary-btn compact-btn" style="padding:6px 12px; font-size:12px;">
+          <input id="inputCharLibrarySearch" type="text" class="styled-input"
+            placeholder="🔍 Tìm nhân vật theo tên, ngoại hình, phong cách..."
+            style="flex:1; min-width:220px; padding:7px 12px; font-size:12.5px;">
+          <button id="btnSelectAllLibraryChars" type="button" class="glass-btn secondary-btn compact-btn"
+            style="padding:6px 12px; font-size:12px;">
             <span>☑️ Chọn tất cả</span>
           </button>
-          <button id="btnRefreshCharLibrary" type="button" class="glass-btn secondary-btn compact-btn" style="padding:6px 12px; font-size:12px;">
+          <button id="btnRefreshCharLibrary" type="button" class="glass-btn secondary-btn compact-btn"
+            style="padding:6px 12px; font-size:12px;">
             <span>🔄 Làm mới</span>
           </button>
         </div>
@@ -1767,7 +2115,8 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
           <!-- Rendered dynamically via app.js -->
         </div>
       </div>
-      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+      <div class="modal-footer"
+        style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
         <label style="display:inline-flex; align-items:center; gap:7px; font-size:12px; color:#cbd5e1; cursor:pointer;">
           <input id="checkReplaceLibraryChars" type="checkbox">
           <span>Thay thế danh sách nhân vật hiện tại (bỏ chọn = thêm/gộp)</span>
@@ -1787,7 +2136,8 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
           <span style="font-size:24px;">🤖</span>
           <div>
             <h3 class="modal-title" style="margin-bottom:2px;">Select Available Gemini Model</h3>
-            <p style="font-size:12px; color:var(--text-muted); margin:0;">Select any detected model from Google API Key or Gemini Web Cookies</p>
+            <p style="font-size:12px; color:var(--text-muted); margin:0;">Select any detected model from Google API Key
+              or Gemini Web Cookies</p>
           </div>
         </div>
         <button id="btnCloseModelExplorer" class="modal-close-btn">&times;</button>
@@ -1795,36 +2145,45 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
       <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
         <!-- Filter Tabs -->
         <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
-          <button id="tabFilterAll" type="button" class="glass-btn primary-btn" style="padding:5px 12px; font-size:12px;">
+          <button id="tabFilterAll" type="button" class="glass-btn primary-btn"
+            style="padding:5px 12px; font-size:12px;">
             🌟 All Models (<span id="countAllModels">0</span>)
           </button>
-          <button id="tabFilterApi" type="button" class="glass-btn secondary-btn" style="padding:5px 12px; font-size:12px;">
+          <button id="tabFilterApi" type="button" class="glass-btn secondary-btn"
+            style="padding:5px 12px; font-size:12px;">
             ✨ Official API Key (<span id="countApiModels">0</span>)
           </button>
-          <button id="tabFilterCookie" type="button" class="glass-btn secondary-btn" style="padding:5px 12px; font-size:12px;">
+          <button id="tabFilterCookie" type="button" class="glass-btn secondary-btn"
+            style="padding:5px 12px; font-size:12px;">
             🍪 Web Cookies (Pro) (<span id="countCookieModels">0</span>)
           </button>
-          <button id="btnRescanModelsModal" type="button" class="glass-btn secondary-btn" style="margin-left:auto; padding:5px 12px; font-size:12px;">
+          <button id="btnRescanModelsModal" type="button" class="glass-btn secondary-btn"
+            style="margin-left:auto; padding:5px 12px; font-size:12px;">
             🔄 Re-scan Live Models
           </button>
         </div>
 
         <!-- Connection status banner -->
-        <div id="modelExplorerStatusBar" style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div id="modelExplorerStatusBar"
+          style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div style="display:flex; align-items:center; gap:8px;">
             <span id="modelExplorerStatusIcon">🔍</span>
-            <span id="modelExplorerStatusText" style="font-size:13px; color:#e9d5ff;">Checking live models for your account...</span>
+            <span id="modelExplorerStatusText" style="font-size:13px; color:#e9d5ff;">Checking live models for your
+              account...</span>
           </div>
-          <span id="modelExplorerStatusBadge" style="font-size:11px; padding:3px 8px; border-radius:10px; background:rgba(16,185,129,0.2); color:#34d399; font-weight:700;">Ready</span>
+          <span id="modelExplorerStatusBadge"
+            style="font-size:11px; padding:3px 8px; border-radius:10px; background:rgba(16,185,129,0.2); color:#34d399; font-weight:700;">Ready</span>
         </div>
 
         <!-- Grid of Model Cards -->
-        <div id="modelsCardsGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap:10px;">
+        <div id="modelsCardsGrid"
+          style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap:10px;">
           <!-- Dynamically generated cards -->
         </div>
       </div>
       <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:12px; color:var(--text-muted);">💡 Click any card to apply it instantly to your project</span>
+        <span style="font-size:12px; color:var(--text-muted);">💡 Click any card to apply it instantly to your
+          project</span>
         <button id="btnDoneModelExplorer" class="hero-action-btn compact-btn">Done</button>
       </div>
     </div>
@@ -1838,10 +2197,13 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
         <button id="btnCloseSceneVideoModal" class="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body" style="padding: 18px;">
-        <div style="width: 100%; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 8px 32px rgba(0,0,0,0.6);">
-          <video id="modalSceneVideoPlayer" controls playsinline style="width:100%; display:block; aspect-ratio: var(--project-aspect-ratio, 16 / 9);"></video>
+        <div
+          style="width: 100%; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 8px 32px rgba(0,0,0,0.6);">
+          <video id="modalSceneVideoPlayer" controls playsinline
+            style="width:100%; display:block; aspect-ratio: var(--project-aspect-ratio, 16 / 9);"></video>
         </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 14px; flex-wrap:wrap; gap:10px;">
+        <div
+          style="display:flex; justify-content:space-between; align-items:center; margin-top: 14px; flex-wrap:wrap; gap:10px;">
           <div id="modalSceneVideoMeta" style="font-size:13px; color:var(--text-dim);"></div>
           <a id="modalSceneVideoDownloadBtn" class="hero-action-btn compact-btn" href="#" download>
             <span class="btn-text">Download Scene MP4</span>
@@ -1855,6 +2217,7 @@ Hoặc mỗi nhân vật 1 đoạn / block Name & Prompt bất kỳ — nhấn '
   <!-- Notification Toast Container -->
   <div id="toastNotification" class="toast-popup"></div>
 
-  <script src="/js/app.js?v=5.2"></script>
+  <script src="/js/app.js?v=5.1"></script>
 </body>
+
 </html>

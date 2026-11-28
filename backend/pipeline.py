@@ -100,14 +100,10 @@ class AnimationPipeline:
 
     @staticmethod
     def _parse_character_entries(characters_str: str) -> list:
-        """Parses a `Name: visual description | ...` string into structured dicts without splitting multi-line descriptions."""
+        """Parses a `Name: visual description | ...` string into structured dicts, unwrapping any generic role prefixes."""
         entries = []
         if not characters_str or not isinstance(characters_str, str):
             return entries
-        generic_role_labels = {
-            "protagonist", "nhân vật chính", "companion", "creature", "antagonist",
-            "hero", "heroine", "villain", "sidekick", "mentor", "vai chính", "vai phụ"
-        }
         for raw in ScriptAgent.split_characters_summary(characters_str):
             if not raw:
                 continue
@@ -117,13 +113,8 @@ class AnimationPipeline:
                 left, right = raw.split(":", 1)
                 left_s = left.strip()
                 right_s = right.strip()
-                if left_s.lower() in generic_role_labels or re.match(r'^(?:character|nhân vật)\s*\d+$', left_s, re.IGNORECASE):
-                    m_sub = re.match(r'^([^,:\(\)\-]+)(?:[,:\-]\s*(.*))?$', right_s)
-                    if m_sub:
-                        name = m_sub.group(1).strip()
-                        desc = (m_sub.group(2) or "").strip()
-                    else:
-                        name = right_s
+                if ScriptAgent.is_generic_role_label(left_s):
+                    name, desc = ScriptAgent.unwrap_role_prefixed_character(left_s, right_s)
                 else:
                     name = left_s
                     desc = right_s
@@ -237,6 +228,19 @@ class AnimationPipeline:
             if p_name.lower() in suppressed_low:
                 dropped_names_low.add(p_name.lower())
                 continue
+
+            # Auto-heal legacy role-labeled profiles (e.g. "Đối trọng" + "Ngọc Hoàng Đại Đế, bậc đế vương...")
+            if ScriptAgent.is_generic_role_label(p_name) and p_desc:
+                unwrapped_name, unwrapped_desc = ScriptAgent.unwrap_role_prefixed_character(p_name, p_desc)
+                if unwrapped_name and unwrapped_name.lower() != p_name.lower() and not ScriptAgent.is_non_character_label(unwrapped_name):
+                    old_low = p_name.lower()
+                    dropped_names_low.add(old_low)
+                    for sc in project.get("scenes", []):
+                        for d in (sc.get("dialogues") or []):
+                            if isinstance(d, dict) and (d.get("speaker") or "").strip().lower() == old_low:
+                                d["speaker"] = unwrapped_name
+                    p_name = unwrapped_name
+                    p_desc = unwrapped_desc
 
             if ScriptAgent.is_non_character_label(p_name) and not img_rel:
                 dropped_names_low.add(p_name.lower())
@@ -932,22 +936,15 @@ class AnimationPipeline:
         w = project.get("video_width", 1280)
         h = project.get("video_height", 720)
 
-        # Resolve matched character portrait reference sheets for this scene
-        char_refs = self.resolve_scene_character_references(project, scene_idx)
-
-        # Only attach prior rendered scene_1.jpg when NO dedicated character portrait refs are available;
-        # otherwise prior wide shots with smaller/varied headwear or faces override Character Studio portraits.
-        ref_img_path = None
-        if not char_refs:
-            for i in range(scene_idx):
-                candidate = p_dir / f"scene_{i + 1}.jpg"
-                if candidate.exists():
-                    ref_img_path = str(candidate)
-                    break
-            if not ref_img_path:
-                char_portrait = p_dir / "character_ref.jpg"
-                if char_portrait.exists():
-                    ref_img_path = str(char_portrait)
+        # Resolve matched character portrait reference sheets + smart prior scene continuity ref
+        from backend.services.reference_selector import select_scene_references
+        matched_char_refs = self.resolve_scene_character_references(project, scene_idx)
+        char_refs, ref_img_path = select_scene_references(
+            project=project,
+            scene_idx=scene_idx,
+            project_dir=p_dir,
+            matched_char_refs=matched_char_refs,
+        )
 
         if char_refs:
             character_desc = ScriptAgent.format_characters_summary(char_refs)

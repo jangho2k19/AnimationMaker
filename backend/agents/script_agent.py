@@ -12,8 +12,8 @@ class ScriptAgent:
         self.api_key = api_key or os.environ.get(f"{self.provider.upper()}_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
         self.model = model
 
-        # If provider is explicitly builtin / offline, do not search or overwrite with cloud credentials
-        if self.provider in ("builtin", "offline", "architect"):
+        # If provider is explicitly builtin / offline or antigravity, do not search or overwrite with cloud credentials
+        if self.provider in ("builtin", "offline", "architect", "antigravity"):
             return
 
         # Automatically check server-side stored credentials if api_key was not passed
@@ -167,6 +167,55 @@ class ScriptAgent:
         else:
             input_type = "short_concept"
 
+        # Skip heuristic Deep Analyze & Blueprint for short story ideas/prompts:
+        # sentence-splitting a 1-line idea produces repeated/low-quality beats and
+        # misclassified genres; short ideas should go straight to the LLM creatively.
+        if input_type == "short_concept":
+            chosen_skill_key = (director_skill or "auto").strip().lower()
+            if chosen_skill_key not in STORYBOARD_SKILLS:
+                chosen_skill_key = "auto"
+            if chosen_skill_key == "auto":
+                if (art_style or "").strip().lower() == "explainer_3d":
+                    chosen_skill_key = "educational_explainer"
+                elif is_comic_style(art_style):
+                    chosen_skill_key = "comic_graphic_novel"
+            skill_info = STORYBOARD_SKILLS.get(chosen_skill_key, STORYBOARD_SKILLS["cinematic_storyteller"])
+            est_scenes = int(num_scenes) if (num_scenes and int(num_scenes) > 0) else cls.estimate_optimal_scene_count(raw, target_duration)
+            skip_reason = (
+                "Deep Analyze & Blueprint không áp dụng cho ý tưởng ngắn — hãy bấm Generate Storyboard để AI tự sáng tạo kịch bản hoàn chỉnh."
+                if is_vi else
+                "Deep Analyze & Blueprint is skipped for short story ideas — generate the storyboard directly so the AI can craft the full story arc."
+            )
+            explicit_skill_block = ""
+            if chosen_skill_key != "auto":
+                explicit_skill_block = (
+                    f"\nDIRECTOR SKILL DIRECTIVE:\n"
+                    f"- Active Director Skill: {skill_info['name']}\n"
+                    f"  * {skill_info['directive']}"
+                )
+            return {
+                "mode": "story",
+                "input_type": input_type,
+                "eligible": False,
+                "skipped": True,
+                "skip_reason": skip_reason,
+                "language": lang,
+                "genre": "",
+                "genre_label": "",
+                "tone": "",
+                "director_skill": chosen_skill_key,
+                "director_skill_name": skill_info["name"] if chosen_skill_key != "auto" else "Auto",
+                "director_skill_description": skill_info["description"] if chosen_skill_key != "auto" else "",
+                "recommended_scenes": est_scenes,
+                "recommended_duration": est_scenes * 8,
+                "characters_list": [],
+                "characters_blueprint": "",
+                "dialogue_count": 0,
+                "moral_or_punchline": "",
+                "scene_beats": [],
+                "prompt_blueprint": explicit_skill_block,
+            }
+
         # 2. Genre & Emotional Tone Detection
         low = f"{title or ''} {clean_story}".lower()
         if any(k in low for k in [
@@ -177,7 +226,7 @@ class ScriptAgent:
             genre = "comedy_satire"
             genre_label = "Hài Hước & Trào Phúng Dân Gian (Comedy & Satire)" if is_vi else "Comedy & Satirical Fable"
             tone = "Witty, expressive, ironical & punchline-driven"
-        elif any(k in low for k in ["cyberpunk", "detective", "robot", "neon", "hologram", "ai ", "cyborg", "sci-fi", "tương lai"]):
+        elif any(k in low for k in ["cyberpunk", "detective", "robot", "neon", "hologram", "cyborg", "sci-fi", "tương lai"]) or bool(re.search(r'\bai\b', low)):
             genre = "cyberpunk"
             genre_label = "Viễn Tưởng Cyberpunk (Sci-Fi Cyberpunk)" if is_vi else "Cyberpunk & Sci-Fi"
             tone = "Atmospheric, high-tech, suspenseful & kinetic"
@@ -207,6 +256,8 @@ class ScriptAgent:
         if chosen_skill_key not in STORYBOARD_SKILLS or chosen_skill_key == "auto":
             if is_comic_style(art_style):
                 chosen_skill_key = "comic_graphic_novel"
+            elif (art_style or "").strip().lower() == "explainer_3d":
+                chosen_skill_key = "educational_explainer"
             elif genre == "comedy_satire":
                 chosen_skill_key = "comedy_punchline_master"
             elif camera_on_speaker or len(story_dialogues) >= 2:
@@ -406,6 +457,8 @@ DEEP STORY ANALYSIS & DIRECTOR BLUEPRINT (AUTO-ANALYZED PRE-PRODUCTION PLAN):
         return {
             "mode": "story",
             "input_type": input_type,
+            "eligible": True,
+            "skipped": False,
             "language": lang,
             "genre": genre,
             "genre_label": genre_label,
@@ -626,6 +679,15 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
         # Auto-detect story language from idea & title so Vietnamese stories never get English narration/titles
         language = self.detect_language(f"{title or ''} {idea or ''}", fallback=language)
 
+        # 0. Long Story / Novel Compressor (adapted from ViMax novel_compressor):
+        # When a user pastes a very long narrative (> 900 words, not a structured multi-scene script),
+        # condense it into structured plot beats preserving all key characters, dialogues, and twists
+        # so the storyboard LLM never drops critical story details or overflows context.
+        raw_idea_words = len((idea or "").split())
+        if raw_idea_words > 900 and not self.parse_imported_storyboard(idea, allow_narrative_fallback=False):
+            idea = self.compress_long_story(idea, max_words=650, language=language)
+            print(f"📚 Compressed long story ({raw_idea_words} words -> {len(idea.split())} words) while preserving characters, dialogues & twists.")
+
         # 1. If user supplied an existing multi-scene screenplay/script (JSON or Scene 1 / Cảnh 1), parse it directly
         # so their original story, characters, and scenes are 100% preserved.
         imported = self.parse_imported_storyboard(idea, allow_narrative_fallback=False)
@@ -736,7 +798,7 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
 
     async def _dispatch_llm_request(self, prompt: str) -> Dict[str, Any]:
         """Dispatches a prompt across the configured AI provider and returns structured JSON."""
-        if not self.api_key and self.provider not in ("builtin", "offline", "architect"):
+        if not self.api_key and self.provider not in ("builtin", "offline", "architect", "antigravity"):
             try:
                 from backend.config import get_server_credentials
                 creds = get_server_credentials()
@@ -773,7 +835,11 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
 
         model = self.resolve_model_id(self.provider, self.model)
 
-        if is_cookie:
+        if self.provider == "antigravity":
+            return await self._with_retries(
+                lambda: self._generate_with_antigravity(prompt), "Antigravity CLI"
+            )
+        elif is_cookie:
             return await self._with_retries(
                 lambda: self._generate_with_gemini_cookie(prompt, self.api_key), "Gemini Web", attempts=2
             )
@@ -1017,6 +1083,94 @@ DEEP PRODUCT & COMMERCIAL DNA BLUEPRINT (AUTO-ANALYZED):
                     + "\n".join(pc_lines)
                 )
 
+        is_educational_explainer = (
+            (director_skill or "").strip().lower() == "educational_explainer"
+            or (art_style or "").strip().lower() == "explainer_3d"
+            or (analysis.get("director_skill") == "educational_explainer")
+        )
+        if is_educational_explainer:
+            explainer_scene_guide = (
+                "an optimal number of scenes (typically 5–7 scenes: 1 Clean Exterior Overview + 1 dedicated scene per distinct physical/mechanical stage or subsystem + 1 Full-Cycle Reassembly finale)"
+                if is_auto_scenes
+                else f"exactly {num_scenes} scenes covering exterior overview, each core stage/mechanism in order, and reassembled summary"
+            )
+            explainer_chars_rule = (
+                preset_chars_block
+                if preset_chars_block
+                else (
+                    "- NO FICTIONAL CHARACTERS OR TALKING OBJECTS (STRICT): This is a scientific/technical 3D explainer — NEVER invent fictional human characters (like a smiling engineer/student), NEVER anthropomorphize mechanical/biological parts with faces, goggles, or dialogue, and set `\"characters\": \"\"`."
+                )
+            )
+            return f"""You are a master scientific & engineering 3D visualization director (Blender Cycles, Animagraffs, Veritasium & Kurzgesagt 3D technical explainer quality).
+Transform the provided topic/idea into a fact-checked, crystal-clear 3D educational cutaway explainer storyboard tailored for 8-second animated 3D shots (Google Imagen 3 / Veo 3 / Blender-style visualization).
+
+Topic / Concept Input:
+\"\"\"
+{clean_idea_strip}
+\"\"\"
+
+Parameters:
+- {title_clause}
+- Target Audience: {audience} | Art Style: {art_style} | Narration & Script Language: {lang_display}
+- {pacing_param}
+- Scene Count: {explainer_scene_guide}
+{explainer_chars_rule}
+{analysis["prompt_blueprint"]}
+
+EDUCATIONAL 3D EXPLAINER DIRECTIVES (MANDATORY):
+1. FACT-CHECKED EXPLANATORY STRUCTURE (NOT A FICTIONAL 3-ACT DRAMA):
+   - Teach an accurate, intuitive mental model using the best fitting explainer pattern:
+     * **How It Works** (machines, engines, devices, biology): Clean Exterior Overview → Precision Section Cutaway → Ordered Physical Stages (one dedicated scene per stage, e.g. Intake → Compression → Power/Combustion → Exhaust) → Full Continuous Cycle & Reassembled Whole.
+     * **How It Is Built** (architecture, manufacturing, products): Final Result → Prerequisites → Ordered Assembly Stages → Hidden Internal Layers → Completed System.
+     * **Inside the System / Scale Journey** (anatomy, chips, physics, infrastructure): Exterior Context → Cutaway Cross-Section → Isolated Subsystem & Invisible Flows → Reassembled Whole.
+   - Maintain a consistent camera orientation, scale reference, and color-coded flow grammar across all scenes (e.g. cool cyan/blue for intake air/coolant, bright amber/orange for combustion/heat/energy, muted gray for exhaust).
+   - Animate cause BEFORE effect. Give each distinct physical step its own dedicated scene so nothing is skipped or rushed.
+
+2. SEPARATE ENGLISH PROMPTS FOR IMAGE & VIDEO (MANDATORY):
+   - ALWAYS write both `visual_prompt` and `acting_prompt` in **ENGLISH** (even when `title` and `narration` are in Tiếng Việt) so the 3D image and video engines render razor-sharp engineering accuracy.
+   - a) `visual_prompt` (STILL 3D KEYFRAME PROMPT):
+        * Describe a single frozen Blender Cycles / technical 3D studio cutaway frame in `{art_style}` style.
+        * Specify exact physical geometry, cutaway cross-section angle, realistic PBR materials (brushed aluminum, machined steel, copper windings, translucent glass housing, glowing flow streams), clean uncluttered dark-slate studio background, and exact frozen mechanical/biological state of that stage.
+        * STRICT PROHIBITION: NO fictional people/characters, NO cartoon eyes/faces on parts, NO text/labels/watermarks, NO timestamps, NO camera motion verbs.
+   - b) `acting_prompt` (8-SECOND PHYSICAL PROCESS ANIMATION PROMPT):
+        * Write 85–130 words of crisp director-grade English prose.
+        * [Shot Framing & Camera Movement]: Stable technical framing (macro cutaway, orthographic 3/4 view, smooth slow tracking push-in).
+        * [Real Subject-Space Process Motion — NOT camera movement alone]:
+          - 0-3s (Start State): Exact starting physical position/condition of parts and flows.
+          - 3-6s (Core Physical Mechanism): Visible cause-and-effect motion in the subject itself (valve opening, piston descending, air-fuel mist swirling in, spark igniting, pressure driving shaft rotation, fluid pumping).
+          - 6-8s (End State): Clear resulting state preparing seamlessly for the next stage.
+        * [Lighting & Audio]: Clean studio rim lighting, sharp 50mm macro optics.
+          Audio: subtle realistic mechanical/ambient soundscape (no background music).
+          SFX: 1-2 crisp physical foley sounds matching the mechanism.
+          Negative: subtitles, text labels, watermark, human characters, cartoon faces, distorted geometry, morphing parts, jittery motion.
+
+3. DOCUMENTARY VOICEOVER NARRATION & NARRATOR-ONLY DIALOGUES:
+   - `narration`: Clear, authoritative, easy-to-follow educational explanation in {"Tiếng Việt (Vietnamese)" if is_vi_lang else "English"} directly describing the exact physical mechanism shown in that scene. Keep accurate technical terms and smooth transitions from scene to scene.
+{pacing_rule}
+   - `dialogues`: Use **Narrator-only**: `[{{"speaker": "Narrator", "text": "<exact narration text>"}}]` (unless user explicitly supplied cast characters above).
+
+Return ONLY raw JSON matching this structure:
+{{
+  "title": "Clear Educational Title",
+  "logline": "1-sentence learning outcome explaining what the viewer will understand",
+  "characters": "",
+  "scenes": [
+    {{
+      "scene_number": 1,
+      "title": "Stage / Mechanism Title",
+      "duration": 8,
+      "archetype": "3D Cutaway Explainer",
+      "visual_prompt": "Precision Blender 3D studio cutaway render of [exact mechanism/object] in clean 3/4 cross-section view, brushed aluminum and machined steel PBR materials, translucent cutaway cylinder wall showing [exact physical state and color-coded flow], clean studio rim lighting against uncluttered dark-slate background, ultra-sharp macro scientific visualization, no text, no labels, no watermark.",
+      "acting_prompt": "Clean 3/4 technical cutaway shot of [mechanism] on a studio stage. The camera executes a smooth, steady slow push-in maintaining locked spatial orientation. 0-3s: [exact starting state of components]. 3-6s: [visible cause-and-effect physical process and flow motion]. 6-8s: [resulting end state holding cleanly for transition]. Crisp architectural studio rim lighting with 50mm macro depth of field.\\n\\nAudio: clean low mechanical hum, no background music.\\nSFX: subtle metallic click and pressurized airflow hiss.\\nNegative: subtitles, captions, text labels, watermark, human characters, cartoon faces, distorted geometry, morphing parts.",
+      "narration": "...",
+      "dialogues": [
+        {{"speaker": "Narrator", "text": "..."}}
+      ],
+      "camera_motion": "zoom_in"
+    }}
+  ]
+}}"""
+
         return f"""You are a master animation director at Pixar, Studio Ghibli, and premier cinematic AI studios (Google Flow / Google Veo 3 / Imagen 3).
 Transform the provided input into a breathtaking, emotionally resonant animated short film storyboard tailored for ACTING VIDEO GENERATION (8-second scenes, Google Flow / Veo 3 I2V).
 
@@ -1060,9 +1214,11 @@ CINEMATIC DIRECTIVES:
         * STRICT REASONABILITY MANDATE: Avoid impossible morphing, violent acrobatics, rapid multi-angle cutting, or chaotic scene jumps. Keep the physical performance grounded, elegant, and believable for an 8-second single take.
    - `visual_prompt` and `acting_prompt` MUST NEVER be identical. They serve two completely different AI engines.
 
-3. CHARACTER CONSISTENCY BLUEPRINT:
-   - In `characters`: Define immutable visual anchors for each key character (e.g. "Protagonist: Leo, 10yo boy with tousled amber-brown hair, expressive hazel eyes, signature mustard yellow knitted sweater, blue denim shorts, leather satchel").
-   - MANDATORY: Every `visual_prompt` MUST include these EXACT visual anchor tokens whenever that character appears to guarantee cross-scene character consistency in Imagen 3 and Veo 3.
+3. CHARACTER CONSISTENCY BLUEPRINT (STATIC IDENTITY + DYNAMIC OUTFIT/PROPS):
+   - In `characters`: List EVERY main and speaking character using their EXACT proper name before the colon, separating **Static Identity** (immutable age/species, face, eyes, hairstyle, build) and **Dynamic Look** (signature outfit, colors, held props/accessories), separated by ` | `.
+   - Format example: {"\"Tôn Ngộ Không: [Static] Mỹ Hầu Vương lông vàng ánh kim, mắt lửa kim tinh, dáng nhanh nhẹn; [Dynamic] đội mũ phượng hoàng vàng, mặc giáp vàng choàng đỏ, cầm gậy Như Ý | Ngọc Hoàng Đại Đế: [Static] Bậc đế vương trung niên uy nghiêm, râu dài điểm bạc, ánh mắt sắc lạnh; [Dynamic] đội mũ bình thiên đính ngọc, khoác long bào vàng thêu rồng\"" if is_vi_lang else "\"Leo: [Static] 10yo boy with tousled amber-brown hair, expressive hazel eyes, freckled cheeks; [Dynamic] mustard-yellow knitted sweater, blue denim shorts, worn leather satchel | Pip: [Static] tiny brass clockwork owl with glowing emerald eyes; [Dynamic] miniature copper compass pendant\""}.
+   - STRICT PROHIBITION: NEVER use generic role labels (such as `Protagonist`, `Antagonist`, `Companion/Creature`, `Nhân vật chính`, `Nhân vật phụ`, `Đối trọng`, `Phản diện`, `Character`, `Vai chính`) as character names or dialogue `speaker` values. Always write the character's real name.
+   - MANDATORY: Every `visual_prompt` MUST preserve each character's `[Static]` identity tokens identically across all scenes to guarantee cross-scene character consistency in Imagen 3 and Veo 3.
 
 4. CAMERA SHOT GRAMMAR:
    - Progress shots dynamically across the arc: "Extreme Wide Establishing Shot", "Medium Character Profile", "Speaker Close-Up Focus", "Over-The-Shoulder Dialogue Shot", "Intimate Two-Shot Dialogue", "Dynamic Low-Angle Action Tracking", "Close-Up Heroic Climax", "Sweeping Panoramic Pull-Out".
@@ -1077,14 +1233,14 @@ CINEMATIC DIRECTIVES:
 {pacing_rule}
 
 6. MULTI-VOICE CHARACTER DIALOGUES (STUDIO PRODUCTION QUALITY):
-   - In scenes where characters speak or converse, output a `dialogues` array segmenting the scene speech: `[{{"speaker": "Narrator", "text": "Intro..."}}, {{"speaker": "Character Name", "text": "Spoken line..."}}]`.
-   - Keep speaker names consistent with the names declared in `characters` so individual character neural voices can be auto-cast.
+   - In scenes where characters speak or converse, output a `dialogues` array segmenting the scene speech: `[{{"speaker": "Narrator", "text": "Intro..."}}, {{"speaker": "Exact Character Name", "text": "Spoken line..."}}]`.
+   - Every non-Narrator `speaker` MUST be an exact proper character name declared in `characters` (NEVER use `"Character"`, `"Nhân vật chính"`, `"Protagonist"`, `"Đối trọng"`, or other role labels) so individual character neural voices can be auto-cast accurately.
 
 Return ONLY raw JSON matching this structure:
 {{
   "title": "Title",
   "logline": "1-sentence logline",
-  "characters": "Protagonist: [Name & Role, Immutable visual tokens] | Companion/Creature: [Name, Immutable visual tokens]",
+  "characters": "Exact Character Name 1: immutable visual appearance tokens (face, hair, outfit, accessories) | Exact Character Name 2: immutable visual appearance tokens",
   "scenes": [
     {{
       "scene_number": 1,
@@ -2951,6 +3107,7 @@ Return ONLY raw JSON matching this structure:
             "cyberpunk": ("Cyberpunk Neon Sci-Fi Anime", "masterpiece cyberpunk illustration"),
             "comic": ("Comic Book / Graphic Novel Panel", "masterpiece comic book illustration"),
             "stick_figure": ("Minimalist Stick Figure Animation", "masterpiece stickman animation"),
+            "explainer_3d": ("Blender 3D Educational Cutaway Explainer", "precision 3D scientific cutaway render"),
             "realistic": ("Photorealistic cinematic live-action", "masterpiece photography")
         }
         style_tag, render_word = style_name_map.get(art_style, (f"{art_style.capitalize()} art", "masterpiece illustration"))
@@ -3582,6 +3739,16 @@ Return ONLY raw JSON matching this structure:
 
         return {"title": "Imported Story", "logline": "", "scenes": []}
 
+    _GENERIC_ROLE_LABELS = {
+        "protagonist", "antagonist", "companion", "creature", "companion/creature",
+        "hero", "heroine", "villain", "sidekick", "mentor", "rival", "foil", "ally", "boss",
+        "main character", "lead character", "supporting character", "secondary character",
+        "character", "characters", "cast", "role",
+        "nhân vật", "nhân vật chính", "nhân vật phụ", "nhân vật phản diện", "nhân vật chính diện",
+        "vai chính", "vai phụ", "vai phản diện", "đối trọng", "phản diện", "chính diện",
+        "bạn đồng hành", "người đồng hành", "đồng minh", "kẻ thù", "đối thủ", "linh vật", "thú cưng", "sinh vật",
+    }
+
     _NON_CHARACTER_EXACT_LABELS = {
         "narrator", "người kể chuyện", "bối cảnh", "setting", "title", "character", "nhân vật",
         "none", "n/a", "chi tiết", "miêu tả", "mô tả", "đặc điểm", "thông tin",
@@ -3594,7 +3761,7 @@ Return ONLY raw JSON matching this structure:
         "details", "description", "appearance", "outfit", "clothing", "weapon", "weapons",
         "accessories", "personality", "impression", "demeanor", "aura", "head", "face",
         "eyes", "hair", "body", "fur", "mane", "tail", "saddle", "build", "physique",
-    }
+    } | _GENERIC_ROLE_LABELS
 
     _NON_CHARACTER_PREFIX_RE = re.compile(
         r'^(?:thân\s+(?:lông|hình|người|trên|dưới)|đầu\s+(?:lợn|tròn|và)|'
@@ -3605,19 +3772,150 @@ Return ONLY raw JSON matching this structure:
     )
 
     @classmethod
+    def is_generic_role_label(cls, label: str) -> bool:
+        """Returns True if `label` is a generic narrative role header (e.g. 'Đối trọng', 'Nhân vật chính', 'Companion/Creature')."""
+        raw = re.sub(r'\s+', ' ', (label or "")).strip(" :;-–—()[]").lower()
+        if not raw:
+            return False
+        if raw in cls._GENERIC_ROLE_LABELS:
+            return True
+        if re.match(r'^(?:character|nhân vật|vai\s+phụ|vai\s+chính|protagonist|antagonist|companion)\s*#?\d+$', raw, re.IGNORECASE):
+            return True
+        # Handle slash-combined role labels like "Companion / Creature" or "Protagonist/Hero"
+        if "/" in raw:
+            parts = [p.strip() for p in raw.split("/") if p.strip()]
+            if parts and all(p in cls._GENERIC_ROLE_LABELS for p in parts):
+                return True
+        return False
+
+    @classmethod
+    def unwrap_role_prefixed_character(cls, name: str, desc: str) -> tuple:
+        """
+        If `name` is a generic role label (e.g. 'Đối trọng', 'Companion/Creature', 'Protagonist')
+        and `desc` starts with an actual character name (e.g. 'Ngọc Hoàng Đại Đế, bậc đế vương...'),
+        unwraps and returns `(real_name, real_desc)`. Otherwise returns `(name, desc)`.
+        """
+        clean_name = (name or "").strip()
+        clean_desc = (desc or "").strip()
+        if not cls.is_generic_role_label(clean_name) or not clean_desc:
+            return clean_name, clean_desc
+
+        # Match "Real Name (Optional Alias), visual description" or "Real Name: visual description" or "Real Name - visual description"
+        m = re.match(
+            r'^([^,:\-–—\n]{2,60}?)(?:\s*\([^)]{1,40}\))?\s*(?:[,:\-–—]\s*(.*))?$',
+            clean_desc,
+            re.DOTALL,
+        )
+        if m:
+            cand_name = m.group(1).strip(" []()\"'“”")
+            cand_desc = (m.group(2) or "").strip()
+            # Ensure the extracted name looks like a name (<= 7 words) and not another generic role
+            if cand_name and len(cand_name.split()) <= 7 and not cls.is_non_character_label(cand_name):
+                return cand_name, cand_desc
+        return clean_name, clean_desc
+
+    @classmethod
     def is_non_character_label(cls, name: str) -> bool:
-        """Returns True if `name` is an anatomical/visual section header or table cell rather than a character."""
+        """Returns True if `name` is an anatomical/visual section header, generic role label, or table cell rather than a character."""
         raw = (name or "").strip()
         if not raw or "\t" in raw:
             return True
         low = re.sub(r'\s+', ' ', raw).strip().lower()
         if low in cls._NON_CHARACTER_EXACT_LABELS:
             return True
+        if cls.is_generic_role_label(raw):
+            return True
         if cls._NON_CHARACTER_PREFIX_RE.match(low):
             return True
         if len(low.split()) > 10:
             return True
         return False
+
+    @staticmethod
+    def split_static_dynamic_features(description: str) -> tuple:
+        """
+        Splits a character visual description into `(static_identity, dynamic_outfit_props)`
+        (adapted from ViMax character_extractor). Supports explicit `[Static] ...; [Dynamic] ...`
+        format as well as plain prose descriptions.
+        """
+        raw = (description or "").strip()
+        if not raw:
+            return "", ""
+        m = re.search(
+            r'\[?static\]?\s*[:\-]?\s*(.*?)(?:[;|]\s*\[?dynamic\]?\s*[:\-]?\s*(.*))?$',
+            raw,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if m and re.search(r'\[?static\]?', raw, re.IGNORECASE):
+            st = (m.group(1) or "").strip(" ;|,.")
+            dy = (m.group(2) or "").strip(" ;|,.")
+            return st, dy
+        return raw, ""
+
+    @classmethod
+    def compress_long_story(cls, raw_text: str, max_words: int = 650, language: str = "en") -> str:
+        """
+        Compresses a very long pasted story / multi-chapter novel (> ~900 words) into a tight,
+        chronological beat digest while preserving opening setup, key spoken dialogues, rising
+        middle turning points, and the climax/ending (adapted from ViMax novel_compressor).
+        """
+        text = (raw_text or "").strip()
+        words = text.split()
+        if len(words) <= max_words:
+            return text
+
+        # Split into non-empty paragraphs; fall back to sentences if single giant block
+        blocks = [p.strip() for p in re.split(r'\n\s*\n+|\n+', text) if p.strip()]
+        if len(blocks) < 6:
+            blocks = [
+                s.strip()
+                for s in re.split(r'(?<=[.!?…])\s+', text)
+                if s.strip()
+            ]
+        if len(blocks) <= 4:
+            return " ".join(words[:max_words])
+
+        n = len(blocks)
+        scored = []
+        for idx, blk in enumerate(blocks):
+            pos = idx / max(1, n - 1)
+            score = 0.0
+            # Strongly preserve opening (first 15%) and climax/ending (last 20%)
+            if idx == 0 or pos <= 0.15:
+                score += 5.0
+            elif pos >= 0.80 or idx == n - 1:
+                score += 5.5
+            # Preserve direct dialogues (crucial for character voice & story beats)
+            if re.search(r'["“”]|(?:^|\n)\s*[–\-—]\s*\S', blk):
+                score += 3.0
+            # Preserve dramatic/turning-point markers
+            if re.search(r'\b(nhưng|bỗng|đột nhiên|cuối cùng|bất ngờ|tức giận|quyết định|however|suddenly|finally|realized|revealed|climax|twist)\b', blk, re.IGNORECASE):
+                score += 2.0
+            # Mild preference for concise, punchy beats over wall-of-text filler
+            w_len = len(blk.split())
+            if 8 <= w_len <= 65:
+                score += 1.0
+            scored.append((idx, score, blk, w_len))
+
+        # Greedily pick highest-priority beats within word budget, then restore chronological order
+        chosen_indices = set()
+        used_words = 0
+        # Guarantee first and last block
+        for must_i in (0, n - 1):
+            chosen_indices.add(must_i)
+            used_words += scored[must_i][3]
+
+        for idx, _sc, _blk, w_len in sorted(scored, key=lambda x: x[1], reverse=True):
+            if idx in chosen_indices:
+                continue
+            if used_words + w_len <= max_words:
+                chosen_indices.add(idx)
+                used_words += w_len
+            if used_words >= max_words - 15:
+                break
+
+        ordered = [blocks[i] for i in sorted(chosen_indices)]
+        return "\n".join(ordered)
 
     @staticmethod
     def split_characters_summary(characters_str: str) -> List[str]:
@@ -4542,6 +4840,49 @@ STORY / SCRIPT TO ANALYZE:
             pass
 
         return psid, psidts
+
+    async def _generate_with_antigravity(self, prompt: str) -> Dict[str, Any]:
+        """
+        Executes text / storyboard generation using the local signed-in Antigravity CLI (`agy --print`)
+        and parses the resulting JSON structure.
+        """
+        import asyncio
+        import subprocess
+        from backend.services.image_service import ImageService
+        agy_bin = ImageService._find_antigravity_cli()
+        if not agy_bin or not os.path.exists(agy_bin):
+            raise RuntimeError(
+                "Antigravity CLI (agy) was not found on your system. "
+                "Please verify that Antigravity is installed at ~/.gemini/bin/agy.exe."
+            )
+
+        cmd = [
+            agy_bin,
+            "--print",
+            prompt,
+            "--disable-slash-commands",
+            "--output-format",
+            "text",
+            "--print-timeout",
+            "180s",
+        ]
+
+        kwargs = {"capture_output": True}
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+        proc = await asyncio.to_thread(subprocess.run, cmd, **kwargs)
+        stdout_txt = (proc.stdout or b"").decode("utf-8", errors="ignore").strip()
+        stderr_txt = (proc.stderr or b"").decode("utf-8", errors="ignore").strip()
+
+        if proc.returncode != 0:
+            err_msg = (stderr_txt or stdout_txt or f"Exit code {proc.returncode}")[:350]
+            raise RuntimeError(f"Antigravity CLI exited with error ({proc.returncode}): {err_msg}")
+
+        if not stdout_txt:
+            raise RuntimeError("Antigravity CLI returned an empty text response.")
+
+        return self._clean_json_response(stdout_txt)
 
     async def _generate_with_gemini_cookie(self, prompt: str, cookie_input: str) -> Dict[str, Any]:
         from backend.services.gemini_wrapper import GeminiWebWrapper

@@ -105,7 +105,7 @@ class AniStoryApp {
     if (window.history && typeof window.history.replaceState === "function") {
       try {
         window.history.replaceState({ stage: 1 }, "", window.location.pathname);
-      } catch (e) {}
+      } catch (e) { }
     }
   }
 
@@ -900,6 +900,7 @@ class AniStoryApp {
         if (aiProviderPanel) aiProviderPanel.style.display = "";
         if (actionFooter) actionFooter.style.display = "";
         localStorage.setItem("anistory_cfg_creation_mode", "prompt");
+        this.updateDeepAnalyzeAvailability();
       });
     }
 
@@ -914,6 +915,7 @@ class AniStoryApp {
         if (aiProviderPanel) aiProviderPanel.style.display = "";
         if (actionFooter) actionFooter.style.display = "";
         localStorage.setItem("anistory_cfg_creation_mode", "paste");
+        this.updateDeepAnalyzeAvailability();
       });
     }
 
@@ -927,6 +929,7 @@ class AniStoryApp {
         if (actionFooter) actionFooter.style.display = "none";
         localStorage.setItem("anistory_cfg_creation_mode", "load");
         this.loadProjectsIntoContainer(this.stage1ProjectsList);
+        this.updateDeepAnalyzeAvailability();
       });
     }
 
@@ -947,6 +950,7 @@ class AniStoryApp {
           }
         });
         localStorage.setItem("anistory_cfg_creation_mode", "advertisement");
+        this.updateDeepAnalyzeAvailability();
       });
     }
 
@@ -963,6 +967,7 @@ class AniStoryApp {
         if (actionFooter) actionFooter.style.display = "";
         localStorage.setItem("anistory_cfg_creation_mode", "batch");
         this.renderBatchQueueList();
+        this.updateDeepAnalyzeAvailability();
       });
     }
 
@@ -1116,6 +1121,7 @@ class AniStoryApp {
     if (this.inputIdeaPrompt) {
       this.inputIdeaPrompt.addEventListener("input", () => {
         localStorage.setItem("anistory_draft_prompt", this.inputIdeaPrompt.value);
+        this.updateDeepAnalyzeAvailability();
       });
     }
 
@@ -1146,7 +1152,10 @@ class AniStoryApp {
     document.querySelectorAll(".inspire-chip").forEach(chip => {
       chip.addEventListener("click", () => {
         const text = chip.getAttribute("data-prompt");
+        if (!text) return;
         this.inputIdeaPrompt.value = text;
+        localStorage.setItem("anistory_draft_prompt", text);
+        this.updateDeepAnalyzeAvailability();
         this.showToast("Inspiration prompt loaded! ✨");
       });
     });
@@ -2418,7 +2427,7 @@ class AniStoryApp {
             try {
               const err = await resp.json();
               errMsg = err.detail || errMsg;
-            } catch {}
+            } catch { }
             throw new Error(errMsg);
           }
 
@@ -2576,6 +2585,7 @@ class AniStoryApp {
     } else if (savedMode === "prompt" && this.tabModePrompt) {
       this.tabModePrompt.click();
     }
+    this.updateDeepAnalyzeAvailability();
   }
 
   initImageMode() {
@@ -2593,6 +2603,11 @@ class AniStoryApp {
     this.imageMode = mode;
     localStorage.setItem("anistory_image_mode", mode);
     this.applyImageModeUI(mode);
+    if (this.selectTaskScenePaintEngine && (this.selectTaskScenePaintEngine.value === "flowkit" || this.selectTaskScenePaintEngine.value === "gemini_cookie")) {
+      this.selectTaskScenePaintEngine.value = mode;
+      localStorage.setItem("anistory_task_scene_paint_engine", mode);
+      if (typeof this.renderActivityRatingHints === "function") this.renderActivityRatingHints();
+    }
   }
 
   applyImageModeUI(mode) {
@@ -2963,6 +2978,7 @@ class AniStoryApp {
     if (this.pasteMultiStoryBanner) this.pasteMultiStoryBanner.style.display = "none";
     if (this.deepAnalysisPreviewCard) this.deepAnalysisPreviewCard.style.display = "none";
     this.lastDeepAnalysis = null;
+    this.updateDeepAnalyzeAvailability();
     this.switchStage(1);
     if (switchToPromptMode && this.tabModePrompt) {
       this.tabModePrompt.click();
@@ -3316,7 +3332,8 @@ class AniStoryApp {
             <button type="button" class="glass-btn secondary-btn btn-studio-remove-char" style="padding:4px 8px; font-size:12px; font-weight:700; color:#fdba74;" title="Remove from this story (keeps portrait file &amp; Library)">−</button>
             <button type="button" class="glass-btn secondary-btn btn-studio-delete-char" style="padding:4px 7px; font-size:11px; color:#fca5a5;" title="Delete character and its project portrait file">🗑️</button>
           </div>
-          <textarea class="styled-input studio-char-desc" rows="2" placeholder="Visual description for consistent Image & Video prompts..." style="padding:5px 9px; font-size:11.5px; line-height:1.35; resize:vertical;">${this.escapeHtml(charDesc)}</textarea>
+          <textarea class="styled-input studio-char-desc" rows="3" placeholder="Visual description for consistent Image & Video prompts..." style="padding:6px 9px; font-size:11.5px; line-height:1.4; min-height:60px; resize:vertical;">${this.escapeHtml(charDesc)}</textarea>
+          ${!charDesc.trim() ? '<div style="font-size:10.5px; color:#fbbf24;">⚠️ Add visual details (hair, outfit, age, accessories) for better portraits &amp; scene consistency.</div>' : ''}
           <div style="display:flex; gap:6px; align-items:center;">
             <select class="styled-select studio-char-voice" data-char="${encodeURIComponent(charName)}" style="flex:1; padding:5px 8px; font-size:11.5px;" title="Giọng nói tùy chọn (có thể để Auto hoặc Silent)">
               ${voiceOptionsHtml}
@@ -4179,8 +4196,8 @@ class AniStoryApp {
       this.charLibraryGrid.innerHTML = `
         <div style="grid-column:1/-1; padding:24px; text-align:center; color:var(--text-muted); border:1px dashed rgba(255,255,255,0.16); border-radius:10px;">
           ${(this._charLibraryItems || []).length === 0
-            ? "Thư viện trống. Hãy bấm 💾 trên từng nhân vật hoặc nút <strong>💾 Lưu Thư Viện</strong> để lưu nhân vật dùng chung!"
-            : "Không tìm thấy nhân vật nào khớp với từ khóa."}
+          ? "Thư viện trống. Hãy bấm 💾 trên từng nhân vật hoặc nút <strong>💾 Lưu Thư Viện</strong> để lưu nhân vật dùng chung!"
+          : "Không tìm thấy nhân vật nào khớp với từ khóa."}
         </div>`;
       this.updateApplyLibraryBtnLabel();
       return;
@@ -4711,8 +4728,8 @@ Idea: "${idea}"
 
 Film Specifications:
 ${isAutoScenes
-  ? `- Number of Scenes: AUTO — YOU decide the optimal number of scenes (recommended ${minAuto} to ${maxAuto}) based on the story's natural plot beats, setting changes, dialogue exchanges, and final twist/punchline. Give each distinct beat its own scene; never cram multiple beats into one scene. (The skeleton below shows ${numScenes} scenes as an example — add or remove scenes as the story requires.)`
-  : `- Number of Scenes: EXACTLY ${numScenes} SCENES (Must have all scenes 1 through ${numScenes}).`}
+        ? `- Number of Scenes: AUTO — YOU decide the optimal number of scenes (recommended ${minAuto} to ${maxAuto}) based on the story's natural plot beats, setting changes, dialogue exchanges, and final twist/punchline. Give each distinct beat its own scene; never cram multiple beats into one scene. (The skeleton below shows ${numScenes} scenes as an example — add or remove scenes as the story requires.)`
+        : `- Number of Scenes: EXACTLY ${numScenes} SCENES (Must have all scenes 1 through ${numScenes}).`}
 ${pacingDirective}
 - Language: Titles and Narration MUST be written in ${langStr}.
 - Visual Art Style: ${styleName}.
@@ -4750,8 +4767,8 @@ ${scenesSkeleton.join(",\n")}
 }
 
 ${isAutoScenes
-  ? `CRITICAL: Choose the scene count that best fits the story (${minAuto}-${maxAuto} recommended), number scenes sequentially from 1, and make sure the final scene delivers the ending/punchline. Return raw valid JSON only.`
-  : `CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do not stop at 4. Return raw valid JSON only.`}`;
+        ? `CRITICAL: Choose the scene count that best fits the story (${minAuto}-${maxAuto} recommended), number scenes sequentially from 1, and make sure the final scene delivers the ending/punchline. Return raw valid JSON only.`
+        : `CRITICAL: You MUST include exactly ${numScenes} scenes in the "scenes" array. Do not stop at 4. Return raw valid JSON only.`}`;
   }
 
   openModelExplorer() {
@@ -5061,6 +5078,14 @@ ${isAutoScenes
         return;
       }
 
+      if (pKey === "antigravity") {
+        if (this.groupProviderKey) this.groupProviderKey.style.display = "none";
+        if (this.selectAiModel) {
+          this.selectAiModel.innerHTML = "<option value='default'>Antigravity Agent (Local CLI / Free)</option>";
+        }
+        return;
+      }
+
       if (this.groupProviderKey) this.groupProviderKey.style.display = "block";
 
       if (isGeminiFamily) {
@@ -5080,7 +5105,7 @@ ${isAutoScenes
           try {
             const raw = localStorage.getItem("anistory_gemini_detected_payload");
             if (raw) cachedData = JSON.parse(raw);
-          } catch (e) {}
+          } catch (e) { }
         }
         const savedModel = localStorage.getItem("anistory_cfg_model") || localStorage.getItem("anistory_model_gemini");
         this.renderModelDropdown(cachedData, savedModel);
@@ -5205,13 +5230,13 @@ ${isAutoScenes
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ gemini_cookie_psid: psid, gemini_cookie_psidts: psidts })
-          }).catch(() => {});
+          }).catch(() => { });
         } else if (pKey === "gemini") {
           fetch("/api/save-credentials", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ gemini_api_key: val })
-          }).catch(() => {});
+          }).catch(() => { });
         }
       });
     }
@@ -5242,16 +5267,24 @@ ${isAutoScenes
         modelSelect.appendChild(opt);
         return;
       }
+      if (pVal === "antigravity") {
+        const opt = document.createElement("option");
+        opt.value = "default";
+        opt.textContent = "Antigravity Agent (Local CLI)";
+        opt.selected = true;
+        modelSelect.appendChild(opt);
+        return;
+      }
       if (pVal === "gemini") {
         const apiModels = this.detectedModelsData?.api_models?.length
           ? this.detectedModelsData.api_models
           : [
-              { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" },
-              { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite" },
-              { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-              { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-              { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash" }
-            ];
+            { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" },
+            { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite" },
+            { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+            { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+            { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash" }
+          ];
         apiModels.forEach(m => {
           const id = typeof m === "string" ? m : m.id;
           const name = typeof m === "string" ? m : (m.name || m.id);
@@ -5331,16 +5364,13 @@ ${isAutoScenes
       localStorage.setItem("anistory_task_scene_paint_engine", "default");
     }
 
-    // Hydrate real server-persisted activity ratings
-    this.realActivityRatings = this.config?.activity_model_ratings || { activities: {}, best_by_activity: {} };
-    this._taskStartTimes = {};
-
-    // Prefer the best-rated model from real app activities when user has not manually locked another choice
-    if (!localStorage.getItem("anistory_task_manual_override")) {
+    // Prefer the highest-rated available models/engines as default when user has not explicitly customized them
+    if (!localStorage.getItem("anistory_best_defaults_applied_v1")) {
       this.autoSelectBestModels(true);
+      localStorage.setItem("anistory_best_defaults_applied_v1", "1");
     }
 
-    // Re-render real activity rating hints whenever any task dropdown changes
+    // Re-render live activity rating hints whenever any task dropdown changes
     [
       this.selectTaskCharProvider, this.selectTaskCharModel,
       this.selectTaskStoryProvider, this.selectTaskStoryModel,
@@ -5348,217 +5378,160 @@ ${isAutoScenes
       this.selectTaskRefineProvider, this.selectTaskRefineModel,
       this.selectTaskVideoEngine
     ].forEach(el => {
-      if (el) {
-        el.addEventListener("change", () => {
-          localStorage.setItem("anistory_task_manual_override", "1");
-          this.renderActivityRatingHints();
-        });
-      }
+      if (el) el.addEventListener("change", () => this.renderActivityRatingHints());
     });
     this.renderActivityRatingHints();
   }
 
-  _resolveActivityKeyFromTask(taskLabel) {
+  getModelActivityStats() {
+    try {
+      const raw = localStorage.getItem("anistory_model_activity_stats");
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  recordModelActivityResult(taskLabel, engineLabel, isSuccess) {
     const t = String(taskLabel || "").toLowerCase();
-    if (t.includes("character") && !t.includes("portrait")) return "characters";
-    if (t.includes("storyboard") || t.includes("ad storyboard")) return "storyboard";
-    if (t.includes("portrait")) return "portrait";
-    if (t.includes("paint scene")) return "scene";
-    if (t.includes("refine") || t.includes("dialogue")) return "refine";
-    if (t.includes("veo") || t.includes("render") || t.includes("animate")) return "video";
-    return null;
-  }
-
-  _parseProviderModelFromEngineTag(engineLabel) {
-    const raw = String(engineLabel || "").trim();
-    if (!raw) return { provider: "", model: "" };
-    if (raw.includes("/")) {
-      const [p, m] = raw.split("/", 2);
-      return { provider: p.trim().toLowerCase(), model: m.trim() };
-    }
-    const base = raw.split("(")[0].trim().toLowerCase();
-    return { provider: base, model: "" };
-  }
-
-  recordModelActivityResult(taskLabel, engineLabel, isSuccess, errorMsg = "") {
-    const actKey = this._resolveActivityKeyFromTask(taskLabel);
+    let actKey = null;
+    if (t.includes("character") && !t.includes("portrait")) actKey = "characters";
+    else if (t.includes("storyboard") || t.includes("ad storyboard")) actKey = "storyboard";
+    else if (t.includes("portrait")) actKey = "portrait";
+    else if (t.includes("paint scene")) actKey = "scene";
+    else if (t.includes("refine") || t.includes("dialogue")) actKey = "refine";
+    else if (t.includes("veo") || t.includes("render") || t.includes("animate")) actKey = "video";
     if (!actKey) return;
-    const { provider, model } = this._parseProviderModelFromEngineTag(engineLabel);
-    if (!provider) return;
 
-    const timerKey = `${actKey}::${provider}::${model}`;
-    const started = this._taskStartTimes?.[timerKey] || 0;
-    const durationMs = started > 0 ? Math.max(100, Date.now() - started) : 0;
-    if (this._taskStartTimes) delete this._taskStartTimes[timerKey];
+    const cleanEngine = String(engineLabel || "").split("(")[0].split("/")[0].trim().toLowerCase();
+    if (!cleanEngine) return;
 
-    // Persist real activity result to backend output/model_activity_ratings.json
-    fetch("/api/model-ratings/record", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        activity: actKey,
-        provider,
-        model,
-        success: Boolean(isSuccess),
-        duration_ms: durationMs,
-        error: isSuccess ? "" : String(errorMsg || "").slice(0, 200)
-      })
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data && data.activities) {
-          this.realActivityRatings = {
-            activities: data.activities,
-            best_by_activity: data.best_by_activity || {}
-          };
-          this.renderActivityRatingHints();
-        }
-      })
-      .catch(() => {});
+    const stats = this.getModelActivityStats();
+    const k = `${actKey}::${cleanEngine}`;
+    const cur = stats[k] || { ok: 0, fail: 0 };
+    if (isSuccess) cur.ok += 1;
+    else cur.fail += 1;
+    stats[k] = cur;
+    try {
+      localStorage.setItem("anistory_model_activity_stats", JSON.stringify(stats));
+    } catch { }
+    this.renderActivityRatingHints();
   }
 
-  getRealRatingEntry(activityKey, provider, model = "") {
-    const actMap = this.realActivityRatings?.activities?.[activityKey] || {};
-    const prov = String(provider || "").trim().toLowerCase();
-    const mod = String(model || "").trim();
-    if (mod && actMap[`${prov}::${mod}`]) {
-      return actMap[`${prov}::${mod}`];
+  getEffectiveActivityScore(activityKey, idVal) {
+    const cfg = this.config?.activity_model_ratings?.[activityKey];
+    const list = cfg?.ratings || [];
+    const target = String(idVal || "").toLowerCase();
+    const entry = list.find(r => (r.engine || r.provider || "").toLowerCase() === target);
+    const baseScore = entry ? Number(entry.score || 8.0) : 8.0;
+    const stats = this.getModelActivityStats();
+    const st = stats[`${activityKey}::${target}`];
+    if (!st || (st.ok + st.fail) === 0) {
+      return { score: baseScore, entry, stats: null };
     }
-    if (actMap[prov]) {
-      return actMap[prov];
-    }
-    // Aggregate across models of the same provider if exact model hasn't run yet
-    const matching = Object.values(actMap).filter(st => st && st.provider === prov);
-    if (matching.length === 0) return null;
-    matching.sort((a, b) => (b.score || 0) - (a.score || 0));
-    return matching[0];
-  }
-
-  _annotateSelectWithRealRatings(selectEl, activityKey) {
-    if (!selectEl) return;
-    const actMap = this.realActivityRatings?.activities?.[activityKey] || {};
-    const best = this.realActivityRatings?.best_by_activity?.[activityKey] || null;
-
-    Array.from(selectEl.options).forEach(opt => {
-      if (!opt.dataset.baseLabel) {
-        opt.dataset.baseLabel = opt.textContent;
-      }
-      const val = (opt.value || "").trim().toLowerCase();
-      if (!val || val === "default") {
-        opt.textContent = opt.dataset.baseLabel;
-        return;
-      }
-      const st = this.getRealRatingEntry(activityKey, val, "");
-      if (st && st.total_runs > 0) {
-        const isBest = best && best.provider === val;
-        const bestTag = isBest ? " Best" : "";
-        opt.textContent = `${opt.dataset.baseLabel} — ⭐ ${Number(st.score).toFixed(1)}/5 (${st.successes}✓/${st.failures}✗)${bestTag}`;
-      } else {
-        opt.textContent = opt.dataset.baseLabel;
-      }
-    });
+    const adj = Math.min(0.3, st.ok * 0.1) - Math.min(2.5, st.fail * 0.6);
+    const eff = Math.max(1.0, Math.min(10.0, +(baseScore + adj).toFixed(1)));
+    return { score: eff, entry, stats: st };
   }
 
   renderActivityRatingHints() {
-    this._annotateSelectWithRealRatings(this.selectTaskCharProvider, "characters");
-    this._annotateSelectWithRealRatings(this.selectTaskStoryProvider, "storyboard");
-    this._annotateSelectWithRealRatings(this.selectTaskPortraitEngine, "portrait");
-    this._annotateSelectWithRealRatings(this.selectTaskScenePaintEngine, "scene");
-    this._annotateSelectWithRealRatings(this.selectTaskRefineProvider, "refine");
-    this._annotateSelectWithRealRatings(this.selectTaskVideoEngine, "video");
-
-    const fmtHint = (actKey, activeProvider, activeModel = "") => {
-      const st = this.getRealRatingEntry(actKey, activeProvider, activeModel);
-      const best = this.realActivityRatings?.best_by_activity?.[actKey] || null;
-      if (!st || !st.total_runs) {
-        if (best) {
-          const bName = best.model ? `${best.provider} / ${best.model}` : best.provider;
-          return `Not run yet • Best in app: ${bName} (⭐ ${Number(best.score).toFixed(1)}/5, ${best.successes}✓/${best.failures}✗)`;
-        }
-        return `No runs yet — ratings update automatically from real app runs.`;
-      }
-      const avgSec = st.avg_duration_ms ? ` • avg ${(st.avg_duration_ms / 1000).toFixed(1)}s` : "";
-      const isBest = best && best.provider === st.provider && (!best.model || best.model === st.model);
-      const bestNote = isBest
-        ? " • 🏆 Best rated"
-        : (best ? ` • Best: ${best.model ? `${best.provider}/${best.model}` : best.provider} (⭐ ${Number(best.score).toFixed(1)}/5)` : "");
-      return `⭐ ${Number(st.score).toFixed(1)}/5 (${st.successes}✓/${st.failures}✗ • ${st.success_rate}%${avgSec})${bestNote}`;
+    const fmtHint = (actKey, activeId, bestLabel) => {
+      const { score, entry, stats } = this.getEffectiveActivityScore(actKey, activeId);
+      const rateTxt = stats ? ` • Live: ${stats.ok}✓/${stats.fail}✗` : "";
+      const tierTxt = entry?.tier ? ` [${entry.tier}]` : "";
+      const reasonTxt = entry?.reason ? ` — ${entry.reason}` : "";
+      return `⭐ ${score.toFixed(1)}/10${tierTxt}${rateTxt}${reasonTxt || (bestLabel ? ` (Best: ${bestLabel})` : "")}`;
     };
 
     const charCfg = this.getTaskAiConfig("characters");
-    if (this.ratingHintChar) this.ratingHintChar.textContent = fmtHint("characters", charCfg.provider, charCfg.model);
+    if (this.ratingHintChar) this.ratingHintChar.textContent = fmtHint("characters", charCfg.provider, "Gemini 3.5 Flash");
 
     const storyCfg = this.getTaskAiConfig("storyboard");
-    if (this.ratingHintStory) this.ratingHintStory.textContent = fmtHint("storyboard", storyCfg.provider, storyCfg.model);
+    if (this.ratingHintStory) this.ratingHintStory.textContent = fmtHint("storyboard", storyCfg.provider, "Gemini 3.5 Flash");
 
     const portCfg = this.getTaskImageConfig("portrait");
-    if (this.ratingHintPortrait) this.ratingHintPortrait.textContent = fmtHint("portrait", portCfg.imageMode, "");
+    if (this.ratingHintPortrait) this.ratingHintPortrait.textContent = fmtHint("portrait", portCfg.imageMode, "Antigravity AI");
 
     const sceneCfg = this.getTaskImageConfig("scene");
-    if (this.ratingHintScene) this.ratingHintScene.textContent = fmtHint("scene", sceneCfg.imageMode, "");
+    if (this.ratingHintScene) this.ratingHintScene.textContent = fmtHint("scene", sceneCfg.imageMode, "Antigravity AI");
 
     const refCfg = this.getTaskAiConfig("refine");
-    if (this.ratingHintRefine) this.ratingHintRefine.textContent = fmtHint("refine", refCfg.provider, refCfg.model);
+    if (this.ratingHintRefine) this.ratingHintRefine.textContent = fmtHint("refine", refCfg.provider, "Gemini 3.5 Flash");
 
     const vidEngine = this.selectTaskVideoEngine ? this.selectTaskVideoEngine.value : "ken_burns";
-    if (this.ratingHintVideo) this.ratingHintVideo.textContent = fmtHint("video", vidEngine, "");
+    if (this.ratingHintVideo) this.ratingHintVideo.textContent = fmtHint("video", vidEngine, "2.5D Ken Burns");
   }
 
   autoSelectBestModels(silent = false) {
-    const bestMap = this.realActivityRatings?.best_by_activity || {};
-    let appliedCount = 0;
+    const hasAgy = Boolean(this.config?.has_antigravity_cli);
+    const bestPaintEngine = hasAgy ? "antigravity" : "pollinations";
 
-    const applyBestProviderPair = (actKey, pSel, mSel, pKey, mKey) => {
-      const best = bestMap[actKey];
-      if (!best || !pSel) return;
-      const optExists = Array.from(pSel.options).some(o => o.value === best.provider);
-      if (!optExists) return;
-      pSel.value = best.provider;
-      localStorage.setItem(pKey, best.provider);
-      pSel.dispatchEvent(new Event("change"));
-      if (mSel && best.model) {
-        const mExists = Array.from(mSel.options).some(o => o.value === best.model);
-        if (mExists) {
-          mSel.value = best.model;
-          localStorage.setItem(mKey, best.model);
+    // 1. Pick best default text/storyboard provider & model (Antigravity AI if CLI ready, else Gemini 3.5 Flash)
+    if (this.selectAiProvider) {
+      if (hasAgy && (!localStorage.getItem("anistory_gemini_key") || this.selectAiProvider.value === "gemini_cookie")) {
+        this.selectAiProvider.value = "antigravity";
+        localStorage.setItem("anistory_cfg_provider", "antigravity");
+      } else {
+        this.selectAiProvider.value = "gemini";
+        localStorage.setItem("anistory_cfg_provider", "gemini");
+      }
+    }
+    if (this.selectAiModel) {
+      const has35 = Array.from(this.selectAiModel.options).some(o => o.value === "gemini-3.5-flash");
+      if (has35) {
+        this.selectAiModel.value = "gemini-3.5-flash";
+        localStorage.setItem("anistory_cfg_model", "gemini-3.5-flash");
+        localStorage.setItem("anistory_model_gemini", "gemini-3.5-flash");
+      }
+    }
+
+    // 2. Pick best default Paint Engine (Antigravity AI ⭐ 9.8 if CLI available, else Pollinations Flux)
+    this.setImageMode(bestPaintEngine);
+
+    // 3. Apply best per-activity selections
+    const setPair = (pSel, mSel, pKey, mKey, prov, mod) => {
+      if (pSel) {
+        pSel.value = prov;
+        localStorage.setItem(pKey, prov);
+      }
+      if (mSel) {
+        if (prov === "default") {
+          mSel.value = "default";
+          mSel.disabled = true;
+          localStorage.setItem(mKey, "default");
+        } else {
+          mSel.disabled = false;
+          const exists = Array.from(mSel.options).some(o => o.value === mod);
+          if (exists) {
+            mSel.value = mod;
+            localStorage.setItem(mKey, mod);
+          }
         }
       }
-      appliedCount++;
     };
 
-    const applyBestSingleSelect = (actKey, sel, storageKey, isDefaultPaint = false) => {
-      const best = bestMap[actKey];
-      if (!best || !sel) return;
-      const optExists = Array.from(sel.options).some(o => o.value === best.provider);
-      if (!optExists) return;
-      sel.value = best.provider;
-      localStorage.setItem(storageKey, best.provider);
-      if (isDefaultPaint && ["antigravity", "gemini", "pollinations", "flowkit", "manual"].includes(best.provider)) {
-        this.setImageMode(best.provider);
-      }
-      appliedCount++;
-    };
+    setPair(this.selectTaskCharProvider, this.selectTaskCharModel, "anistory_task_char_provider", "anistory_task_char_model", "default", "default");
+    setPair(this.selectTaskStoryProvider, this.selectTaskStoryModel, "anistory_task_story_provider", "anistory_task_story_model", "default", "default");
+    setPair(this.selectTaskRefineProvider, this.selectTaskRefineModel, "anistory_task_refine_provider", "anistory_task_refine_model", "default", "default");
 
-    applyBestProviderPair("characters", this.selectTaskCharProvider, this.selectTaskCharModel, "anistory_task_char_provider", "anistory_task_char_model");
-    applyBestProviderPair("storyboard", this.selectTaskStoryProvider, this.selectTaskStoryModel, "anistory_task_story_provider", "anistory_task_story_model");
-    applyBestSingleSelect("portrait", this.selectTaskPortraitEngine, "anistory_task_portrait_engine", true);
-    applyBestSingleSelect("scene", this.selectTaskScenePaintEngine, "anistory_task_scene_paint_engine", false);
-    applyBestProviderPair("refine", this.selectTaskRefineProvider, this.selectTaskRefineModel, "anistory_task_refine_provider", "anistory_task_refine_model");
-    applyBestSingleSelect("video", this.selectTaskVideoEngine, "anistory_task_video_engine", false);
-
-    // Clear manual override flag when user explicitly asks to auto-select best rated
-    if (!silent) {
-      localStorage.removeItem("anistory_task_manual_override");
+    if (this.selectTaskPortraitEngine) {
+      this.selectTaskPortraitEngine.value = bestPaintEngine;
+      localStorage.setItem("anistory_task_portrait_engine", bestPaintEngine);
+    }
+    if (this.selectTaskScenePaintEngine) {
+      this.selectTaskScenePaintEngine.value = bestPaintEngine;
+      localStorage.setItem("anistory_task_scene_paint_engine", bestPaintEngine);
+    }
+    if (this.selectTaskVideoEngine) {
+      this.selectTaskVideoEngine.value = "ken_burns";
+      localStorage.setItem("anistory_task_video_engine", "ken_burns");
     }
 
     this.renderActivityRatingHints();
     if (!silent) {
-      if (appliedCount > 0) {
-        this.showToast(`⭐ Selected best-rated models from your real app runs across ${appliedCount} activity step(s)!`);
-        this.addAiLog("info", "Select Best Rated Models", `${appliedCount} steps`, `Applied top-performing models from real activity history.`);
-      } else {
-        this.showToast("No real activity runs recorded yet — run your tasks first so the app can rate each model!", false);
-      }
+      const paintLabel = bestPaintEngine === "antigravity" ? "Antigravity AI (⭐ 9.8)" : "Pollinations Flux (⭐ 8.4)";
+      this.showToast(`⭐ Auto-selected best rated models: Gemini 3.5 Flash (Text) + ${paintLabel} (Paint)!`);
+      this.addAiLog("info", "Auto-Select Best Models", `gemini-3.5-flash + ${bestPaintEngine}`, `Applied highest-rated models per activity.`);
     }
   }
 
@@ -5580,21 +5553,11 @@ ${isAutoScenes
     if (this.aiExecutionLogs.length > 200) {
       this.aiExecutionLogs.shift();
     }
-    if (level === "info") {
-      const actKey = this._resolveActivityKeyFromTask(taskLabel);
-      if (actKey) {
-        const { provider, model } = this._parseProviderModelFromEngineTag(engineLabel);
-        if (provider) {
-          if (!this._taskStartTimes) this._taskStartTimes = {};
-          this._taskStartTimes[`${actKey}::${provider}::${model}`] = Date.now();
-        }
-      }
-    }
     if (level === "error" && this.aiExecutionLogPanel) {
       this.aiExecutionLogPanel.style.display = "block";
     }
     if (level === "success" || level === "error") {
-      this.recordModelActivityResult(taskLabel, engineLabel, level === "success", message);
+      this.recordModelActivityResult(taskLabel, engineLabel, level === "success");
     }
     this.renderAiLogs();
   }
@@ -5860,9 +5823,69 @@ ${isAutoScenes
     ]);
   }
 
+  isShortStoryIdea(text) {
+    const raw = (text || "").trim();
+    if (!raw) return true;
+    // Structured multi-scene script or JSON is NOT a short idea
+    if (
+      /^\s*[\{\[]/.test(raw) ||
+      /(?:^|\n)\s*(?:scene|cảnh|phân\s*cảnh|shot|act)\s*\d+/i.test(raw)
+    ) {
+      return false;
+    }
+    // Contains explicit dialogue markers (quotes or leading dashes) -> full story with dialogue
+    if (/(?:^|\n)\s*[–\-—]\s*\S|["“”][^"“”]{3,}["“”]/.test(raw)) {
+      return false;
+    }
+    // Multi-line narrative or > 30 words -> narrative prose
+    const words = raw.split(/\s+/).filter(Boolean);
+    if (raw.includes("\n") || words.length > 30) {
+      return false;
+    }
+    return true;
+  }
+
+  updateDeepAnalyzeAvailability() {
+    if (!this.btnDeepAnalyzeInput) return;
+    const isAdMode = Boolean(this.tabModeAd?.classList.contains("active"));
+    const isPasteMode = Boolean(this.tabModePaste?.classList.contains("active"));
+    const isLoadMode = Boolean(this.tabModeLoad?.classList.contains("active"));
+    const isBatchMode = Boolean(this.tabModeBatch?.classList.contains("active"));
+
+    if (isLoadMode || isBatchMode) {
+      this.btnDeepAnalyzeInput.disabled = true;
+      this.btnDeepAnalyzeInput.style.opacity = "0.45";
+      this.btnDeepAnalyzeInput.title = "Deep Analyze & Blueprint is only available for full stories, pasted scripts, or product ads.";
+      if (this.deepAnalysisPreviewCard) this.deepAnalysisPreviewCard.style.display = "none";
+      return;
+    }
+
+    if (isAdMode || isPasteMode) {
+      this.btnDeepAnalyzeInput.disabled = false;
+      this.btnDeepAnalyzeInput.style.opacity = "1";
+      this.btnDeepAnalyzeInput.title = isAdMode
+        ? "Deep-analyze your Product Description & Specs to preview the AIDA/PAS Commercial Blueprint"
+        : "Deep-analyze your Pasted Storyboard/Script to preview the Scene-by-Scene Director Blueprint";
+      return;
+    }
+
+    // Prompt mode ("Story Idea or Creative Prompt"): disable for short ideas
+    const ideaText = this.inputIdeaPrompt ? this.inputIdeaPrompt.value.trim() : "";
+    const isShortIdea = this.isShortStoryIdea(ideaText);
+    this.btnDeepAnalyzeInput.disabled = isShortIdea;
+    this.btnDeepAnalyzeInput.style.opacity = isShortIdea ? "0.45" : "1";
+    this.btnDeepAnalyzeInput.title = isShortIdea
+      ? "Skipped for short Story Ideas — click Generate Storyboard directly so AI writes the full story arc (Deep Analyze is only for full stories, scripts, or ads)."
+      : "Deep-analyze your full story/script to preview the Scene-by-Scene Director Blueprint";
+    if (isShortIdea && this.deepAnalysisPreviewCard) {
+      this.deepAnalysisPreviewCard.style.display = "none";
+      this.lastDeepAnalysis = null;
+    }
+  }
+
   async deepAnalyzeCurrentInput() {
-    const isAdMode = this.inputMode === "ad";
-    const isPasteMode = this.inputMode === "paste";
+    const isAdMode = Boolean(this.tabModeAd?.classList.contains("active"));
+    const isPasteMode = Boolean(this.tabModePaste?.classList.contains("active"));
     const ideaText = isPasteMode
       ? (this.inputDirectPasteText ? this.inputDirectPasteText.value.trim() : "")
       : (this.inputIdeaPrompt ? this.inputIdeaPrompt.value.trim() : "");
@@ -5874,7 +5897,12 @@ ${isAutoScenes
       return;
     }
     if (!isAdMode && !ideaText) {
-      this.showToast("Please enter a Story Idea or paste a Storyboard/Script to deep-analyze!", true);
+      this.showToast("Please enter a full Story or paste a Storyboard/Script to deep-analyze!", true);
+      return;
+    }
+    if (!isAdMode && !isPasteMode && this.isShortStoryIdea(ideaText)) {
+      if (this.deepAnalysisPreviewCard) this.deepAnalysisPreviewCard.style.display = "none";
+      this.showToast("Deep Analyze & Blueprint is skipped for short Story Ideas — click Generate Storyboard directly!", true);
       return;
     }
 
@@ -5916,6 +5944,15 @@ ${isAutoScenes
       }
       const data = await resp.json();
       const analysis = data.analysis || {};
+      if (analysis.skipped || analysis.eligible === false) {
+        this.lastDeepAnalysis = null;
+        if (this.deepAnalysisPreviewCard) this.deepAnalysisPreviewCard.style.display = "none";
+        this.showToast(
+          analysis.skip_reason || "Deep Analyze & Blueprint is skipped for short Story Ideas — generate the storyboard directly!",
+          true
+        );
+        return;
+      }
       this.lastDeepAnalysis = analysis;
 
       if (this.badgeDeepAnalysisGenre) {
@@ -5972,9 +6009,9 @@ ${isAutoScenes
       this.showToast("Deep Analysis failed: " + e.message, true);
     } finally {
       if (this.btnDeepAnalyzeInput) {
-        this.btnDeepAnalyzeInput.disabled = false;
         this.btnDeepAnalyzeInput.innerHTML = origHtml;
       }
+      this.updateDeepAnalyzeAvailability();
     }
   }
 
@@ -6165,7 +6202,7 @@ ${isAutoScenes
       const psid = localStorage.getItem("anistory_gemini_cookie_psid") || "";
       const psidts = localStorage.getItem("anistory_gemini_cookie_psidts") || "";
       const combined = localStorage.getItem("anistory_key_gemini_cookie") || "";
-      
+
       const inputVal = this.inputProviderKey ? this.inputProviderKey.value.trim() : "";
       if (inputVal) {
         if (inputVal.includes("|") || inputVal.includes("__Secure-1PSIDTS") || inputVal.startsWith("{")) {
@@ -6804,13 +6841,13 @@ ${isAutoScenes
         ? `<div class="scene-char-refs-strip" title="Click to pin/unpin character portraits used for generating this scene &amp; video">
              <span style="font-size:10.5px; color:var(--text-muted); margin-right:4px;">👤 Refs${isSceneCharPinned ? ' (Pinned)' : ' (Auto)'}:</span>
              ${charProfilesWithImg.map(p => {
-               const isActive = matchedCharIds.includes(p.id);
-               const cleanThumb = p.image_path.replace(/\\/g, "/");
-               return `<button type="button" class="scene-char-ref-chip ${isActive ? 'active' : ''}" data-idx="${idx}" data-char-id="${this.escapeHtml(p.id)}">
+          const isActive = matchedCharIds.includes(p.id);
+          const cleanThumb = p.image_path.replace(/\\/g, "/");
+          return `<button type="button" class="scene-char-ref-chip ${isActive ? 'active' : ''}" data-idx="${idx}" data-char-id="${this.escapeHtml(p.id)}">
                  <img src="/media/${encodeURI(cleanThumb)}" alt="${this.escapeHtml(p.name)}">
                  <span>${this.escapeHtml(p.name)}</span>
                </button>`;
-             }).join("")}
+        }).join("")}
            </div>`
         : "";
       const card = document.createElement("div");
@@ -6901,16 +6938,16 @@ ${isAutoScenes
       const dialogueBreakdownHtml = ((isMultiVoiceScene || isSceneDialOnly) && scene.dialogues && scene.dialogues.length > 0) ? `
         <div class="scene-dialogue-breakdown">
           ${scene.dialogues.map(d => {
-            const isNarr = (d.speaker || '').toLowerCase() === 'narrator' || (d.speaker || '').toLowerCase() === 'người kể chuyện';
-            const skipNarr = isNarr && isSceneDialOnly;
-            return `
+        const isNarr = (d.speaker || '').toLowerCase() === 'narrator' || (d.speaker || '').toLowerCase() === 'người kể chuyện';
+        const skipNarr = isNarr && isSceneDialOnly;
+        return `
             <div class="dialogue-segment-row" style="${skipNarr ? 'opacity:0.42; text-decoration:line-through;' : ''}" title="${skipNarr ? 'Narrator voiceover is skipped (Dialogue Only is ON for this scene)' : ''}">
               <span class="dialogue-speaker-pill ${isNarr ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
               <span class="dialogue-text-bubble">"${d.text || ''}"</span>
               ${skipNarr ? '<span style="font-size:10px; color:#f87171; margin-left:4px; text-decoration:none; display:inline-block;">(🔇 Skipped)</span>' : ''}
             </div>
           `;
-          }).join('')}
+      }).join('')}
           ${(isSceneDialOnly && !hasCharDialogueSegments) ? `<div style="font-size:11px; color:#fbbf24; margin-top:4px;">ℹ️ No character dialogue quotes ("...") in this scene — narrator will stay silent while Dialogue Only is ON (or click 💬 +Dialogue).</div>` : ''}
         </div>
       ` : '';
@@ -7386,16 +7423,16 @@ ${isAutoScenes
         <div class="script-dialogues-box">
           <label class="field-label" style="font-size:11px; margin-bottom:2px;">🎭 Character Dialogues (${scene.dialogues.length})</label>
           ${scene.dialogues.map(d => {
-            const isNarr = (d.speaker || '').toLowerCase() === 'narrator' || (d.speaker || '').toLowerCase() === 'người kể chuyện';
-            const skipNarr = isNarr && isSceneDialOnly;
-            return `
+        const isNarr = (d.speaker || '').toLowerCase() === 'narrator' || (d.speaker || '').toLowerCase() === 'người kể chuyện';
+        const skipNarr = isNarr && isSceneDialOnly;
+        return `
             <div class="dialogue-segment-row" style="${skipNarr ? 'opacity:0.42; text-decoration:line-through;' : ''}">
               <span class="dialogue-speaker-pill ${isNarr ? 'narrator' : ''}">[${d.speaker || 'Narrator'}]</span>
               <span class="dialogue-text-bubble">"${d.text || ''}"</span>
               ${skipNarr ? '<span style="font-size:10px; color:#f87171; margin-left:4px; text-decoration:none; display:inline-block;">(🔇 Skipped)</span>' : ''}
             </div>
           `;
-          }).join('')}
+      }).join('')}
         </div>
       ` : '';
 
@@ -8039,7 +8076,7 @@ ${isAutoScenes
           try {
             const errJson = await resp.json();
             errDetail = errJson.detail || errDetail;
-          } catch {}
+          } catch { }
           if (statusPill) {
             statusPill.className = "scene-status-pill error";
             statusPill.textContent = "⚠️ Error";
@@ -8166,7 +8203,7 @@ ${isAutoScenes
         try {
           const errJson = await resp.json();
           errDetail = errJson.detail || errDetail;
-        } catch {}
+        } catch { }
         if (videoPill) {
           videoPill.className = "scene-status-pill error";
           videoPill.textContent = "⚠️ Render Error";
@@ -8249,7 +8286,7 @@ ${isAutoScenes
     if (this.modalSceneVideoPlayer) {
       this.modalSceneVideoPlayer.src = videoUrl;
       this.modalSceneVideoPlayer.load();
-      this.modalSceneVideoPlayer.play().catch(() => {});
+      this.modalSceneVideoPlayer.play().catch(() => { });
     }
 
     this.modalSceneVideo.classList.add("active");
@@ -8289,7 +8326,7 @@ ${isAutoScenes
         try {
           const errJson = await resp.json();
           errDetail = errJson.detail || errDetail;
-        } catch {}
+        } catch { }
         throw new Error(errDetail);
       }
       this.currentProject = await resp.json();
@@ -8377,133 +8414,133 @@ ${isAutoScenes
         }
       }
       const statusPill = document.getElementById(`sceneStatusPill_${sceneIdx}`);
-        if (statusPill) {
-          statusPill.className = "scene-status-pill ready";
-          statusPill.textContent = "✓ Custom Art";
-        }
-        this.updateQuickJumpPill(sceneIdx, Boolean(cleanPath), Boolean(updatedScene?.video_path));
-        this.showToast(`Custom illustration applied to Scene ${sceneIdx + 1}! 🖼️`);
-      } catch (e) {
-        console.error(e);
-        this.showToast("Upload failed: " + e.message, true);
+      if (statusPill) {
+        statusPill.className = "scene-status-pill ready";
+        statusPill.textContent = "✓ Custom Art";
+      }
+      this.updateQuickJumpPill(sceneIdx, Boolean(cleanPath), Boolean(updatedScene?.video_path));
+      this.showToast(`Custom illustration applied to Scene ${sceneIdx + 1}! 🖼️`);
+    } catch (e) {
+      console.error(e);
+      this.showToast("Upload failed: " + e.message, true);
+    }
+  }
+
+  async cycleSceneProductPhoto(sceneIdx, btnEl) {
+    if (!this.currentProject || !this.currentProject.product_images || !this.currentProject.product_images.length) {
+      this.showToast("No uploaded product photos found for this project", true);
+      return;
+    }
+    const prodImages = this.currentProject.product_images;
+    const scene = this.currentProject.scenes[sceneIdx];
+
+    // Find current product photo index and get next
+    let currentRelPath = (scene?.image_path || "").replace(/\\/g, "/");
+    let currentIdx = -1;
+    for (let i = 0; i < prodImages.length; i++) {
+      const p = prodImages[i].replace(/\\/g, "/");
+      if (currentRelPath.endsWith(p) || p.endsWith(currentRelPath)) {
+        currentIdx = i;
+        break;
       }
     }
+    const nextIdx = (currentIdx + 1) % prodImages.length;
+    const nextImagePath = prodImages[nextIdx];
 
-    async cycleSceneProductPhoto(sceneIdx, btnEl) {
-      if (!this.currentProject || !this.currentProject.product_images || !this.currentProject.product_images.length) {
-        this.showToast("No uploaded product photos found for this project", true);
-        return;
+    const originalText = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) btnEl.innerHTML = "⏳ Applying...";
+
+    try {
+      this.showToast(`Applying Product Photo ${nextIdx + 1}/${prodImages.length} to Scene ${sceneIdx + 1}...`);
+      const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/set-scene-product-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scene_idx: sceneIdx,
+          image_path: nextImagePath
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to set product photo");
       }
-      const prodImages = this.currentProject.product_images;
-      const scene = this.currentProject.scenes[sceneIdx];
 
-      // Find current product photo index and get next
-      let currentRelPath = (scene?.image_path || "").replace(/\\/g, "/");
-      let currentIdx = -1;
-      for (let i = 0; i < prodImages.length; i++) {
-        const p = prodImages[i].replace(/\\/g, "/");
-        if (currentRelPath.endsWith(p) || p.endsWith(currentRelPath)) {
-          currentIdx = i;
-          break;
-        }
+      const resData = await resp.json();
+      if (resData.project) {
+        this.currentProject = resData.project;
+      } else if (resData.image_path) {
+        scene.image_path = resData.image_path;
+        scene.is_product_photo = true;
       }
-      const nextIdx = (currentIdx + 1) % prodImages.length;
-      const nextImagePath = prodImages[nextIdx];
-
-      const originalText = btnEl ? btnEl.innerHTML : "";
-      if (btnEl) btnEl.innerHTML = "⏳ Applying...";
-
-      try {
-        this.showToast(`Applying Product Photo ${nextIdx + 1}/${prodImages.length} to Scene ${sceneIdx + 1}...`);
-        const resp = await fetch(`/api/projects/${encodeURIComponent(this.currentProject.id)}/set-scene-product-image`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            scene_idx: sceneIdx,
-            image_path: nextImagePath
-          })
-        });
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.detail || "Failed to set product photo");
-        }
-
-        const resData = await resp.json();
-        if (resData.project) {
-          this.currentProject = resData.project;
-        } else if (resData.image_path) {
-          scene.image_path = resData.image_path;
-          scene.is_product_photo = true;
-        }
-        this.saveActiveProjectState();
-        this.renderStoryboardView();
-        this.showToast(`Product Photo ${nextIdx + 1}/${prodImages.length} applied to Scene ${sceneIdx + 1}! 🛍️`);
-      } catch (e) {
-        console.error(e);
-        this.showToast("Failed to apply product photo: " + e.message, true);
-      } finally {
-        if (btnEl) btnEl.innerHTML = originalText;
-      }
+      this.saveActiveProjectState();
+      this.renderStoryboardView();
+      this.showToast(`Product Photo ${nextIdx + 1}/${prodImages.length} applied to Scene ${sceneIdx + 1}! 🛍️`);
+    } catch (e) {
+      console.error(e);
+      this.showToast("Failed to apply product photo: " + e.message, true);
+    } finally {
+      if (btnEl) btnEl.innerHTML = originalText;
     }
+  }
 
-    async openGoogleFlowBrowser() {
-      this.showToast("Opening signed-in Google Flow in Chromium... 🎬");
-      try {
-        const resp = await fetch("/api/flow/open", { method: "POST" });
-        const data = await resp.json();
-        if (resp.ok) {
-          this.showToast("Google Flow opened! Create your Veo clips and download them. 🚀");
-        } else {
-          this.showToast("Could not launch browser: " + (data.detail || "Error"), true);
-        }
-      } catch (err) {
-        console.error(err);
-        this.showToast("Error opening Flow browser: " + err.message, true);
+  async openGoogleFlowBrowser() {
+    this.showToast("Opening signed-in Google Flow in Chromium... 🎬");
+    try {
+      const resp = await fetch("/api/flow/open", { method: "POST" });
+      const data = await resp.json();
+      if (resp.ok) {
+        this.showToast("Google Flow opened! Create your Veo clips and download them. 🚀");
+      } else {
+        this.showToast("Could not launch browser: " + (data.detail || "Error"), true);
       }
+    } catch (err) {
+      console.error(err);
+      this.showToast("Error opening Flow browser: " + err.message, true);
     }
+  }
 
-    async uploadCustomActingVideo(sceneIdx, file) {
-      if (!this.currentProject) return;
+  async uploadCustomActingVideo(sceneIdx, file) {
+    if (!this.currentProject) return;
 
-      const formData = new FormData();
-      formData.append("file", file);
+    const formData = new FormData();
+    formData.append("file", file);
 
-      try {
-        this.showToast(`Importing Flow acting video for Scene ${sceneIdx + 1} & syncing subtitles... ⏳`);
-        const resp = await fetch(`/api/projects/${this.currentProject.id}/upload-acting-clip/${sceneIdx}`, {
-          method: "POST",
-          body: formData
-        });
+    try {
+      this.showToast(`Importing Flow acting video for Scene ${sceneIdx + 1} & syncing subtitles... ⏳`);
+      const resp = await fetch(`/api/projects/${this.currentProject.id}/upload-acting-clip/${sceneIdx}`, {
+        method: "POST",
+        body: formData
+      });
 
-        if (!resp.ok) throw new Error("Acting video upload failed");
+      if (!resp.ok) throw new Error("Acting video upload failed");
 
-        const data = await resp.json();
-        this.currentProject = data.project;
-        this.saveActiveProjectState();
+      const data = await resp.json();
+      this.currentProject = data.project;
+      this.saveActiveProjectState();
 
-        // Refresh scene card video
-        const videoEl = document.getElementById(`sceneVideo_${sceneIdx}`);
-        if (videoEl && data.clip_url) {
-          videoEl.src = `${data.clip_url}?t=${Date.now()}`;
-        }
-        const videoPill = document.getElementById(`sceneVideoPill_${sceneIdx}`);
-        if (videoPill) {
-          videoPill.style.display = "";
-          videoPill.textContent = "🎬 Flow Video Ready";
-        }
-        const btnOverlay = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
-        if (btnOverlay) btnOverlay.style.display = "flex";
-        const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
-        if (btnDownload) btnDownload.style.display = "";
-
-        this.updateQuickJumpPill(sceneIdx, true, true);
-        this.showToast(`🎉 Scene ${sceneIdx + 1} acting video synced with speech & subtitles!`);
-      } catch (e) {
-        console.error(e);
-        this.showToast("Upload failed: " + e.message, true);
+      // Refresh scene card video
+      const videoEl = document.getElementById(`sceneVideo_${sceneIdx}`);
+      if (videoEl && data.clip_url) {
+        videoEl.src = `${data.clip_url}?t=${Date.now()}`;
       }
+      const videoPill = document.getElementById(`sceneVideoPill_${sceneIdx}`);
+      if (videoPill) {
+        videoPill.style.display = "";
+        videoPill.textContent = "🎬 Flow Video Ready";
+      }
+      const btnOverlay = document.getElementById(`btnPlayOverlay_${sceneIdx}`);
+      if (btnOverlay) btnOverlay.style.display = "flex";
+      const btnDownload = document.getElementById(`btnDownloadClip_${sceneIdx}`);
+      if (btnDownload) btnDownload.style.display = "";
+
+      this.updateQuickJumpPill(sceneIdx, true, true);
+      this.showToast(`🎉 Scene ${sceneIdx + 1} acting video synced with speech & subtitles!`);
+    } catch (e) {
+      console.error(e);
+      this.showToast("Upload failed: " + e.message, true);
     }
+  }
 
   async generateVeoSceneVideo(sceneIdx, buttonEl) {
     if (!this.currentProject) return;
@@ -8531,7 +8568,7 @@ ${isAutoScenes
         try {
           const errData = await resp.json();
           errMessage = errData.detail || errMessage;
-        } catch {}
+        } catch { }
         throw new Error(errMessage);
       }
 
@@ -8853,25 +8890,25 @@ ${isAutoScenes
 
         card.innerHTML = `
           <div class="cinema-clip-video-box">
-            ${hasVid 
-              ? `<video src="${vidSrc}" controls playsinline preload="metadata"></video>` 
-              : `<img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;" alt="Scene ${idx + 1}">`
-            }
+            ${hasVid
+            ? `<video src="${vidSrc}" controls playsinline preload="metadata"></video>`
+            : `<img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;" alt="Scene ${idx + 1}">`
+          }
           </div>
           <div class="cinema-clip-info">
             <div class="cinema-clip-title">
               <span>Scene ${idx + 1}: ${sc.title || "Scene " + (idx + 1)}</span>
-              ${hasVid 
-                ? `<span class="tag-badge" style="background:rgba(16,185,129,0.2);color:#34d399;font-size:10px;">✓ Clip Ready</span>` 
-                : `<span class="tag-badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;font-size:10px;">Still Only</span>`
-              }
+              ${hasVid
+            ? `<span class="tag-badge" style="background:rgba(16,185,129,0.2);color:#34d399;font-size:10px;">✓ Clip Ready</span>`
+            : `<span class="tag-badge" style="background:rgba(245,158,11,0.2);color:#fbbf24;font-size:10px;">Still Only</span>`
+          }
             </div>
             <p class="cinema-clip-narration">${sc.narration || ""}</p>
             <div class="cinema-clip-actions">
-              ${hasVid 
-                ? `<a href="/api/projects/${this.currentProject.id}/download-scene-video/${idx}" download class="glass-btn secondary-btn" style="padding:6px 12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">⬇️ Download MP4</a>` 
-                : `<button class="glass-btn secondary-btn" id="btnCinemaRenderScene_${idx}" style="padding:6px 12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">🎬 Animate Clip</button>`
-              }
+              ${hasVid
+            ? `<a href="/api/projects/${this.currentProject.id}/download-scene-video/${idx}" download class="glass-btn secondary-btn" style="padding:6px 12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">⬇️ Download MP4</a>`
+            : `<button class="glass-btn secondary-btn" id="btnCinemaRenderScene_${idx}" style="padding:6px 12px;font-size:11px;display:inline-flex;align-items:center;gap:4px;">🎬 Animate Clip</button>`
+          }
             </div>
           </div>
         `;
@@ -9295,7 +9332,7 @@ ${isAutoScenes
   saveBatchQueueToStorage() {
     try {
       localStorage.setItem("anistory_batch_story_queue", JSON.stringify(this.batchQueue || []));
-    } catch (e) {}
+    } catch (e) { }
     this.updateBatchQueueCounters();
   }
 
@@ -10225,9 +10262,9 @@ ${isAutoScenes
       item.innerHTML = `
         <div class="project-card-thumb-wrap" title="Click to open Director's Storyboard">
           ${thumbSrc
-            ? `<img src="${thumbSrc}" class="project-card-thumb" alt="${this.escapeHtml(p.title || 'Scene preview')}" loading="lazy">`
-            : `<div style="font-size: 38px; color: rgba(255,255,255,0.25);">🎬</div>`
-          }
+          ? `<img src="${thumbSrc}" class="project-card-thumb" alt="${this.escapeHtml(p.title || 'Scene preview')}" loading="lazy">`
+          : `<div style="font-size: 38px; color: rgba(255,255,255,0.25);">🎬</div>`
+        }
           <span class="project-card-status-badge ${statusBadgeClass}">${statusBadgeText}</span>
           <span class="project-card-scenes-badge">${scenesCount} scenes</span>
         </div>
@@ -10378,7 +10415,7 @@ ${isAutoScenes
         try {
           const ej = await resp.json();
           errDetail = ej.detail || errDetail;
-        } catch {}
+        } catch { }
         throw new Error(errDetail);
       }
 
@@ -10534,9 +10571,9 @@ ${isAutoScenes
       card.innerHTML = `
         <div class="task-item-main">
           ${t.thumbnail
-            ? `<img src="/media/${encodeURI(t.thumbnail)}" class="task-item-thumb" alt="Preview">`
-            : `<div class="task-item-placeholder">🎬</div>`
-          }
+          ? `<img src="/media/${encodeURI(t.thumbnail)}" class="task-item-thumb" alt="Preview">`
+          : `<div class="task-item-placeholder">🎬</div>`
+        }
           <div class="task-item-info">
             <div class="task-item-title-row">
               <span class="task-item-title">${this.escapeHtml(t.title || "Untitled Film")}</span>

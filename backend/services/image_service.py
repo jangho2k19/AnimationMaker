@@ -8,6 +8,10 @@ import httpx
 from PIL import Image, ImageDraw, ImageFont
 from backend.config import ART_STYLES, SPEAKER_FOCUS_PROMPT_SUFFIX, is_comic_style
 
+class OrientationMismatchError(RuntimeError):
+    """Raised when a generated image has opposite orientation (e.g. portrait for landscape) so it can be retried once."""
+
+
 class ImageService:
     def __init__(self, default_style: str = "ghibli", api_key: str = None, provider: str = "gemini"):
         self.default_style = default_style
@@ -820,6 +824,25 @@ class ImageService:
         )
         return req_files, "\n\n".join(parts)
 
+    def _save_with_orientation_guard(
+        self,
+        img: Image.Image,
+        output_path: str,
+        width: int,
+        height: int,
+        quality: int = 95,
+        enforce_orientation: bool = True,
+    ) -> str:
+        """Checks orientation against target canvas before fitting; raises OrientationMismatchError on first mismatch."""
+        from backend.services.image_orientation import check_image_orientation
+        if enforce_orientation:
+            ok, reason = check_image_orientation(img, width, height)
+            if not ok:
+                raise OrientationMismatchError(reason)
+        fitted = self.fit_image_to_aspect_ratio(img.convert("RGB"), width, height)
+        fitted.save(output_path, "JPEG", quality=quality)
+        return output_path
+
     async def _generate_raw_ai_image(
         self,
         full_prompt: str,
@@ -833,12 +856,73 @@ class ImageService:
         seed: int = None,
         api_key: str = None,
         provider: str = None,
-        label: str = "image"
+        label: str = "image",
+        _orientation_retry: bool = False,
     ) -> str:
         """
-        Shared low-level image generation dispatcher across FlowKit, Neural.love,
-        OpenAI DALL-E 3, Google Gemini Official API (multimodal refs + Imagen 3 fallback),
-        and Google Gemini Web Cookie (multi-file reference support).
+        Shared low-level image generation dispatcher with automatic 1-shot Orientation Guard retry
+        (adapted from ViMax tools/image_orientation.py).
+        """
+        from backend.services.image_orientation import build_orientation_retry_hint
+        try:
+            return await self._generate_raw_ai_image_once(
+                full_prompt=full_prompt,
+                output_path=output_path,
+                style_key=style_key,
+                width=width,
+                height=height,
+                image_mode=image_mode,
+                req_files=req_files,
+                multimodal_prompt=multimodal_prompt,
+                seed=seed,
+                api_key=api_key,
+                provider=provider,
+                label=label,
+                enforce_orientation=not _orientation_retry,
+            )
+        except OrientationMismatchError as e_orient:
+            if _orientation_retry:
+                raise RuntimeError(str(e_orient))
+            hint = build_orientation_retry_hint(width, height)
+            print(f"⚠️ Orientation guard triggered for {label}: {e_orient}. Retrying once with explicit orientation directive...")
+            retry_prompt = f"{full_prompt}. {hint}"
+            retry_mm = f"{multimodal_prompt}. {hint}" if multimodal_prompt else ""
+            retry_seed = (seed + 7919) % 999999 if isinstance(seed, int) else None
+            return await self._generate_raw_ai_image(
+                full_prompt=retry_prompt,
+                output_path=output_path,
+                style_key=style_key,
+                width=width,
+                height=height,
+                image_mode=image_mode,
+                req_files=req_files,
+                multimodal_prompt=retry_mm,
+                seed=retry_seed,
+                api_key=api_key,
+                provider=provider,
+                label=label,
+                _orientation_retry=True,
+            )
+
+    async def _generate_raw_ai_image_once(
+        self,
+        full_prompt: str,
+        output_path: str,
+        style_key: str,
+        width: int,
+        height: int,
+        image_mode: str = "gemini",
+        req_files: list = None,
+        multimodal_prompt: str = "",
+        seed: int = None,
+        api_key: str = None,
+        provider: str = None,
+        label: str = "image",
+        enforce_orientation: bool = True,
+    ) -> str:
+        """
+        Single-attempt image generation dispatcher across Antigravity CLI, FlowKit,
+        OpenAI DALL-E 3, Pollinations, Google Gemini Official API, and Gemini Web Cookie.
         """
         import asyncio
         eff_api_key = api_key or self.api_key
@@ -876,6 +960,7 @@ class ImageService:
                 height=height,
                 aspect_ratio=imagen_ratio,
                 req_files=req_files,
+                enforce_orientation=enforce_orientation,
             )
             if saved and os.path.exists(output_path):
                 print(f"Generated {label} using Antigravity AI (Local CLI)!")
@@ -928,12 +1013,15 @@ class ImageService:
                         img_resp = await client.get(dalle_url)
                         if img_resp.status_code == 200:
                             img = Image.open(io.BytesIO(img_resp.content))
-                            fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                            fitted.save(output_path, "JPEG", quality=92)
+                            self._save_with_orientation_guard(
+                                img, output_path, width, height, quality=92, enforce_orientation=enforce_orientation
+                            )
                             print(f"Generated {label} using OpenAI DALL-E 3 ({dalle_size})!")
                             return output_path
                     else:
                         raise RuntimeError(f"OpenAI DALL-E error {resp.status_code}: {resp.text}")
+            except OrientationMismatchError:
+                raise
             except Exception as e:
                 raise RuntimeError(f"OpenAI DALL-E 3 generation failed: {e}")
 
@@ -951,8 +1039,9 @@ class ImageService:
                 p_resp = await client.get(poll_url)
                 if p_resp.status_code == 200 and len(p_resp.content) > 2048:
                     img = Image.open(io.BytesIO(p_resp.content)).convert("RGB")
-                    fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                    fitted.save(output_path, "JPEG", quality=95)
+                    self._save_with_orientation_guard(
+                        img, output_path, width, height, quality=95, enforce_orientation=enforce_orientation
+                    )
                     print(f"Generated {label} using Cloud AI Art (Pollinations)!")
                     return output_path
             raise RuntimeError("Cloud AI Art (Pollinations) image generation failed.")
@@ -1064,12 +1153,15 @@ class ImageService:
 
                 if saved_img and os.path.exists(saved_img):
                     img = Image.open(saved_img)
-                    fitted = self.fit_image_to_aspect_ratio(img, width, height)
-                    fitted.save(output_path, "JPEG", quality=95)
                     try:
-                        os.remove(saved_img)
-                    except Exception:
-                        pass
+                        self._save_with_orientation_guard(
+                            img, output_path, width, height, quality=95, enforce_orientation=enforce_orientation
+                        )
+                    finally:
+                        try:
+                            os.remove(saved_img)
+                        except Exception:
+                            pass
                     print(f"Generated {label} using Gemini Pro Web Session with {len(req_files or [])} reference(s)!")
                     return output_path
                 else:
@@ -1087,6 +1179,8 @@ class ImageService:
                         )
                     else:
                         gemini_error = f"Gemini Web replied without a generated image ({reply_hint or 'no image returned'})."
+            except OrientationMismatchError:
+                raise
             except Exception as e:
                 gemini_error = str(e).strip() or f"{type(e).__name__}: Gemini Web session request failed."
 
@@ -1128,7 +1222,15 @@ class ImageService:
             return output_path
 
         clean_name = (name or "Character").strip()
-        clean_desc = self.sanitize_visual_prompt(description or "") or f"expressive character named {clean_name}"
+        from backend.agents.script_agent import ScriptAgent
+        static_traits, dynamic_traits = ScriptAgent.split_static_dynamic_features(description or "")
+        if static_traits and dynamic_traits:
+            clean_desc = (
+                f"immutable identity ({self.sanitize_visual_prompt(static_traits)}), "
+                f"wearing/carrying ({self.sanitize_visual_prompt(dynamic_traits)})"
+            )
+        else:
+            clean_desc = self.sanitize_visual_prompt(static_traits or description or "") or f"expressive character named {clean_name}"
         effective_style = "ghibli" if style_key == "dialogue_cinema" else (style_key or self.default_style or "ghibli")
         style_info = ART_STYLES.get(effective_style, ART_STYLES["ghibli"])
         style_suffix = style_info.get("prompt_suffix", "")
@@ -1524,6 +1626,7 @@ class ImageService:
         height: int = 720,
         aspect_ratio: str = "16:9",
         req_files: Optional[list] = None,
+        enforce_orientation: bool = True,
     ) -> bool:
         """
         Generates an image using the local Antigravity CLI (`agy --print`) and its
@@ -1631,6 +1734,7 @@ class ImageService:
             )
 
         with Image.open(chosen_src) as pil_img:
-            fitted = self.fit_image_to_aspect_ratio(pil_img.convert("RGB"), width, height)
-            fitted.save(output_path, "JPEG", quality=95)
+            self._save_with_orientation_guard(
+                pil_img, output_path, width, height, quality=95, enforce_orientation=enforce_orientation
+            )
         return True
